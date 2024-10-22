@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="lighting_modes">
+        <item>Normal</item>
+        <item>Low Light</item>
+        <item>High Light</item>
+    </string-array>
+
+    <string-array name="lighting_mode_values">
+        <item>normal</item>
+        <item>low_light</item>
+        <item>high_light</item>
+    </string-array>
+</resources>

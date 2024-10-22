@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/preview_frame"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <!-- Camera Preview -->
+    <androidx.camera.view.PreviewView
+        android:id="@+id/viewFinder"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Title Text with Icon -->
+    <LinearLayout
+        android:id="@+id/title_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:background="@color/darkBlue"
+        android:paddingTop="16dp"
+        android:paddingBottom="16dp">
+
+        <!-- Icon (ImageButton) -->
+        <ImageButton
+            android:id="@+id/iconImageButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@android:color/transparent"
+            app:srcCompat="@drawable/xamera_launcher_foreground"
+            android:contentDescription="@string/switch_camera" />
+
+        <!-- Title Text -->
+        <TextView
+            android:id="@+id/titleText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Xamera"
+            android:textSize="24sp"
+            android:textColor="@android:color/white"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
+    </LinearLayout>
+
+    <!-- Settings and About Buttons Below the Ribbon, Centered -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_gravity="center_horizontal|top"
+        android:layout_marginTop="90dp">
+
+        <!-- Settings Button -->
+        <Button
+            android:id="@+id/settingsButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Settings"
+            android:textSize="16sp"
+            android:backgroundTint="@color/orange"
+            android:textColor="@android:color/white"
+            android:elevation="2dp" />
+
+        <!-- About Button (Next to Settings Button) -->
+        <Button
+            android:id="@+id/aboutButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="About"
+            android:textSize="16sp"
+            android:backgroundTint="@color/green"
+            android:textColor="@color/white"
+            android:elevation="2dp"
+            android:layout_marginStart="16dp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/zoom_button_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="16dp">
+
+        <!-- Zoom In Button -->
+        <Button
+            android:id="@+id/zoom_in_button"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:text="+"
+            android:backgroundTint="@color/white"
+            android:elevation="2dp"
+            android:textSize="24sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Zoom Out Button -->
+        <Button
+            android:id="@+id/zoom_out_button"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:text="-"
+            android:backgroundTint="@color/white"
+            android:elevation="2dp"
+            android:textSize="24sp"
+            android:textColor="@android:color/black" />
+    </LinearLayout>
+
+    <!-- Buttons Container (Bottom) -->
+    <LinearLayout
+        android:id="@+id/button_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_gravity="center_horizontal|bottom"
+        android:layout_marginBottom="50dp">
+
+        <!-- Capture Button -->
+        <Button
+            android:id="@+id/video_capture_button"
+            android:layout_width="110dp"
+            android:layout_height="110dp"
+            android:backgroundTint="@color/blue"
+            android:elevation="2dp"
+            android:text="@string/start_capture"
+            android:textColor="@android:color/white"
+            android:layout_marginEnd="16dp" />
+
+        <!-- Switch Camera Button -->
+        <Button
+            android:id="@+id/switch_camera_button"
+            android:layout_width="110dp"
+            android:layout_height="110dp"
+            android:text="@string/switch_camera"
+            android:textColor="@android:color/black"
+            android:textSize="16sp"
+            android:backgroundTint="@color/white"
+            android:elevation="2dp" />
+
+
+    </LinearLayout>
+
+</FrameLayout>
