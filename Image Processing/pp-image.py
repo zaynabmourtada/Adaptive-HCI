@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Soham Naik - Senior Design - Adaptive HCI - Pre-Processing & Image Edge Detection DEMO - 10/17/2024
 
 import cv2
@@ -138,5 +137,5 @@ def main():  # Main function to process image
 
 if __name__ == "__main__":
     main()
->>>>>>> origin
+
 # END
