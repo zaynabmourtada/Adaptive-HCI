@@ -15,6 +15,7 @@ import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraControl
 import androidx.camera.core.CameraInfo
@@ -27,6 +28,8 @@ import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.core.content.ContextCompat
+import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
 import com.developer27.xamera.databinding.ActivityMainBinding
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -132,6 +135,13 @@ class MainActivity : AppCompatActivity() {
             startCamera()
         } else {
             requestPermissions()
+        }
+
+        // Set up listener for the "Process Video" button in onCreate
+        viewBinding.processVideoButton.setOnClickListener {
+            // Assuming `videoPath` is the path to the video file you want to process
+            val videoPath = "path_to_your_video_file"  // Replace with actual video path
+            processVideoWithPython(videoPath)
         }
     }
 
@@ -454,6 +464,43 @@ class MainActivity : AppCompatActivity() {
         if (0 in exposureRange) {
             cameraControl.setExposureCompensationIndex(0)
         } else {
+        }
+    }
+
+    // This function is triggered when the process video button is clicked
+    private fun processVideoWithPython(videoPath: String) {
+        try {
+            // Initialize Python if it's not started
+            if (!Python.isStarted()) {
+                Python.start(AndroidPlatform(this))
+            }
+
+            val python = Python.getInstance()
+            val pyObject = python.getModule("video_processor")  // 'video_processor.py' is the Python file with the logic
+
+            // Call the Python function that processes the video
+            val result = pyObject.callAttr("process_video", videoPath).toString()
+
+            // Display the result in an AlertDialog
+            AlertDialog.Builder(this)
+                .setTitle("Video Processor - Python Handler")
+                .setMessage(result)
+                .setPositiveButton("OK") { dialog, _ ->
+                    dialog.dismiss()
+                }
+                .create()
+                .show()
+
+        } catch (e: Exception) {
+            // Handle any errors that occur during the Python execution
+            AlertDialog.Builder(this)
+                .setTitle("Error")
+                .setMessage("An error occurred: ${e.message}")
+                .setPositiveButton("OK") { dialog, _ ->
+                    dialog.dismiss()
+                }
+                .create()
+                .show()
         }
     }
 }
