@@ -238,6 +238,9 @@ class MainActivity : AppCompatActivity() {
                         }
                         // Re-enable switch camera button
                         viewBinding.switchCameraButton.isEnabled = true
+
+                        // Turn off the flash after the recording is finalized
+                        cameraControl.enableTorch(false)
                     }
                 }
             }
@@ -245,48 +248,64 @@ class MainActivity : AppCompatActivity() {
 
     // Function to start the camera preview and set up video capture
     private fun startCamera() {
-        // Obtain a camera provider instance asynchronously
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
         cameraProviderFuture.addListener({
-            // Get the camera provider once it's ready
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
 
-            // Build the camera preview use case
-            val preview = Preview.Builder()
-                .build()
-                .also {
-                    // Set the surface provider for the preview (the viewFinder)
-                    it.setSurfaceProvider(viewBinding.viewFinder.surfaceProvider)
-                }
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(viewBinding.viewFinder.surfaceProvider)
+            }
 
-            // Build the video capture use case
             videoCapture = VideoCapture.withOutput(Recorder.Builder().build())
 
-            // Apply flash setting when the camera is started
-            applyFlashIfEnabled()
+            applyRollingShutterFrequency()
 
             try {
-                // Unbind any use cases before rebinding
                 cameraProvider.unbindAll()
-
-                // Bind the camera lifecycle with the use cases: preview and video capture
-                val camera = cameraProvider.bindToLifecycle(
-                    this, cameraSelector, preview, videoCapture
-                )
-
-                // Initialize camera control for zooming
+                val camera = cameraProvider.bindToLifecycle(this, cameraSelector, preview, videoCapture)
                 cameraControl = camera.cameraControl
                 cameraInfo = camera.cameraInfo
 
-                // Apply lighting mode after camera is ready
-                applyLightingMode()
-
             } catch (exc: Exception) {
-                Log.e(TAG, "Use case binding failed", exc)
+                Toast.makeText(this, "Use case binding failed: ${exc.message}", Toast.LENGTH_SHORT).show()
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun applyRollingShutterFrequency() {
+        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+        val frequency = sharedPreferences.getString("rolling_shutter_frequency", "60") ?: "60"
+
+        when (frequency) {
+            "50" -> setRollingShutterFrequency(50)
+            "60" -> setRollingShutterFrequency(60)
+        }
+    }
+
+    private fun setRollingShutterFrequency(frequency: Int) {
+        if (!::cameraControl.isInitialized) {
+            Toast.makeText(this, "Camera is not initialized", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        try {
+            val exposureRange = cameraInfo.exposureState.exposureCompensationRange
+            val exposureCompensationIndex = when (frequency) {
+                50 -> 2  // Example index for 50Hz
+                60 -> -2  // Example index for 60Hz
+                else -> 0  // Default or normal
             }
 
-        }, ContextCompat.getMainExecutor(this))
+            if (exposureCompensationIndex in exposureRange) {
+                cameraControl.setExposureCompensationIndex(exposureCompensationIndex)
+                Toast.makeText(this, "Rolling shutter frequency set to $frequency Hz", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Exposure compensation index out of range for frequency $frequency Hz", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error setting rolling shutter frequency: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun setupZoomControls() {

@@ -5,6 +5,14 @@
         android:title="Settings"
         android:layout="@layout/preference_category_layout">
 
+        <ListPreference
+            android:key="rolling_shutter_frequency"
+            android:title="Rolling Shutter Frequency"
+            android:defaultValue="60"
+            android:entries="@array/shutter_frequencies"
+            android:entryValues="@array/shutter_frequency_values"
+            android:summary="Set rolling shutter frequency to minimize flicker (e.g., 50Hz or 60Hz)." />
+
         <!-- Lighting Mode Settings -->
         <ListPreference
             android:key="lighting_mode"

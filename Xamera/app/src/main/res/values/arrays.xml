@@ -11,4 +11,14 @@
         <item>low_light</item>
         <item>high_light</item>
     </string-array>
+
+    <string-array name="shutter_frequencies">
+        <item>50 Hz</item>
+        <item>60 Hz</item>
+    </string-array>
+
+    <string-array name="shutter_frequency_values">
+        <item>50</item>
+        <item>60</item>
+    </string-array>
 </resources>
