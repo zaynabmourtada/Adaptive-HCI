@@ -38,7 +38,7 @@
             android:id="@+id/titleText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Xamera"
+            android:text="Xamera (Pre-Beta)"
             android:textSize="24sp"
             android:textColor="@android:color/white"
             android:textStyle="bold"
@@ -64,8 +64,8 @@
             android:text="Process Video"
             android:textSize="16sp"
             android:padding="8dp"
-            android:backgroundTint="@color/black"
-            android:textColor="@color/white"
+            android:backgroundTint="@color/white"
+            android:textColor="@color/black"
             android:layout_marginEnd="16dp" />
 
         <!-- Settings Button -->
