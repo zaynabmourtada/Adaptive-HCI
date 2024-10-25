@@ -6,14 +6,17 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.preference.PreferenceManager
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -28,9 +31,8 @@ import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.core.content.ContextCompat
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
 import com.developer27.xamera.databinding.ActivityMainBinding
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.ExecutorService
@@ -59,6 +61,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraInfo: CameraInfo
     private var zoomLevel = 1.0f
     private val maxZoom = 5.0f
+
+    // Declare the ActivityResultLauncher at the top
+    private lateinit var videoPickerLauncher: ActivityResultLauncher<Intent>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -137,11 +142,26 @@ class MainActivity : AppCompatActivity() {
             requestPermissions()
         }
 
-        // Set up listener for the "Process Video" button in onCreate
+        // Initialize the ActivityResultLauncher for video selection
+        videoPickerLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == RESULT_OK) {
+                val selectedVideoUri: Uri? = result.data?.data
+                if (selectedVideoUri != null) {
+                    val videoPath = selectedVideoUri.toString() // Convert URI to string path
+                    processVideoWithOpenCV(videoPath)
+                } else {
+                    Toast.makeText(this, "No video selected", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(this, "Video selection canceled", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Set up the button click listener to open Google Photos
         viewBinding.processVideoButton.setOnClickListener {
-            // Assuming `videoPath` is the path to the video file you want to process
-            val videoPath = "path_to_your_video_file"  // Replace with actual video path
-            processVideoWithPython(videoPath)
+            openVideoPicker()
         }
     }
 
@@ -486,40 +506,69 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // This function is triggered when the process video button is clicked
-    private fun processVideoWithPython(videoPath: String) {
-        try {
-            // Initialize Python if it's not started
-            if (!Python.isStarted()) {
-                Python.start(AndroidPlatform(this))
+    //Pick a video from the file
+    private fun openVideoPicker() {
+        // Intent to open Google Photos for video selection
+        val intent = Intent(Intent.ACTION_PICK, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+        videoPickerLauncher.launch(intent)
+    }
+
+    // TODO <10/25/2024> <Soham Naik>: Implement an algorithm to process the selected video with OpenCV
+    private fun processVideoWithOpenCV(videoPath: String) {
+        // This will receive the selected video path
+        Toast.makeText(this, "Video selected: $videoPath", Toast.LENGTH_SHORT).show()
+
+        // TODO <10/25/2024> <Soham Naik>: Add actual video processing logic here with OpenCV libraries
+        // This should modify the video and save it to a temporary file path
+
+        // TODO <10/25/2024> <Soham Naik>: Once the processing is done save the file to the necessary directory
+        val processedVideoFile = File(filesDir, "processed_video.mp4")
+        val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(System.currentTimeMillis())
+        processedVideoFile.writeText("Processed video data - Time: $currentTime")
+
+        // Save the processed video file
+        saveProcessedVideo(processedVideoFile)
+    }
+
+    // Save the video after it is processed
+    private fun saveProcessedVideo(processedVideoFile: File) {
+        // Prepare file information
+        val filename = "processed_video_${System.currentTimeMillis()}.mp4"
+        val mimeType = "video/mp4"
+        val directory = Environment.DIRECTORY_MOVIES + "/Xamera-Processed"
+
+        val resolver = contentResolver
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.MediaColumns.RELATIVE_PATH, directory)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)  // Set as pending to ensure exclusive access
+            }
+        }
+
+        // Get the URI to save the file in the MediaStore
+        val videoUri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+            ?: run {
+                Toast.makeText(this, "Failed to create file", Toast.LENGTH_SHORT).show()
+                return
             }
 
-            val python = Python.getInstance()
-            val pyObject = python.getModule("video_processor")  // 'video_processor.py' is the Python file with the logic
-
-            // Call the Python function that processes the video
-            val result = pyObject.callAttr("process_video", videoPath).toString()
-
-            // Display the result in an AlertDialog
-            AlertDialog.Builder(this)
-                .setTitle("Video Processor - Python Handler")
-                .setMessage(result)
-                .setPositiveButton("OK") { dialog, _ ->
-                    dialog.dismiss()
-                }
-                .create()
-                .show()
-
-        } catch (e: Exception) {
-            // Handle any errors that occur during the Python execution
-            AlertDialog.Builder(this)
-                .setTitle("Error")
-                .setMessage("An error occurred: ${e.message}")
-                .setPositiveButton("OK") { dialog, _ ->
-                    dialog.dismiss()
-                }
-                .create()
-                .show()
+        // Save the processed video file
+        resolver.openOutputStream(videoUri).use { outputStream ->
+            processedVideoFile.inputStream().use { inputStream ->
+                inputStream.copyTo(outputStream!!)
+            }
         }
+
+        // If Android Q and above, update the pending status
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            contentValues.clear()
+            contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            resolver.update(videoUri, contentValues, null, null)
+        }
+
+        // Notify user of successful save
+        Toast.makeText(this, "Video saved to gallery", Toast.LENGTH_SHORT).show()
     }
 }

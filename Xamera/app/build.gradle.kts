@@ -4,9 +4,6 @@ plugins {
 
     // Plugin for Kotlin Android integration
     id("org.jetbrains.kotlin.android")
-
-    // Plugin for Chaquopy
-    id("com.chaquo.python")
 }
 
 android {
@@ -48,27 +45,6 @@ android {
 
     kotlinOptions {
         jvmTarget = "1.8"
-    }
-
-    flavorDimensions += "pyVersion"
-    productFlavors {
-        create("py310") { dimension = "pyVersion" }
-        create("py311") { dimension = "pyVersion" }
-    }
-}
-
-chaquopy {
-    defaultConfig {
-        pip {
-            //TODO <10/23/2024>:
-            //Implement a library similar to to the one below that can process open-cv with python
-            //install("opencv-python")  // or try the latest version available
-        }
-    }
-
-    productFlavors {
-        getByName("py310") { version = "3.10" }
-        getByName("py311") { version = "3.11" }
     }
 }
 
