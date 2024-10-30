@@ -18,7 +18,6 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraControl
 import androidx.camera.core.CameraInfo
@@ -277,6 +276,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Function to start the camera preview and set up video capture
+// Function to start the camera preview and set up video capture
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
@@ -296,6 +296,10 @@ class MainActivity : AppCompatActivity() {
                 val camera = cameraProvider.bindToLifecycle(this, cameraSelector, preview, videoCapture)
                 cameraControl = camera.cameraControl
                 cameraInfo = camera.cameraInfo
+
+                // Set initial zoom level to 1.0 (no zoom)
+                zoomLevel = 1.0f
+                cameraControl.setLinearZoom(zoomLevel / maxZoom)
 
             } catch (exc: Exception) {
                 Toast.makeText(this, "Use case binding failed: ${exc.message}", Toast.LENGTH_SHORT).show()
@@ -424,6 +428,15 @@ class MainActivity : AppCompatActivity() {
     // Check if all required permissions have been granted
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Reset zoom level to minimum (1.0) on resume
+        if (::cameraControl.isInitialized) {
+            zoomLevel = 1.0f
+            cameraControl.setLinearZoom(zoomLevel / maxZoom)
+        }
     }
 
     override fun onDestroy() {
