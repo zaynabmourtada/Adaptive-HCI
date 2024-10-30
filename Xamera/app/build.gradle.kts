@@ -50,6 +50,8 @@ android {
 
 dependencies {
     implementation("androidx.preference:preference-ktx:1.2.1")
+    implementation(project(":OpenCV-4.10.0"))
+    implementation(project(":OpenCV-4.10.0"))
 
     // CameraX dependencies for camera functionality
     var camerax_version = "1.2.2"

@@ -37,6 +37,8 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import org.opencv.android.OpenCVLoader;
+import org.opencv.core.Size
 
 class MainActivity : AppCompatActivity() {
 
@@ -70,6 +72,14 @@ class MainActivity : AppCompatActivity() {
         // Inflate the layout and bind views
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
+
+        if (OpenCVLoader.initLocal()) {
+            Log.i(TAG, "OpenCV loaded successfully");
+        } else {
+            Log.e(TAG, "OpenCV initialization failed!");
+            (Toast.makeText(this, "OpenCV initialization failed!", Toast.LENGTH_LONG)).show();
+            return;
+        }
 
         // Request camera permissions. If granted, start the camera; otherwise, request permissions.
         if (allPermissionsGranted()) {
@@ -515,8 +525,21 @@ class MainActivity : AppCompatActivity() {
 
     // TODO <10/25/2024> <Soham Naik>: Implement an algorithm to process the selected video with OpenCV
     private fun processVideoWithOpenCV(videoPath: String) {
-        // This will receive the selected video path
+        // Ensure OpenCV is initialized
+        if (!OpenCVLoader.initDebug()) {
+            Toast.makeText(this, "Error initializing OpenCV", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Display video path
         Toast.makeText(this, "Video selected: $videoPath", Toast.LENGTH_SHORT).show()
+
+        // Open the video file
+        val capture = org.opencv.videoio.VideoCapture(videoPath)
+        if (!capture.open(videoPath)) {
+            Toast.makeText(this, "Error opening video file", Toast.LENGTH_SHORT).show()
+            return
+        }
 
         // TODO <10/25/2024> <Soham Naik>: Add actual video processing logic here with OpenCV libraries
         // This should modify the video and save it to a temporary file path
