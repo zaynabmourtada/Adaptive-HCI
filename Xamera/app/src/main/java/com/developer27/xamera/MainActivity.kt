@@ -36,12 +36,9 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import org.opencv.android.OpenCVLoader
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-
+import org.opencv.android.OpenCVLoader;
+import org.opencv.core.Size
+import java.io.FileOutputStream
 
 class MainActivity : AppCompatActivity() {
 
@@ -77,13 +74,13 @@ class MainActivity : AppCompatActivity() {
         setContentView(viewBinding.root)
 
         if (OpenCVLoader.initLocal()) {
-            Log.i(TAG, "OpenCV loaded successfully")
+            Log.i(TAG, "OpenCV loaded successfully");
         }
         else
         {
-            Log.e(TAG, "OpenCV initialization failed!")
-            (Toast.makeText(this, "OpenCV initialization failed!", Toast.LENGTH_LONG)).show()
-            return
+            Log.e(TAG, "OpenCV initialization failed!");
+            (Toast.makeText(this, "OpenCV initialization failed!", Toast.LENGTH_LONG)).show();
+            return;
        }
 
         // Request camera permissions. If granted, start the camera; otherwise, request permissions.
@@ -478,7 +475,7 @@ class MainActivity : AppCompatActivity() {
             var permissionGranted = true
             // Check if all permissions are granted
             permissions.entries.forEach {
-                if (it.key in REQUIRED_PERMISSIONS && !it.value)
+                if (it.key in REQUIRED_PERMISSIONS && it.value == false)
                     permissionGranted = false
             }
             if (!permissionGranted) {
@@ -514,6 +511,7 @@ class MainActivity : AppCompatActivity() {
         val exposureRange = cameraInfo.exposureState.exposureCompensationRange
         if (2 in exposureRange) {
             cameraControl.setExposureCompensationIndex(2)
+        } else {
         }
     }
 
@@ -521,6 +519,7 @@ class MainActivity : AppCompatActivity() {
         val exposureRange = cameraInfo.exposureState.exposureCompensationRange
         if (-2 in exposureRange) {
             cameraControl.setExposureCompensationIndex(-2)
+        } else {
         }
     }
 
@@ -528,165 +527,82 @@ class MainActivity : AppCompatActivity() {
         val exposureRange = cameraInfo.exposureState.exposureCompensationRange
         if (0 in exposureRange) {
             cameraControl.setExposureCompensationIndex(0)
+        } else {
         }
     }
 
     //Pick a video from the file
     private fun openVideoPicker() {
+        // Intent to open Google Photos for video selection
         val intent = Intent(Intent.ACTION_PICK, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
         videoPickerLauncher.launch(intent)
     }
+
+    // Soham Naiks - Code
 
     // Function to process and save the video with OpenCV
     private fun processVideoWithOpenCV(videoUri: Uri) {
         Toast.makeText(this, "Video selected: $videoUri", Toast.LENGTH_SHORT).show()
 
-        val fileName = "video-PreProcessed.mp4"
+        val fileName = "video-PreProcessed.mp4" // Fixed or custom name for the processed video
         val processedVideoFile = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), fileName)
-        val videoPath = getRealPathFromUri(videoUri) ?: return
 
-        val capture = org.opencv.videoio.VideoCapture(videoPath)
-        if (!capture.isOpened) {
-            Toast.makeText(this, "Failed to open video", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // Set up VideoWriter to save the processed video
-        val fps = capture.get(org.opencv.videoio.Videoio.CAP_PROP_FPS)
-        val frameWidth = capture.get(org.opencv.videoio.Videoio.CAP_PROP_FRAME_WIDTH).toInt()
-        val frameHeight = capture.get(org.opencv.videoio.Videoio.CAP_PROP_FRAME_HEIGHT).toInt()
-        val writer = org.opencv.videoio.VideoWriter(
-            processedVideoFile.absolutePath,
-            org.opencv.videoio.VideoWriter.fourcc('M', 'P', '4', 'V'),
-            fps,
-            org.opencv.core.Size(frameWidth.toDouble(), frameHeight.toDouble())
-        )
-
-        if (!writer.isOpened) {
-            Toast.makeText(this, "Failed to open VideoWriter", Toast.LENGTH_SHORT).show()
-            capture.release()
-            return
-        }
-
-        // Process each frame and write it to the new video
-        val frame = org.opencv.core.Mat()
-        val centerDataList = mutableListOf<org.opencv.core.Point>() // For drawing continuous trace
-
-        while (capture.read(frame)) {
-            // Convert to grayscale
-            val grayFrame = org.opencv.core.Mat()
-            org.opencv.imgproc.Imgproc.cvtColor(frame, grayFrame, org.opencv.imgproc.Imgproc.COLOR_BGR2GRAY)
-
-            // Enhance brightness
-            val enhancedFrame = enhanceBrightness(grayFrame)
-
-            // Detect contour blob and overlay center mass
-            val contourData = detectContourBlob(enhancedFrame)
-            val overlayedFrame = contourData.second
-
-            // Draw continuous trace line for detected center points
-            contourData.first?.let { center ->
-                centerDataList.add(center)
-                for (i in 1 until centerDataList.size) {
-                    org.opencv.imgproc.Imgproc.line(
-                        overlayedFrame,
-                        centerDataList[i - 1],
-                        centerDataList[i],
-                        org.opencv.core.Scalar(255.0, 0.0, 0.0),
-                        2
-                    )
+        try {
+            // Open an input stream from the URI and copy it to the destination file
+            contentResolver.openInputStream(videoUri)?.use { inputStream ->
+                FileOutputStream(processedVideoFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
                 }
             }
-            // Write the processed frame to the output video
-            writer.write(overlayedFrame)
-        }
-        // Release resources
-        capture.release()
-        writer.release()
-        // Save the processed video to the gallery
-        saveProcessedVideo(processedVideoFile)
-    }
 
-    // Helper function to get absolute path from Uri
-    private fun getRealPathFromUri(uri: Uri): String? {
-        var filePath: String? = null
-        val projection = arrayOf(MediaStore.Video.Media.DATA)
-        contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val columnIndex = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATA)
-                filePath = cursor.getString(columnIndex)
-            }
+            // Notify the user and save the copied video
+            saveProcessedVideo(processedVideoFile)
+            Toast.makeText(this, "Video copied and renamed to: ${processedVideoFile.absolutePath}", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(this, "Failed to copy video: ${e.message}", Toast.LENGTH_SHORT).show()
         }
-        return filePath
-    }
-
-    // Function to enhance brightness
-    private fun enhanceBrightness(image: org.opencv.core.Mat): org.opencv.core.Mat {
-        val enhancedImage = image.clone()
-        org.opencv.core.Core.multiply(image, org.opencv.core.Scalar(2.0), enhancedImage)
-        return enhancedImage
-    }
-
-    // Function to detect contour blob and find center
-    private fun detectContourBlob(image: org.opencv.core.Mat): Pair<org.opencv.core.Point?, org.opencv.core.Mat> {
-        val binaryImage = org.opencv.core.Mat()
-        org.opencv.imgproc.Imgproc.threshold(image, binaryImage, 200.0, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
-        val contours = mutableListOf<org.opencv.core.MatOfPoint>()
-        org.opencv.imgproc.Imgproc.findContours(binaryImage, contours, org.opencv.core.Mat(), org.opencv.imgproc.Imgproc.RETR_EXTERNAL, org.opencv.imgproc.Imgproc.CHAIN_APPROX_SIMPLE)
-        var maxArea = 0.0
-        var largestContour: org.opencv.core.MatOfPoint? = null
-        for (contour in contours) {
-            val area = org.opencv.imgproc.Imgproc.contourArea(contour)
-            if (area > 500 && area > maxArea) {
-                maxArea = area
-                largestContour = contour
-            }
-        }
-        val outputImage = org.opencv.core.Mat()
-        org.opencv.imgproc.Imgproc.cvtColor(image, outputImage, org.opencv.imgproc.Imgproc.COLOR_GRAY2BGR)
-        var center: org.opencv.core.Point? = null
-        largestContour?.let {
-            org.opencv.imgproc.Imgproc.drawContours(outputImage, listOf(it), -1, org.opencv.core.Scalar(255.0, 105.0, 180.0), org.opencv.core.Core.FILLED)
-            val moments = org.opencv.imgproc.Imgproc.moments(it)
-            if (moments.m00 != 0.0) {
-                val centerX = (moments.m10 / moments.m00).toInt()
-                val centerY = (moments.m01 / moments.m00).toInt()
-                center = org.opencv.core.Point(centerX.toDouble(), centerY.toDouble())
-                org.opencv.imgproc.Imgproc.circle(outputImage, center, 10, org.opencv.core.Scalar(0.0, 255.0, 0.0), -1)
-            }
-        }
-        return Pair(center, outputImage)
     }
 
     // Save the video after it is processed
     private fun saveProcessedVideo(processedVideoFile: File) {
+        // Prepare file information
         val filename = "processed_video_${System.currentTimeMillis()}.mp4"
         val mimeType = "video/mp4"
         val directory = Environment.DIRECTORY_MOVIES + "/Xamera-Processed"
+
         val resolver = contentResolver
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.MediaColumns.RELATIVE_PATH, directory)
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)  // Set as pending to ensure exclusive access
             }
         }
+
+        // Get the URI to save the file in the MediaStore
         val videoUri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
             ?: run {
                 Toast.makeText(this, "Failed to create file", Toast.LENGTH_SHORT).show()
                 return
             }
+
+        // Save the processed video file
         resolver.openOutputStream(videoUri).use { outputStream ->
             processedVideoFile.inputStream().use { inputStream ->
                 inputStream.copyTo(outputStream!!)
             }
         }
+
+        // If Android Q and above, update the pending status
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             contentValues.clear()
             contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
             resolver.update(videoUri, contentValues, null, null)
         }
+
+        // Notify user of successful save
         Toast.makeText(this, "Video saved to gallery", Toast.LENGTH_SHORT).show()
     }
 }
