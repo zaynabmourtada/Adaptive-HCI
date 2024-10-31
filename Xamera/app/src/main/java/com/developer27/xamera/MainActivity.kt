@@ -74,11 +74,13 @@ class MainActivity : AppCompatActivity() {
 
         if (OpenCVLoader.initLocal()) {
             Log.i(TAG, "OpenCV loaded successfully");
-        } else {
+        }
+        else
+        {
             Log.e(TAG, "OpenCV initialization failed!");
             (Toast.makeText(this, "OpenCV initialization failed!", Toast.LENGTH_LONG)).show();
             return;
-        }
+       }
 
         // Request camera permissions. If granted, start the camera; otherwise, request permissions.
         if (allPermissionsGranted()) {
