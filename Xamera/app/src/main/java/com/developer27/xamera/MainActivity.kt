@@ -38,6 +38,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import org.opencv.android.OpenCVLoader;
 import org.opencv.core.Size
+import java.io.FileOutputStream
 
 class MainActivity : AppCompatActivity() {
 
@@ -160,8 +161,7 @@ class MainActivity : AppCompatActivity() {
             if (result.resultCode == RESULT_OK) {
                 val selectedVideoUri: Uri? = result.data?.data
                 if (selectedVideoUri != null) {
-                    val videoPath = selectedVideoUri.toString() // Convert URI to string path
-                    processVideoWithOpenCV(videoPath)
+                    processVideoWithOpenCV(selectedVideoUri)  // Pass Uri directly
                 } else {
                     Toast.makeText(this, "No video selected", Toast.LENGTH_SHORT).show()
                 }
@@ -538,34 +538,30 @@ class MainActivity : AppCompatActivity() {
         videoPickerLauncher.launch(intent)
     }
 
-    // TODO <10/25/2024> <Soham Naik>: Implement an algorithm to process the selected video with OpenCV
-    private fun processVideoWithOpenCV(videoPath: String) {
-        // Ensure OpenCV is initialized
-        if (!OpenCVLoader.initDebug()) {
-            Toast.makeText(this, "Error initializing OpenCV", Toast.LENGTH_SHORT).show()
-            return
+    // Soham Naiks - Code
+
+    // Function to process and save the video with OpenCV
+    private fun processVideoWithOpenCV(videoUri: Uri) {
+        Toast.makeText(this, "Video selected: $videoUri", Toast.LENGTH_SHORT).show()
+
+        val fileName = "video-PreProcessed.mp4" // Fixed or custom name for the processed video
+        val processedVideoFile = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), fileName)
+
+        try {
+            // Open an input stream from the URI and copy it to the destination file
+            contentResolver.openInputStream(videoUri)?.use { inputStream ->
+                FileOutputStream(processedVideoFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+
+            // Notify the user and save the copied video
+            saveProcessedVideo(processedVideoFile)
+            Toast.makeText(this, "Video copied and renamed to: ${processedVideoFile.absolutePath}", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(this, "Failed to copy video: ${e.message}", Toast.LENGTH_SHORT).show()
         }
-
-        // Display video path
-        Toast.makeText(this, "Video selected: $videoPath", Toast.LENGTH_SHORT).show()
-
-        // Open the video file
-        val capture = org.opencv.videoio.VideoCapture(videoPath)
-        if (!capture.open(videoPath)) {
-            Toast.makeText(this, "Error opening video file", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // TODO <10/25/2024> <Soham Naik>: Add actual video processing logic here with OpenCV libraries
-        // This should modify the video and save it to a temporary file path
-
-        // TODO <10/25/2024> <Soham Naik>: Once the processing is done save the file to the necessary directory
-        val processedVideoFile = File(filesDir, "processed_video.mp4")
-        val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(System.currentTimeMillis())
-        processedVideoFile.writeText("Processed video data - Time: $currentTime")
-
-        // Save the processed video file
-        saveProcessedVideo(processedVideoFile)
     }
 
     // Save the video after it is processed
