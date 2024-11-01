@@ -405,7 +405,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-
     // Function to zoom in
     private fun zoomIn() {
         if (zoomLevel < maxZoom) {
