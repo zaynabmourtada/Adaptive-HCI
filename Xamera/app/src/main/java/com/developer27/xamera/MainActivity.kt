@@ -691,6 +691,17 @@ class MainActivity : AppCompatActivity() {
             contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
             resolver.update(videoUri, contentValues, null, null)
         }
-        Toast.makeText(this, "Video saved to gallery", Toast.LENGTH_SHORT).show()
+
+        // Automatically play the video after saving
+        playVideo(videoUri)
+    }
+
+    // Function to play the video
+    private fun playVideo(videoUri: Uri) {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(videoUri, "video/mp4")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(intent)
     }
 }
