@@ -555,9 +555,13 @@ class MainActivity : AppCompatActivity() {
         val fps = capture.get(org.opencv.videoio.Videoio.CAP_PROP_FPS)
         val frameWidth = capture.get(org.opencv.videoio.Videoio.CAP_PROP_FRAME_WIDTH).toInt()
         val frameHeight = capture.get(org.opencv.videoio.Videoio.CAP_PROP_FRAME_HEIGHT).toInt()
+
+        // Use H.264 codec for better compatibility
+        val codec = org.opencv.videoio.VideoWriter.fourcc('H', '2', '6', '4')
+
         val writer = org.opencv.videoio.VideoWriter(
             processedVideoFile.absolutePath,
-            org.opencv.videoio.VideoWriter.fourcc('M', 'P', '4', 'V'),
+            codec,
             fps,
             org.opencv.core.Size(frameWidth.toDouble(), frameHeight.toDouble())
         )
