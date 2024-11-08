@@ -139,14 +139,21 @@ class MainActivity : AppCompatActivity() {
         // Set up settings button to open the settings activity
         viewBinding.settingsButton.setOnClickListener {
             val intent = Intent(this, SettingsActivity::class.java)
-            startActivity(intent)
+            startActivityForResult(intent, SETTINGS_REQUEST_CODE)
         }
 
         // Register shared preferences listener to detect changes in settings
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
         sharedPreferences.registerOnSharedPreferenceChangeListener { _, key ->
-            if (key == "lighting_mode") {
-                applyLightingMode() // Reapply lighting mode if changed
+            when (key) {
+                "rolling_shutter_frequency" -> {
+                    applyRollingShutterFrequency()
+                    Toast.makeText(this, "Rolling shutter frequency updated", Toast.LENGTH_SHORT).show()
+                }
+                "lighting_mode" -> {
+                    applyLightingMode()
+                    Toast.makeText(this, "Lighting mode updated", Toast.LENGTH_SHORT).show()
+                }
             }
         }
 
@@ -176,6 +183,18 @@ class MainActivity : AppCompatActivity() {
         // Set up the button click listener to open Google Photos
         viewBinding.processVideoButton.setOnClickListener {
             openVideoPicker()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == SETTINGS_REQUEST_CODE && resultCode == RESULT_OK) {
+            // Check if settings changed
+            if (data?.getBooleanExtra("settingsChanged", false) == true) {
+                applyRollingShutterFrequency()
+                Toast.makeText(this, "Rolling shutter frequency updated", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -281,7 +300,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Function to start the camera preview and set up video capture
-// Function to start the camera preview and set up video capture
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
@@ -294,13 +312,14 @@ class MainActivity : AppCompatActivity() {
 
             videoCapture = VideoCapture.withOutput(Recorder.Builder().build())
 
-            applyRollingShutterFrequency()
-
             try {
                 cameraProvider.unbindAll()
                 val camera = cameraProvider.bindToLifecycle(this, cameraSelector, preview, videoCapture)
-                cameraControl = camera.cameraControl
+                cameraControl = camera.cameraControl  // Initialize cameraControl here
                 cameraInfo = camera.cameraInfo
+
+                // Apply rolling shutter frequency after initializing cameraControl
+                applyRollingShutterFrequency()
 
                 // Set initial zoom level to 1.0 (no zoom)
                 zoomLevel = 1.0f
@@ -312,39 +331,58 @@ class MainActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    // Example for setting rolling shutter frequency with Toast notification
     private fun applyRollingShutterFrequency() {
         val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
-        val frequency = sharedPreferences.getString("rolling_shutter_frequency", "60") ?: "60"
-
-        when (frequency) {
-            "50" -> setRollingShutterFrequency(50)
-            "60" -> setRollingShutterFrequency(60)
-        }
+        val frequency = sharedPreferences.getString("rolling_shutter_frequency", "5000")?.toInt() ?: 5000
+        val validFrequency = frequency.coerceIn(5000, 20000)
+        setRollingShutterFrequency(validFrequency)
+        Toast.makeText(this, "Rolling shutter frequency set to $validFrequency Hz", Toast.LENGTH_SHORT).show()
     }
 
     private fun setRollingShutterFrequency(frequency: Int) {
         if (!::cameraControl.isInitialized) {
-            Toast.makeText(this, "Camera is not initialized", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Camera control not initialized", Toast.LENGTH_SHORT).show()
             return
         }
 
         try {
             val exposureRange = cameraInfo.exposureState.exposureCompensationRange
-            val exposureCompensationIndex = when (frequency) {
-                50 -> 2  // Example index for 50Hz
-                60 -> -2  // Example index for 60Hz
-                else -> 0  // Default or normal
-            }
+            val exposureCompensationIndex = calculateExposureCompensationForFrequency(frequency)
 
             if (exposureCompensationIndex in exposureRange) {
                 cameraControl.setExposureCompensationIndex(exposureCompensationIndex)
-                Toast.makeText(this, "Rolling shutter frequency set to $frequency Hz", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Rolling shutter frequency adjusted to $frequency Hz", Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this, "Exposure compensation index out of range for frequency $frequency Hz", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Exposure out of range for $frequency Hz", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
-            Toast.makeText(this, "Error setting rolling shutter frequency: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Error setting frequency: ${e.message}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun calculateExposureCompensationForFrequency(frequency: Int): Int {
+        return when (frequency) {
+            in 5000..10000 -> 2
+            in 10001..15000 -> 1
+            else -> 0
+        }
+    }
+
+    // Allow low-light and long-range mode adjustments by listening for user-selected mode changes
+    private fun applyLightingMode() {
+        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+        val lightingMode = sharedPreferences.getString("lighting_mode", "normal")
+
+        val frequency = when (lightingMode) {
+            "low_light" -> 8000
+            "high_light" -> 15000
+            "normal" -> 10000
+            else -> 10000
+        }
+
+        setRollingShutterFrequency(frequency)
+        Toast.makeText(this, "Lighting mode set to $lightingMode with frequency $frequency Hz", Toast.LENGTH_SHORT).show()
     }
 
     private fun setupZoomControls() {
@@ -451,6 +489,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val SETTINGS_REQUEST_CODE = 1
+
         // Tag for logging
         private const val TAG = "Xamera"
 
@@ -490,25 +530,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-    private fun applyLightingMode() {
-        // Ensure cameraControl is initialized before applying settings
-        if (!::cameraControl.isInitialized) {
-            Toast.makeText(this, "Camera not initialized", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // Get the selected lighting mode from shared preferences
-        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
-        val lightingMode = sharedPreferences.getString("lighting_mode", "normal")
-
-        // Adjust camera settings based on the lighting mode
-        when (lightingMode) {
-            "low_light" -> setLowLightMode()
-            "high_light" -> setHighLightMode()
-            else -> setNormalMode()
-        }
-    }
-
     private fun setLowLightMode() {
         // Ensure exposure adjustment is possible
         val exposureRange = cameraInfo.exposureState.exposureCompensationRange
@@ -537,7 +558,8 @@ class MainActivity : AppCompatActivity() {
         videoPickerLauncher.launch(intent)
     }
 
-    // Function to process and save the video with OpenCV
+    // Function to process and save the video with OpenCV, including rolling shutter simulation
+// Function to process and save the video with OpenCV, including rolling shutter simulation
     private fun processVideoWithOpenCV(videoUri: Uri) {
         Toast.makeText(this, "Video selected: $videoUri", Toast.LENGTH_SHORT).show()
 
@@ -548,6 +570,18 @@ class MainActivity : AppCompatActivity() {
         val capture = org.opencv.videoio.VideoCapture(videoPath)
         if (!capture.isOpened) {
             Toast.makeText(this, "Failed to open video", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Retrieve user-defined rolling shutter parameters
+        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+        val frequency = sharedPreferences.getString("rolling_shutter_frequency", "10")?.toInt() ?: 10
+        val rowStep = sharedPreferences.getString("rolling_shutter_row_step", "5")?.toInt() ?: 5
+        val shiftAmount = sharedPreferences.getString("rolling_shutter_shift_amount", "5")?.toInt() ?: 5
+
+        // Validate that frequency is one of the allowed values (5, 10, 15, or 20)
+        if (frequency !in listOf(5, 10, 15, 20)) {
+            Toast.makeText(this, "Invalid frequency. Please choose 5, 10, 15, or 20 Hz.", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -584,8 +618,11 @@ class MainActivity : AppCompatActivity() {
             // Enhance brightness
             val enhancedFrame = enhanceBrightness(grayFrame)
 
+            // Apply rolling shutter simulation effect with user-defined parameters
+            val rollingShutterFrame = simulateRollingShutterEffect(enhancedFrame, rowStep, shiftAmount, frequency)
+
             // Detect contour blob and overlay center mass
-            val contourData = detectContourBlob(enhancedFrame)
+            val contourData = detectContourBlob(rollingShutterFrame)
             val overlayedFrame = contourData.second
 
             // Draw continuous trace line for detected center points
@@ -604,11 +641,37 @@ class MainActivity : AppCompatActivity() {
             // Write the processed frame to the output video
             writer.write(overlayedFrame)
         }
+
         // Release resources
         capture.release()
         writer.release()
         // Save the processed video to the gallery
         saveProcessedVideo(processedVideoFile)
+    }
+
+    // Function to simulate rolling shutter effect by modifying each row sequentially
+    private fun simulateRollingShutterEffect(
+        inputFrame: org.opencv.core.Mat,
+        rowStep: Int,
+        shiftAmount: Int,
+        frequency: Int
+    ): org.opencv.core.Mat {
+        val outputFrame = inputFrame.clone()
+
+        // Calculate the rolling effect delay based on frequency (lower frequency -> slower delay)
+        val delay = 1000 / frequency
+
+        for (y in 0 until outputFrame.rows() step rowStep) {
+            val roi = org.opencv.core.Rect(0, y, outputFrame.cols(), rowStep)
+            val rowChunk = org.opencv.core.Mat(outputFrame, roi)
+
+            // Apply a translation to simulate rolling shutter (shift by a small amount)
+            val translationMatrix = org.opencv.core.Mat.eye(2, 3, org.opencv.core.CvType.CV_32F)
+            translationMatrix.put(0, 2, (y / rowStep) * shiftAmount.toDouble()) // Vary shift based on row number
+            org.opencv.imgproc.Imgproc.warpAffine(rowChunk, rowChunk, translationMatrix, rowChunk.size())
+        }
+
+        return outputFrame
     }
 
     // Helper function to get absolute path from Uri

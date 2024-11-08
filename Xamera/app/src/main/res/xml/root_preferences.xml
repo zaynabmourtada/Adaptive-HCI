@@ -5,13 +5,31 @@
         android:title="Settings"
         android:layout="@layout/preference_category_layout">
 
-        <ListPreference
-            android:key="rolling_shutter_frequency"
-            android:title="Rolling Shutter Frequency"
-            android:defaultValue="60"
-            android:entries="@array/shutter_frequencies"
-            android:entryValues="@array/shutter_frequency_values"
-            android:summary="Set rolling shutter frequency to minimize flicker (e.g., 50Hz or 60Hz)." />
+        <!-- Rolling Shutter Frequency Settings with Range 5-20 kHz -->
+        <!-- Rolling Shutter Effect Settings -->
+        <PreferenceCategory android:title="Rolling Shutter Effect Settings">
+            <ListPreference
+                android:key="rolling_shutter_frequency"
+                android:title="Rolling Shutter Frequency"
+                android:summary="Set the frequency for the rolling shutter effect"
+                android:entries="@array/frequency_options"
+                android:entryValues="@array/frequency_values"
+                android:defaultValue="10" />
+
+            <EditTextPreference
+                android:key="rolling_shutter_row_step"
+                android:title="Row Step"
+                android:summary="Set the number of rows to process at a time (default is 5)"
+                android:inputType="number"
+                android:defaultValue="5" />
+
+            <EditTextPreference
+                android:key="rolling_shutter_shift_amount"
+                android:title="Shift Amount"
+                android:summary="Set the shift amount for the rolling shutter effect (default is 5)"
+                android:inputType="number"
+                android:defaultValue="5" />
+        </PreferenceCategory>
 
         <!-- Lighting Mode Settings -->
         <ListPreference
