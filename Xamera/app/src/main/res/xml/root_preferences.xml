@@ -5,6 +5,15 @@
         android:title="Settings"
         android:layout="@layout/preference_category_layout">
 
+        <!-- Shutter Speed Settings -->
+        <ListPreference
+            android:key="shutter_speed"
+            android:title="Rolling Shutter Speed"
+            android:summary="Select the rolling shutter speed (in Hz)"
+            android:entries="@array/shutter_speed_options"
+            android:entryValues="@array/shutter_speed_values"
+            android:defaultValue="60" />
+
         <!-- Lighting Mode Settings -->
         <ListPreference
             android:key="lighting_mode"
