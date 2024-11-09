@@ -2,6 +2,7 @@ package com.developer27.xamera
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.AppOpsManager
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -83,8 +84,13 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var textureView: TextureView
 
+    // Initialize the ActivityResultLauncher for video selection
+    private lateinit var videoPickerLauncher: ActivityResultLauncher<Intent>
+
     // Flag to track which camera is currently active
     private var isFrontCamera = false
+
+    private var shutterSpeed: Long = 1000000000L / 60 // Default to 1/60s in nanoseconds
 
     // Handler for camera preview surface texture availability
     private val textureListener = object : TextureView.SurfaceTextureListener {
@@ -129,9 +135,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ActivityResultLauncher for video selection
-    private lateinit var videoPickerLauncher: ActivityResultLauncher<Intent>
-
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -150,6 +153,19 @@ class MainActivity : AppCompatActivity() {
 
         // Initialize SharedPreferences
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+
+        sharedPreferences.registerOnSharedPreferenceChangeListener { prefs, key ->
+            if (key == "shutter_speed") {
+                // Get the updated shutter speed setting
+                val shutterSpeedSetting = prefs.getString("shutter_speed", "60")?.toInt() ?: 60
+                shutterSpeed = 1000000000L / shutterSpeedSetting // Convert to nanoseconds
+                updateShutterSpeed() // Apply the new shutter speed
+            }
+        }
+
+        // Load initial shutter speed from SharedPreferences
+        val shutterSpeedSetting = sharedPreferences.getString("shutter_speed", "60")?.toInt() ?: 60
+        shutterSpeed = 1000000000L / shutterSpeedSetting // Convert to nanoseconds
 
         // Initialize CameraManager
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -191,27 +207,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Initialize the ActivityResultLauncher for video selection
-        videoPickerLauncher = registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { result ->
-            if (result.resultCode == RESULT_OK) {
-                val data = result.data
-                val videoUri = data?.data
-                if (videoUri != null) {
-                    processVideoWithOpenCV(videoUri)
-                } else {
-                    Toast.makeText(this, "No video selected", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-
-        // Set up the button click listener to open video picker
-        viewBinding.processVideoButton.setOnClickListener {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+        // Initialize storage permission request launcher
+        requestStoragePermissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            if (isGranted) {
                 openVideoPicker()
             } else {
-                requestStoragePermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+                if (shouldShowRequestPermissionRationale(Manifest.permission.READ_EXTERNAL_STORAGE)) {
+                    showPermissionRationale()
+                } else {
+                    showPermissionDeniedDialog()
+                }
             }
         }
 
@@ -221,6 +228,22 @@ class MainActivity : AppCompatActivity() {
         } else {
             // Request permissions
             requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
+        }
+
+        // Initialize video picker launcher
+        videoPickerLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == RESULT_OK) {
+                result.data?.data?.let { videoUri ->
+                    processVideoWithOpenCV(videoUri)
+                } ?: Toast.makeText(this, "No video selected", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Set up video picker button
+        viewBinding.processVideoButton.setOnClickListener {
+            checkAndRequestStoragePermission()
         }
 
         // Make the Start Recording button visible
@@ -256,6 +279,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == SETTINGS_REQUEST_CODE && resultCode == RESULT_OK) {
+            // Reload the updated shutter speed
+            val shutterSpeedSetting = sharedPreferences.getString("shutter_speed", "60")?.toInt() ?: 60
+            shutterSpeed = 1000000000L / shutterSpeedSetting // Convert to nanoseconds
+            Toast.makeText(this, "Shutter speed updated", Toast.LENGTH_SHORT).show()
+            updateShutterSpeed()
+        }
+    }
+
     @SuppressLint("MissingPermission")
     override fun onResume() {
         super.onResume()
@@ -263,6 +297,7 @@ class MainActivity : AppCompatActivity() {
         if (textureView.isAvailable) {
             if (allPermissionsGranted()) {
                 openCamera()
+                updateShutterSpeed()  // Apply the shutter speed when the camera opens
             } else {
                 // Request permissions
                 requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
@@ -390,6 +425,7 @@ class MainActivity : AppCompatActivity() {
         try {
             // Do not recreate captureRequestBuilder; just update it
             captureRequestBuilder?.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+            updateShutterSpeed()
             applyFlashIfEnabled()
             applyLightingMode()
             cameraCaptureSessions?.setRepeatingRequest(captureRequestBuilder!!.build(), null, backgroundHandler)
@@ -429,52 +465,130 @@ class MainActivity : AppCompatActivity() {
 
     // Function to start video recording
     private fun startRecordingVideo() {
-        if (cameraDevice == null || !textureView.isAvailable || previewSize == null) {
-            return
-        }
-        try {
-            closePreviewSession()
-            setUpMediaRecorder()
-            val texture = textureView.surfaceTexture!!
-            texture.setDefaultBufferSize(previewSize!!.width, previewSize!!.height)
-            val previewSurface = Surface(texture)
-            val recorderSurface = mediaRecorder.surface
-            val surfaces = listOf(previewSurface, recorderSurface)
+            if (cameraDevice == null || !textureView.isAvailable || previewSize == null) {
+                return
+            }
+            try {
+                closePreviewSession()
+                setUpMediaRecorder()
+                val texture = textureView.surfaceTexture!!
+                texture.setDefaultBufferSize(previewSize!!.width, previewSize!!.height)
+                val previewSurface = Surface(texture)
+                val recorderSurface = mediaRecorder.surface
+                val surfaces = listOf(previewSurface, recorderSurface)
 
-            captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
-            captureRequestBuilder!!.addTarget(previewSurface)
-            captureRequestBuilder!!.addTarget(recorderSurface)
-            applyFlashIfEnabled()
-            applyLightingMode()
-            // Apply current zoom
-            applyZoom()
+                captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+                captureRequestBuilder!!.addTarget(previewSurface)
+                captureRequestBuilder!!.addTarget(recorderSurface)
 
-            cameraDevice!!.createCaptureSession(
-                surfaces,
-                object : CameraCaptureSession.StateCallback() {
-                    override fun onConfigured(session: CameraCaptureSession) {
-                        cameraCaptureSessions = session
-                        try {
-                            cameraCaptureSessions?.setRepeatingRequest(captureRequestBuilder!!.build(), null, backgroundHandler)
-                            runOnUiThread {
-                                viewBinding.startTrackingButton.text = "Stop Tracking"
-                                viewBinding.startTrackingButton.backgroundTintList = ColorStateList.valueOf(resources.getColor(R.color.red))
-                                isRecordingVideo = true
-                                mediaRecorder.start()
+                // Apply rolling shutter based on SharedPreferences setting
+                applyRollingShutter()
+
+                applyFlashIfEnabled()
+                applyLightingMode()
+                applyZoom()
+
+                cameraDevice!!.createCaptureSession(
+                    surfaces,
+                    object : CameraCaptureSession.StateCallback() {
+                        override fun onConfigured(session: CameraCaptureSession) {
+                            cameraCaptureSessions = session
+                            try {
+                                cameraCaptureSessions?.setRepeatingRequest(captureRequestBuilder!!.build(), null, backgroundHandler)
+                                runOnUiThread {
+                                    viewBinding.startTrackingButton.text = "Stop Tracking"
+                                    viewBinding.startTrackingButton.backgroundTintList = ColorStateList.valueOf(resources.getColor(R.color.red))
+                                    isRecordingVideo = true
+                                    mediaRecorder.start()
+                                }
+                            } catch (e: CameraAccessException) {
+                                e.printStackTrace()
                             }
-                        } catch (e: CameraAccessException) {
-                            e.printStackTrace()
                         }
-                    }
 
-                    override fun onConfigureFailed(session: CameraCaptureSession) {
-                        Toast.makeText(this@MainActivity, "Failed to start camera session", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                backgroundHandler
-            )
-        } catch (e: Exception) {
-            e.printStackTrace()
+                        override fun onConfigureFailed(session: CameraCaptureSession) {
+                            Toast.makeText(this@MainActivity, "Failed to start camera session", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    backgroundHandler
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+    }
+
+        private fun applyRollingShutter() {
+        // Retrieve the selected shutter speed setting from SharedPreferences
+        val shutterSpeedSetting = sharedPreferences.getString("shutter_speed", "15")?.toInt() ?: 15
+        val shutterSpeedValue = if (shutterSpeedSetting >= 5) 1000000000L / shutterSpeedSetting else 0L
+
+        captureRequestBuilder?.apply {
+            if (shutterSpeedValue > 0) {
+                // Apply the calculated shutter speed based on user setting
+                set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_OFF)
+                set(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterSpeedValue)
+                Toast.makeText(this@MainActivity, "Rolling shutter speed applied: $shutterSpeedSetting Hz", Toast.LENGTH_SHORT).show()
+            } else {
+                // If "Off" is selected, use default automatic mode
+                set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+                Toast.makeText(this@MainActivity, "Rolling shutter off", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+
+    private fun updateShutterSpeed() {
+        // Retrieve the selected shutter speed from SharedPreferences
+        val shutterSpeedSetting = sharedPreferences.getString("shutter_speed", "15")?.toInt() ?: 15
+        val shutterSpeedValue = 1000000000L / shutterSpeedSetting // Convert to nanoseconds
+
+        captureRequestBuilder?.apply {
+            set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_OFF) // Manual control
+
+            if (shutterSpeedSetting >= 5) {
+                // Apply the calculated shutter speed for selected Hz values
+                set(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterSpeedValue)
+            } else {
+                // Default to auto control if shutter speed is not set (shouldn't be lower than 5 Hz)
+                set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+            }
+
+            // Retrieve the camera's exposure compensation range
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            val exposureRange = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
+
+            // Apply exposure compensation based on selected shutter speed value
+            var exposureCompensation = 0
+            if (exposureRange != null && shutterSpeedSetting >= 5) {
+                exposureCompensation = when (shutterSpeedSetting) {
+                    5 -> exposureRange.lower // Lowest compensation for 5 Hz
+                    10 -> exposureRange.lower / 2 // Reduced compensation for 10 Hz
+                    15 -> exposureRange.lower // Minimal compensation for 15 Hz
+                    50 -> exposureRange.lower
+                    100 -> (exposureRange.lower + exposureRange.upper) / 4
+                    200 -> exposureRange.upper / 2
+                    250 -> (3 * exposureRange.upper) / 4
+                    500 -> exposureRange.upper
+                    else -> 0
+                }
+                set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, exposureCompensation)
+            }
+
+            try {
+                // Apply the capture request with updated settings
+                cameraCaptureSessions?.setRepeatingRequest(build(), null, backgroundHandler)
+
+                // Log and Toast messages to verify the correct values
+                val shutterSpeedText = "1/$shutterSpeedSetting Hz"
+                Log.d("RollingShutterUpdate", "Set shutter speed to $shutterSpeedText with exposure compensation: $exposureCompensation")
+                Toast.makeText(
+                    this@MainActivity,
+                    "Shutter speed set to $shutterSpeedText with exposure compensation: $exposureCompensation",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } catch (e: CameraAccessException) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -679,6 +793,27 @@ class MainActivity : AppCompatActivity() {
         )
         captureRequestBuilder!!.set(CaptureRequest.SCALER_CROP_REGION, zoomRect)
         cameraCaptureSessions?.setRepeatingRequest(captureRequestBuilder!!.build(), null, backgroundHandler)
+    }
+
+    // Function to check and request storage permission, specifically for Motorola devices
+    private fun checkAndRequestStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            // Use AppOpsManager to check permission more directly
+            val appOpsManager = getSystemService(AppOpsManager::class.java)
+            val mode = appOpsManager.checkOpNoThrow(
+                AppOpsManager.OPSTR_READ_EXTERNAL_STORAGE,
+                applicationInfo.uid,
+                packageName
+            )
+
+            if (mode != AppOpsManager.MODE_ALLOWED && !allPermissionsGranted()) {
+                requestStoragePermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            } else {
+                openVideoPicker()
+            }
+        } else {
+            openVideoPicker()
+        }
     }
 
     // Function to open video picker
