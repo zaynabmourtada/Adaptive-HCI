@@ -1,158 +1,194 @@
 package com.developer27.xamera
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.graphics.Rect
+import android.graphics.SurfaceTexture
+import android.hardware.camera2.*
+import android.media.CamcorderProfile
+import android.media.MediaRecorder
 import android.net.Uri
-import android.os.Build
-import android.os.Bundle
-import android.os.Environment
-import android.os.Handler
-import android.os.Looper
+import android.os.*
 import android.preference.PreferenceManager
 import android.provider.MediaStore
 import android.util.Log
+import android.util.Size
+import android.util.SparseIntArray
+import android.view.*
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresPermission
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.CameraControl
-import androidx.camera.core.CameraInfo
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.video.MediaStoreOutputOptions
-import androidx.camera.video.Recorder
-import androidx.camera.video.Recording
-import androidx.camera.video.VideoCapture
-import androidx.camera.video.VideoRecordEvent
 import androidx.core.content.ContextCompat
 import com.developer27.xamera.databinding.ActivityMainBinding
+import kotlinx.coroutines.*
+import org.opencv.android.OpenCVLoader
+import org.opencv.core.*
+import org.opencv.imgproc.Imgproc
+import org.opencv.videoio.VideoCapture
+import org.opencv.videoio.VideoWriter
+import org.opencv.videoio.Videoio
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.Locale
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import org.opencv.android.OpenCVLoader
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.util.*
 
 class MainActivity : AppCompatActivity() {
 
     // Binding object to access views
     private lateinit var viewBinding: ActivityMainBinding
 
-    // Object for capturing videos
-    private var videoCapture: VideoCapture<Recorder>? = null
-
-    // Keeps track of video recording session
-    private var recording: Recording? = null
-
-    // Executor for running camera operations on a background thread
-    private lateinit var cameraExecutor: ExecutorService
-
-    // Camera selector for front or back camera
-    private var cameraSelector: CameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+    // SharedPreferences
     private lateinit var sharedPreferences: SharedPreferences
 
-    // Camera and zoom ratio variables
-    private lateinit var cameraControl: CameraControl
-    private lateinit var cameraInfo: CameraInfo
-    private var zoomLevel = 1.0f
-    private val maxZoom = 5.0f
+    // Camera2 API variables
+    private lateinit var cameraManager: CameraManager
+    private var cameraDevice: CameraDevice? = null
+    private lateinit var cameraId: String
+    private var previewSize: Size? = null
+    private var videoSize: Size? = null
+    private var cameraCaptureSessions: CameraCaptureSession? = null
+    private var captureRequestBuilder: CaptureRequest.Builder? = null
 
-    // Declare the ActivityResultLauncher at the top
+    // Handler for camera operations
+    private var backgroundHandler: Handler? = null
+    private var backgroundThread: HandlerThread? = null
+
+    // MediaRecorder for video recording
+    private lateinit var mediaRecorder: MediaRecorder
+    private lateinit var videoFile: File
+    private var isRecordingVideo = false
+
+    // Zoom variables
+    private var zoomLevel = 1.0f
+    private val maxZoom = 10.0f
+    private var sensorArraySize: Rect? = null
+
+    // Permissions required at startup
+    private val REQUIRED_PERMISSIONS = arrayOf(
+        Manifest.permission.CAMERA,
+        Manifest.permission.RECORD_AUDIO
+    )
+
+    // Declare the ActivityResultLauncher for permissions
+    private lateinit var requestPermissionLauncher: ActivityResultLauncher<Array<String>>
+    private lateinit var requestStoragePermissionLauncher: ActivityResultLauncher<String>
+
+    private lateinit var textureView: TextureView
+
+    // Flag to track which camera is currently active
+    private var isFrontCamera = false
+
+    // Handler for camera preview surface texture availability
+    private val textureListener = object : TextureView.SurfaceTextureListener {
+        @SuppressLint("MissingPermission")
+        override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+            // Open the camera here if permissions are granted
+            if (allPermissionsGranted()) {
+                openCamera()
+            } else {
+                requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
+            }
+        }
+
+        override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+            // Handle size changes if needed
+        }
+
+        override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+            return false
+        }
+
+        override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+    }
+
+    // CameraDevice state callback
+    private val stateCallback = object : CameraDevice.StateCallback() {
+        override fun onOpened(camera: CameraDevice) {
+            // This is called when the camera is open
+            cameraDevice = camera
+            createCameraPreview()
+        }
+
+        override fun onDisconnected(camera: CameraDevice) {
+            cameraDevice?.close()
+            cameraDevice = null
+        }
+
+        override fun onError(camera: CameraDevice, error: Int) {
+            cameraDevice?.close()
+            cameraDevice = null
+            finish()
+        }
+    }
+
+    // ActivityResultLauncher for video selection
     private lateinit var videoPickerLauncher: ActivityResultLauncher<Intent>
 
+    @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Inflate the layout and bind views
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
 
-        if (OpenCVLoader.initLocal()) {
+        // Initialize OpenCV
+        if (OpenCVLoader.initDebug()) {
             Log.i(TAG, "OpenCV loaded successfully")
-        }
-        else
-        {
+        } else {
             Log.e(TAG, "OpenCV initialization failed!")
-            (Toast.makeText(this, "OpenCV initialization failed!", Toast.LENGTH_LONG)).show()
+            Toast.makeText(this, "OpenCV initialization failed!", Toast.LENGTH_LONG).show()
             return
         }
 
-        // Request camera permissions. If granted, start the camera; otherwise, request permissions.
-        if (allPermissionsGranted()) {
-            startCamera()
-        } else {
-            requestPermissions()
-        }
-
-        // Set up listener for the "Capture Video" button
-        viewBinding.videoCaptureButton.setOnClickListener {
-            captureVideo()
-            applyFlashIfEnabled() // Apply flash setting if enabled
-        }
-
-        // Apply flash setting once on camera start
-        applyFlashIfEnabled()
-
-        // Set up listener for the "Switch Camera" button
-        viewBinding.switchCameraButton.setOnClickListener {
-            // Toggle between front and back camera
-            cameraSelector = if (cameraSelector == CameraSelector.DEFAULT_BACK_CAMERA) {
-                CameraSelector.DEFAULT_FRONT_CAMERA
-            } else {
-                CameraSelector.DEFAULT_BACK_CAMERA
-            }
-
-            // Restart the camera to apply the new camera selector
-            startCamera()
-        }
-
-        // Initialize the executor for camera operations
-        cameraExecutor = Executors.newSingleThreadExecutor()
-
-        // Set up zoom controls
-        setupZoomControls()
-
-        // Start camera and apply lighting mode settings
-        cameraExecutor = Executors.newSingleThreadExecutor()
-        startCamera()
-
-        // Set up listener for iconImageButton
-        viewBinding.aboutButton.setOnClickListener {
-            val intent = Intent(this, AboutXameraActivity::class.java)
-            startActivity(intent)
-        }
-
-        // Initialize the camera executor
-        cameraExecutor = Executors.newSingleThreadExecutor()
-
-        // Set up settings button to open the settings activity
-        viewBinding.settingsButton.setOnClickListener {
-            val intent = Intent(this, SettingsActivity::class.java)
-            startActivityForResult(intent, SETTINGS_REQUEST_CODE)
-        }
-
-        // Register shared preferences listener to detect changes in settings
+        // Initialize SharedPreferences
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
-        sharedPreferences.registerOnSharedPreferenceChangeListener { _, key ->
-            if (key == "lighting_mode") {
-                applyLightingMode()
-                Toast.makeText(this, "Lighting mode updated", Toast.LENGTH_SHORT).show()
+
+        // Initialize CameraManager
+        cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+
+        // Initialize TextureView
+        textureView = viewBinding.viewFinder
+
+        // Initialize the ActivityResultLauncher for requesting permissions
+        requestPermissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+            val cameraPermissionGranted = permissions[Manifest.permission.CAMERA] ?: false
+            val audioPermissionGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
+
+            if (cameraPermissionGranted && audioPermissionGranted) {
+                if (textureView.isAvailable) {
+                    openCamera()
+                } else {
+                    textureView.surfaceTextureListener = textureListener
+                }
+            } else {
+                Toast.makeText(this, "Camera and Audio permissions are required.", Toast.LENGTH_SHORT).show()
+                // Optionally disable camera functionality or guide the user
             }
         }
 
-        // Start the camera
-        if (allPermissionsGranted()) {
-            startCamera()
-        } else {
-            requestPermissions()
+        // Initialize the ActivityResultLauncher for requesting storage permission
+        requestStoragePermissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            if (isGranted) {
+                openVideoPicker()
+            } else {
+                if (shouldShowRequestPermissionRationale(Manifest.permission.READ_EXTERNAL_STORAGE)) {
+                    showPermissionRationale()
+                } else {
+                    showPermissionDeniedDialog()
+                }
+            }
         }
 
         // Initialize the ActivityResultLauncher for video selection
@@ -160,223 +196,456 @@ class MainActivity : AppCompatActivity() {
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
             if (result.resultCode == RESULT_OK) {
-                val selectedVideoUri: Uri? = result.data?.data
-                if (selectedVideoUri != null) {
-                    processVideoWithOpenCV(selectedVideoUri)  // Pass Uri directly
+                val data = result.data
+                val videoUri = data?.data
+                if (videoUri != null) {
+                    processVideoWithOpenCV(videoUri)
                 } else {
                     Toast.makeText(this, "No video selected", Toast.LENGTH_SHORT).show()
                 }
-            } else {
-                Toast.makeText(this, "Video selection canceled", Toast.LENGTH_SHORT).show()
             }
         }
 
-        // Set up the button click listener to open Google Photos
+        // Set up the button click listener to open video picker
         viewBinding.processVideoButton.setOnClickListener {
-            openVideoPicker()
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+                openVideoPicker()
+            } else {
+                requestStoragePermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+        }
+
+        // Check permissions and request if not granted
+        if (allPermissionsGranted()) {
+            textureView.surfaceTextureListener = textureListener
+        } else {
+            // Request permissions
+            requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
+        }
+
+        // Make the Start Recording button visible
+        viewBinding.startTrackingButton.visibility = View.VISIBLE
+
+        // Set up listener for the Start Recording button
+        viewBinding.startTrackingButton.setOnClickListener {
+            if (isRecordingVideo) {
+                stopRecordingVideo()
+            } else {
+                startRecordingVideo()
+            }
+        }
+
+        // Set up listener for the "Switch Camera" button
+        viewBinding.switchCameraButton.setOnClickListener {
+            switchCamera()
+        }
+
+        // Set up zoom controls
+        setupZoomControls()
+
+        // Set up listener for about button
+        viewBinding.aboutButton.setOnClickListener {
+            val intent = Intent(this, AboutXameraActivity::class.java)
+            startActivity(intent)
+        }
+
+        // Set up settings button to open the settings activity
+        viewBinding.settingsButton.setOnClickListener {
+            val intent = Intent(this, SettingsActivity::class.java)
+            startActivityForResult(intent, SETTINGS_REQUEST_CODE)
         }
     }
 
-    // Function to start video recording or stop if already recording
-    private fun captureVideo() {
-        val videoCapture = this.videoCapture ?: return
+    @SuppressLint("MissingPermission")
+    override fun onResume() {
+        super.onResume()
+        startBackgroundThread()
+        if (textureView.isAvailable) {
+            if (allPermissionsGranted()) {
+                openCamera()
+            } else {
+                // Request permissions
+                requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
+            }
+        } else {
+            textureView.surfaceTextureListener = textureListener
+        }
+    }
 
-        // Disable the capture button while recording is starting
-        viewBinding.videoCaptureButton.isEnabled = false
+    override fun onPause() {
+        if (isRecordingVideo) {
+            stopRecordingVideo()
+        }
+        closeCamera()
+        stopBackgroundThread()
+        super.onPause()
+    }
 
-        // Disable switch camera button while recording
-        viewBinding.switchCameraButton.isEnabled = false
+    // Function to check if all required permissions are granted
+    private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
+        ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+    }
 
-        val curRecording = recording
-        if (curRecording != null) {
-            // Stop the current recording
-            curRecording.stop()
-            recording = null
+    // Function to open the camera
+    @RequiresPermission(Manifest.permission.CAMERA)
+    private fun openCamera() {
+        try {
+            cameraId = getCameraId()
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            sensorArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+            val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            if (map == null) {
+                Toast.makeText(this, "Cannot get available preview sizes", Toast.LENGTH_SHORT).show()
+                return
+            }
+            previewSize = chooseOptimalSize(map.getOutputSizes(SurfaceTexture::class.java))
+            videoSize = chooseOptimalSize(map.getOutputSizes(MediaRecorder::class.java))
+
+            // Use the Handler instead of Executor
+            cameraManager.openCamera(cameraId, stateCallback, backgroundHandler)
+        } catch (e: CameraAccessException) {
+            e.printStackTrace()
+        } catch (e: SecurityException) {
+            e.printStackTrace()
+            Toast.makeText(this, "Camera permission is required.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Function to choose the optimal size for preview
+    private fun chooseOptimalSize(choices: Array<Size>): Size {
+        // For simplicity, choose the first size available
+        return choices[0]
+    }
+
+    // Function to get the camera ID based on the selected camera (front/back)
+    private fun getCameraId(): String {
+        for (id in cameraManager.cameraIdList) {
+            val characteristics = cameraManager.getCameraCharacteristics(id)
+            val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
+            if (facing == CameraCharacteristics.LENS_FACING_BACK && !isFrontCamera) {
+                return id
+            } else if (facing == CameraCharacteristics.LENS_FACING_FRONT && isFrontCamera) {
+                return id
+            }
+        }
+        return cameraManager.cameraIdList[0] // Default to first camera
+    }
+
+    // Function to switch between front and back camera
+    private fun switchCamera() {
+        isFrontCamera = !isFrontCamera
+        closeCamera()
+        reopenCamera()
+    }
+
+    // Function to reopen the camera after switching
+    @SuppressLint("MissingPermission")
+    private fun reopenCamera() {
+        if (textureView.isAvailable) {
+            if (allPermissionsGranted()) {
+                openCamera()
+            } else {
+                // Request permissions
+                requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
+            }
+        } else {
+            textureView.surfaceTextureListener = textureListener
+        }
+    }
+
+    // Function to create camera preview
+    private fun createCameraPreview() {
+        try {
+            val texture = textureView.surfaceTexture!!
+            texture.setDefaultBufferSize(previewSize!!.width, previewSize!!.height)
+            val surface = Surface(texture)
+            captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+            captureRequestBuilder!!.addTarget(surface)
+            // Apply current zoom
+            applyZoom()
+
+            cameraDevice!!.createCaptureSession(
+                listOf(surface),
+                object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(session: CameraCaptureSession) {
+                        if (cameraDevice == null) return
+                        cameraCaptureSessions = session
+                        updatePreview()
+                    }
+
+                    override fun onConfigureFailed(session: CameraCaptureSession) {
+                        Toast.makeText(this@MainActivity, "Configuration change", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                backgroundHandler
+            )
+        } catch (e: CameraAccessException) {
+            e.printStackTrace()
+        }
+    }
+
+    // Function to update camera preview
+    private fun updatePreview() {
+        if (cameraDevice == null) return
+        try {
+            // Do not recreate captureRequestBuilder; just update it
+            captureRequestBuilder?.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+            applyFlashIfEnabled()
+            applyLightingMode()
+            cameraCaptureSessions?.setRepeatingRequest(captureRequestBuilder!!.build(), null, backgroundHandler)
+        } catch (e: CameraAccessException) {
+            e.printStackTrace()
+        }
+    }
+
+    // Function to start background thread
+    private fun startBackgroundThread() {
+        backgroundThread = HandlerThread("Camera Background").also { it.start() }
+        backgroundHandler = Handler(backgroundThread!!.looper)
+    }
+
+    // Function to stop background thread
+    private fun stopBackgroundThread() {
+        backgroundThread?.quitSafely()
+        try {
+            backgroundThread?.join()
+            backgroundThread = null
+            backgroundHandler = null
+        } catch (e: InterruptedException) {
+            e.printStackTrace()
+        }
+    }
+
+    // Function to close the camera
+    private fun closeCamera() {
+        cameraCaptureSessions?.close()
+        cameraCaptureSessions = null
+        cameraDevice?.close()
+        cameraDevice = null
+        if (this::mediaRecorder.isInitialized) {
+            mediaRecorder.release()
+        }
+    }
+
+    // Function to start video recording
+    private fun startRecordingVideo() {
+        if (cameraDevice == null || !textureView.isAvailable || previewSize == null) {
             return
         }
+        try {
+            closePreviewSession()
+            setUpMediaRecorder()
+            val texture = textureView.surfaceTexture!!
+            texture.setDefaultBufferSize(previewSize!!.width, previewSize!!.height)
+            val previewSurface = Surface(texture)
+            val recorderSurface = mediaRecorder.surface
+            val surfaces = listOf(previewSurface, recorderSurface)
 
-        // Create a timestamped file name and content values for the video file
-        val name = SimpleDateFormat(FILENAME_FORMAT, Locale.US)
-            .format(System.currentTimeMillis())
+            captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+            captureRequestBuilder!!.addTarget(previewSurface)
+            captureRequestBuilder!!.addTarget(recorderSurface)
+            applyFlashIfEnabled()
+            applyLightingMode()
+            // Apply current zoom
+            applyZoom()
+
+            cameraDevice!!.createCaptureSession(
+                surfaces,
+                object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(session: CameraCaptureSession) {
+                        cameraCaptureSessions = session
+                        try {
+                            cameraCaptureSessions?.setRepeatingRequest(captureRequestBuilder!!.build(), null, backgroundHandler)
+                            runOnUiThread {
+                                viewBinding.startTrackingButton.text = "Stop Tracking"
+                                viewBinding.startTrackingButton.backgroundTintList = ColorStateList.valueOf(resources.getColor(R.color.red))
+                                isRecordingVideo = true
+                                mediaRecorder.start()
+                            }
+                        } catch (e: CameraAccessException) {
+                            e.printStackTrace()
+                        }
+                    }
+
+                    override fun onConfigureFailed(session: CameraCaptureSession) {
+                        Toast.makeText(this@MainActivity, "Failed to start camera session", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                backgroundHandler
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // Function to stop video recording
+    private fun stopRecordingVideo() {
+        // Stop recording
+        isRecordingVideo = false
+        try {
+            cameraCaptureSessions?.stopRepeating()
+            cameraCaptureSessions?.abortCaptures()
+        } catch (e: CameraAccessException) {
+            e.printStackTrace()
+        }
+        mediaRecorder.stop()
+        mediaRecorder.reset()
+        // Save the video to the gallery
+        saveVideoToGallery(videoFile)
+        runOnUiThread {
+            // Update UI
+            viewBinding.startTrackingButton.text = "Start Tracking"
+            viewBinding.startTrackingButton.backgroundTintList = ColorStateList.valueOf(resources.getColor(R.color.blue))
+            // Show where the video was saved
+            Toast.makeText(this, "Video saved to gallery", Toast.LENGTH_SHORT).show()
+        }
+        // Restart the camera preview
+        createCameraPreview()
+    }
+
+    // Function to set up MediaRecorder
+    private fun setUpMediaRecorder() {
+        mediaRecorder = MediaRecorder()
+
+        // Set the audio and video sources
+        mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+        mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE)
+
+        // Use CamcorderProfile to set output format and encoders
+        val profile = if (CamcorderProfile.hasProfile(CamcorderProfile.QUALITY_HIGH)) {
+            CamcorderProfile.get(CamcorderProfile.QUALITY_HIGH)
+        } else {
+            CamcorderProfile.get(CamcorderProfile.QUALITY_LOW)
+        }
+        mediaRecorder.setProfile(profile)
+
+        // Set the output file
+        videoFile = createVideoFile()
+        mediaRecorder.setOutputFile(videoFile.absolutePath)
+
+        // Set the orientation hint
+        val rotation = windowManager.defaultDisplay.rotation
+        val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+        val sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION)!!
+        val deviceRotation = ORIENTATIONS.get(rotation)
+        val totalRotation = (sensorOrientation + deviceRotation + 360) % 360
+        mediaRecorder.setOrientationHint(totalRotation)
+
+        mediaRecorder.prepare()
+    }
+
+    // Function to create video file
+    private fun createVideoFile(): File {
+        val timestamp = SimpleDateFormat(FILENAME_FORMAT, Locale.US).format(System.currentTimeMillis())
+        val storageDir = getExternalFilesDir(Environment.DIRECTORY_MOVIES)
+        return File.createTempFile("VID_$timestamp", ".mp4", storageDir)
+    }
+
+    // Function to save video to gallery
+    private fun saveVideoToGallery(videoFile: File) {
         val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, videoFile.name)
             put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-            // Set the relative path for saving the video (for Android versions above P)
-            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
-                put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Xamera-Videos")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Xamera-Videos")
+            } else {
+                val moviesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+                val file = File(moviesDir, videoFile.name)
+                videoFile.copyTo(file, overwrite = true)
+                videoFile.delete()
+                return
             }
         }
-
-        // Set up output options for video file
-        val mediaStoreOutputOptions = MediaStoreOutputOptions
-            .Builder(contentResolver, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
-            .setContentValues(contentValues)
-            .build()
-
-        // Prepare and start a new recording session
-        recording = videoCapture.output
-            .prepareRecording(this, mediaStoreOutputOptions)
-            .apply {
-                // Enable audio if permission is granted
-                if (ContextCompat.checkSelfPermission(
-                        this@MainActivity,
-                        Manifest.permission.RECORD_AUDIO
-                    ) == PackageManager.PERMISSION_GRANTED
-                ) {
-                    withAudioEnabled()
+        val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+        if (uri != null) {
+            contentResolver.openOutputStream(uri).use { outputStream ->
+                videoFile.inputStream().use { inputStream ->
+                    inputStream.copyTo(outputStream!!)
                 }
             }
-            .start(ContextCompat.getMainExecutor(this)) { recordEvent ->
-                when (recordEvent) {
-                    // Handle recording start event
-                    is VideoRecordEvent.Start -> {
-                        viewBinding.videoCaptureButton.apply {
-                            text = getString(R.string.stop_capture)
-                            backgroundTintList = ColorStateList.valueOf(
-                                ContextCompat.getColor(context, R.color.red)
-                            )
-                            //Change title title text to red
-                            viewBinding.titleText.apply {
-                                backgroundTintList = ColorStateList.valueOf(
-                                    ContextCompat.getColor(context, R.color.red)
-                                )
-                            }
-                            isEnabled = true
-                        }
-                    }
-                    // Handle recording stop and finalize event
-                    is VideoRecordEvent.Finalize -> {
-                        if (!recordEvent.hasError()) {
-                            val msg = "Video capture succeeded: ${recordEvent.outputResults.outputUri}"
-                            Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
-                            Log.d(TAG, msg)
-                        } else {
-                            recording?.close()
-                            recording = null
-                            Log.e(TAG, "Video capture ends with error: ${recordEvent.error}")
-                        }
-                        viewBinding.videoCaptureButton.apply {
-                            text = getString(R.string.start_capture)
-                            backgroundTintList = ColorStateList.valueOf(
-                                ContextCompat.getColor(context, R.color.blue)
-                            )
-                            //Change title title text to blue
-                            viewBinding.titleText.apply {
-                                backgroundTintList = ColorStateList.valueOf(
-                                    ContextCompat.getColor(context, R.color.darkBlue)
-                                )
-                            }
-                            isEnabled = true
-                        }
-                        // Re-enable switch camera button
-                        viewBinding.switchCameraButton.isEnabled = true
-
-                        // Turn off the flash after the recording is finalized
-                        cameraControl.enableTorch(false)
-                    }
-                }
-            }
-    }
-
-    // Function to start the camera preview and set up video capture
-    private fun startCamera() {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-
-        cameraProviderFuture.addListener({
-            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(viewBinding.viewFinder.surfaceProvider)
-            }
-
-            videoCapture = VideoCapture.withOutput(Recorder.Builder().build())
-
-            try {
-                cameraProvider.unbindAll()
-                val camera = cameraProvider.bindToLifecycle(this, cameraSelector, preview, videoCapture)
-                cameraControl = camera.cameraControl  // Initialize cameraControl here
-                cameraInfo = camera.cameraInfo
-
-                // Set initial zoom level to 1.0 (no zoom)
-                zoomLevel = 1.0f
-                cameraControl.setLinearZoom(zoomLevel / maxZoom)
-
-            } catch (exc: Exception) {
-                Toast.makeText(this, "Use case binding failed: ${exc.message}", Toast.LENGTH_SHORT).show()
-            }
-        }, ContextCompat.getMainExecutor(this))
-    }
-
-    // Allow low-light and long-range mode adjustments by listening for user-selected mode changes
-    private fun applyLightingMode() {
-        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
-        val lightingMode = sharedPreferences.getString("lighting_mode", "normal")
-
-        when (lightingMode) {
-            "low_light" -> setLowLightMode()
-            "high_light" -> setHighLightMode()
-            "normal" -> setNormalMode()
+            // Delete the temp file
+            videoFile.delete()
         }
     }
 
-    private fun setupZoomControls() {
-        val handler = Handler(Looper.getMainLooper())
-
-        // Zoom in on short press
-        viewBinding.zoomInButton.setOnClickListener {
-            zoomIn()
-        }
-
-        // Zoom out on short press
-        viewBinding.zoomOutButton.setOnClickListener {
-            zoomOut()
-        }
-
-        // Continuous zoom in on long press
-        viewBinding.zoomInButton.setOnLongClickListener {
-            handler.post(object : Runnable {
-                override fun run() {
-                    zoomIn()
-                    handler.postDelayed(this, 100) // Repeat every 100ms
-                }
-            })
-            true // Return true to indicate the event has been handled
-        }
-
-        // Continuous zoom out on long press
-        viewBinding.zoomOutButton.setOnLongClickListener {
-            handler.post(object : Runnable {
-                override fun run() {
-                    zoomOut()
-                    handler.postDelayed(this, 100) // Repeat every 100ms
-                }
-            })
-            true // Return true to indicate the event has been handled
-        }
-
-        // Stop zooming when the buttons are released
-        viewBinding.zoomInButton.setOnTouchListener { _, event ->
-            if (event.action == android.view.MotionEvent.ACTION_UP || event.action == android.view.MotionEvent.ACTION_CANCEL) {
-                handler.removeCallbacksAndMessages(null) // Stop continuous zooming
-            }
-            false
-        }
-
-        viewBinding.zoomOutButton.setOnTouchListener { _, event ->
-            if (event.action == android.view.MotionEvent.ACTION_UP || event.action == android.view.MotionEvent.ACTION_CANCEL) {
-                handler.removeCallbacksAndMessages(null) // Stop continuous zooming
-            }
-            false
-        }
+    // Function to close the preview session
+    private fun closePreviewSession() {
+        cameraCaptureSessions?.close()
+        cameraCaptureSessions = null
     }
 
     // Function to apply flash if enabled
     private fun applyFlashIfEnabled() {
-        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
         val isFlashEnabled = sharedPreferences.getBoolean("enable_flash", false)
+        captureRequestBuilder?.set(
+            CaptureRequest.FLASH_MODE,
+            if (isFlashEnabled) CaptureRequest.FLASH_MODE_TORCH else CaptureRequest.FLASH_MODE_OFF
+        )
+    }
 
-        if (::cameraControl.isInitialized) {
-            cameraControl.enableTorch(isFlashEnabled)  // Enable or disable flash
+    // Function to apply lighting mode
+    private fun applyLightingMode() {
+        val lightingMode = sharedPreferences.getString("lighting_mode", "normal")
+        val compensationRange = cameraManager.getCameraCharacteristics(cameraId)
+            .get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
+        val exposureCompensation = when (lightingMode) {
+            "low_light" -> compensationRange?.lower ?: 0
+            "high_light" -> compensationRange?.upper ?: 0
+            "normal" -> 0
+            else -> 0
+        }
+        captureRequestBuilder?.set(
+            CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION,
+            exposureCompensation
+        )
+    }
+
+    // Function to set up zoom controls with continuous zoom
+    private fun setupZoomControls() {
+        val zoomHandler = Handler(Looper.getMainLooper())
+        var zoomInRunnable: Runnable? = null
+        var zoomOutRunnable: Runnable? = null
+
+        // Continuous zoom in on long press
+        viewBinding.zoomInButton.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    zoomInRunnable = object : Runnable {
+                        override fun run() {
+                            zoomIn()
+                            zoomHandler.postDelayed(this, 50) // Adjust delay as needed
+                        }
+                    }
+                    zoomHandler.post(zoomInRunnable!!)
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    zoomHandler.removeCallbacks(zoomInRunnable!!)
+                    true
+                }
+                else -> false
+            }
+        }
+
+        // Continuous zoom out on long press
+        viewBinding.zoomOutButton.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    zoomOutRunnable = object : Runnable {
+                        override fun run() {
+                            zoomOut()
+                            zoomHandler.postDelayed(this, 50) // Adjust delay as needed
+                        }
+                    }
+                    zoomHandler.post(zoomOutRunnable!!)
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    zoomHandler.removeCallbacks(zoomOutRunnable!!)
+                    true
+                }
+                else -> false
+            }
         }
     }
 
@@ -384,7 +653,7 @@ class MainActivity : AppCompatActivity() {
     private fun zoomIn() {
         if (zoomLevel < maxZoom) {
             zoomLevel += 0.1f
-            cameraControl.setLinearZoom(zoomLevel / maxZoom)
+            applyZoom()
         }
     }
 
@@ -392,100 +661,27 @@ class MainActivity : AppCompatActivity() {
     private fun zoomOut() {
         if (zoomLevel > 1.0f) {
             zoomLevel -= 0.1f
-            cameraControl.setLinearZoom(zoomLevel / maxZoom)
+            applyZoom()
         }
     }
 
-    // Function to request camera and audio permissions
-    private fun requestPermissions() {
-        activityResultLauncher.launch(REQUIRED_PERMISSIONS)
+    // Function to apply zoom
+    private fun applyZoom() {
+        if (sensorArraySize == null || captureRequestBuilder == null) return
+        val ratio = 1 / zoomLevel
+        val croppedWidth = sensorArraySize!!.width() * ratio
+        val croppedHeight = sensorArraySize!!.height() * ratio
+        val zoomRect = Rect(
+            ((sensorArraySize!!.width() - croppedWidth) / 2).toInt(),
+            ((sensorArraySize!!.height() - croppedHeight) / 2).toInt(),
+            ((sensorArraySize!!.width() + croppedWidth) / 2).toInt(),
+            ((sensorArraySize!!.height() + croppedHeight) / 2).toInt()
+        )
+        captureRequestBuilder!!.set(CaptureRequest.SCALER_CROP_REGION, zoomRect)
+        cameraCaptureSessions?.setRepeatingRequest(captureRequestBuilder!!.build(), null, backgroundHandler)
     }
 
-    // Check if all required permissions have been granted
-    private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
-        ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // Reset zoom level to minimum (1.0) on resume
-        if (::cameraControl.isInitialized) {
-            zoomLevel = 1.0f
-            cameraControl.setLinearZoom(zoomLevel / maxZoom)
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        // Shut down the camera executor when activity is destroyed
-        cameraExecutor.shutdown()
-    }
-
-    companion object {
-        private const val SETTINGS_REQUEST_CODE = 1
-
-        // Tag for logging
-        private const val TAG = "Xamera"
-
-        // File name format for videos
-        private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
-
-        // List of required permissions
-        private val REQUIRED_PERMISSIONS =
-            mutableListOf(
-                Manifest.permission.CAMERA,
-                Manifest.permission.RECORD_AUDIO
-            ).apply {
-                // Add WRITE_EXTERNAL_STORAGE permission for Android versions below P
-                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-                    add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                }
-            }.toTypedArray()
-    }
-
-    // Activity result launcher for requesting multiple permissions
-    private val activityResultLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.RequestMultiplePermissions()
-        ) { permissions ->
-            var permissionGranted = true
-            // Check if all permissions are granted
-            permissions.entries.forEach {
-                if (it.key in REQUIRED_PERMISSIONS && !it.value)
-                    permissionGranted = false
-            }
-            if (!permissionGranted) {
-                // Show toast if permission request is denied
-                Toast.makeText(baseContext, "Permission request denied", Toast.LENGTH_SHORT).show()
-            } else {
-                // Start the camera if permissions are granted
-                startCamera()
-            }
-        }
-
-    private fun setLowLightMode() {
-        // Ensure exposure adjustment is possible
-        val exposureRange = cameraInfo.exposureState.exposureCompensationRange
-        if (2 in exposureRange) {
-            cameraControl.setExposureCompensationIndex(2)
-        }
-    }
-
-    private fun setHighLightMode() {
-        val exposureRange = cameraInfo.exposureState.exposureCompensationRange
-        if (-2 in exposureRange) {
-            cameraControl.setExposureCompensationIndex(-2)
-        }
-    }
-
-    private fun setNormalMode() {
-        val exposureRange = cameraInfo.exposureState.exposureCompensationRange
-        if (0 in exposureRange) {
-            cameraControl.setExposureCompensationIndex(0)
-        }
-    }
-
-    //Pick a video from the file
+    // Function to open video picker
     private fun openVideoPicker() {
         val intent = Intent(Intent.ACTION_PICK, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
         videoPickerLauncher.launch(intent)
@@ -493,125 +689,147 @@ class MainActivity : AppCompatActivity() {
 
     // Function to process and save the video with OpenCV
     private fun processVideoWithOpenCV(videoUri: Uri) {
-        Toast.makeText(this, "Video selected: $videoUri", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Processing video...", Toast.LENGTH_SHORT).show()
 
-        val fileName = "video-PreProcessed.mp4"
-        val processedVideoFile = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), fileName)
-        val videoPath = getRealPathFromUri(videoUri) ?: return
+        // Run the processing in a background thread
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Create a temporary file to store the original video
+                val tempVideoFile = File.createTempFile("temp_video", ".mp4", cacheDir)
+                val inputStream = contentResolver.openInputStream(videoUri)
+                val outputStream = tempVideoFile.outputStream()
+                inputStream?.use { input ->
+                    outputStream.use { output ->
+                        input.copyTo(output)
+                    }
+                }
 
-        val capture = org.opencv.videoio.VideoCapture(videoPath)
-        if (!capture.isOpened) {
-            Toast.makeText(this, "Failed to open video", Toast.LENGTH_SHORT).show()
-            return
-        }
+                val processedVideoFile = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), "processed_video_${System.currentTimeMillis()}.mp4")
 
-        // Set up VideoWriter to save the processed video
-        val fps = capture.get(org.opencv.videoio.Videoio.CAP_PROP_FPS)
-        val frameWidth = capture.get(org.opencv.videoio.Videoio.CAP_PROP_FRAME_WIDTH).toInt()
-        val frameHeight = capture.get(org.opencv.videoio.Videoio.CAP_PROP_FRAME_HEIGHT).toInt()
+                val capture = VideoCapture(tempVideoFile.absolutePath)
+                if (!capture.isOpened) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Failed to open video", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
 
-        // Use H.264 codec for better compatibility
-        val codec = org.opencv.videoio.VideoWriter.fourcc('H', '2', '6', '4')
+                // Set up VideoWriter to save the processed video
+                val fps = capture.get(Videoio.CAP_PROP_FPS)
+                val frameWidth = capture.get(Videoio.CAP_PROP_FRAME_WIDTH).toInt()
+                val frameHeight = capture.get(Videoio.CAP_PROP_FRAME_HEIGHT).toInt()
 
-        val writer = org.opencv.videoio.VideoWriter(
-            processedVideoFile.absolutePath,
-            codec,
-            fps,
-            org.opencv.core.Size(frameWidth.toDouble(), frameHeight.toDouble())
-        )
+                // Use H.264 codec for better compatibility
+                val codec = VideoWriter.fourcc('H', '2', '6', '4')
 
-        if (!writer.isOpened) {
-            Toast.makeText(this, "Failed to open VideoWriter", Toast.LENGTH_SHORT).show()
-            capture.release()
-            return
-        }
+                val writer = VideoWriter(
+                    processedVideoFile.absolutePath,
+                    codec,
+                    fps,
+                    Size(frameWidth.toDouble(), frameHeight.toDouble())
+                )
 
-        // Process each frame and write it to the new video
-        val frame = org.opencv.core.Mat()
-        val centerDataList = mutableListOf<org.opencv.core.Point>() // For drawing continuous trace
+                if (!writer.isOpened) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Failed to open VideoWriter", Toast.LENGTH_SHORT).show()
+                    }
+                    capture.release()
+                    return@launch
+                }
 
-        while (capture.read(frame)) {
-            // Convert to grayscale
-            val grayFrame = org.opencv.core.Mat()
-            org.opencv.imgproc.Imgproc.cvtColor(frame, grayFrame, org.opencv.imgproc.Imgproc.COLOR_BGR2GRAY)
+                // Process each frame and write it to the new video
+                val frame = Mat()
+                val centerDataList = mutableListOf<Point>() // For drawing continuous trace
 
-            // Enhance brightness
-            val enhancedFrame = enhanceBrightness(grayFrame)
+                while (capture.read(frame)) {
+                    // Convert to grayscale
+                    val grayFrame = Mat()
+                    Imgproc.cvtColor(frame, grayFrame, Imgproc.COLOR_BGR2GRAY)
 
-            // Detect contour blob and overlay center mass
-            val contourData = detectContourBlob(enhancedFrame)
-            val overlayedFrame = contourData.second
+                    // Enhance brightness
+                    val enhancedFrame = enhanceBrightness(grayFrame)
 
-            // Draw continuous trace line for detected center points
-            contourData.first?.let { center ->
-                centerDataList.add(center)
-                for (i in 1 until centerDataList.size) {
-                    org.opencv.imgproc.Imgproc.line(
-                        overlayedFrame,
-                        centerDataList[i - 1],
-                        centerDataList[i],
-                        org.opencv.core.Scalar(255.0, 0.0, 0.0),
-                        2
-                    )
+                    // Detect contour blob and overlay center mass
+                    val (center, overlayedFrame) = detectContourBlob(enhancedFrame)
+
+                    // Draw continuous trace line for detected center points
+                    center?.let {
+                        centerDataList.add(it)
+                        for (i in 1 until centerDataList.size) {
+                            Imgproc.line(
+                                overlayedFrame,
+                                centerDataList[i - 1],
+                                centerDataList[i],
+                                Scalar(255.0, 0.0, 0.0),
+                                2
+                            )
+                        }
+                    }
+                    // Write the processed frame to the output video
+                    writer.write(overlayedFrame)
+                }
+
+                // Release resources
+                capture.release()
+                writer.release()
+                tempVideoFile.delete()
+
+                // Save the processed video to the gallery
+                saveProcessedVideo(processedVideoFile)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Error processing video: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
-            // Write the processed frame to the output video
-            writer.write(overlayedFrame)
         }
-
-        // Release resources
-        capture.release()
-        writer.release()
-        // Save the processed video to the gallery
-        saveProcessedVideo(processedVideoFile)
-    }
-
-    // Helper function to get absolute path from Uri
-    private fun getRealPathFromUri(uri: Uri): String? {
-        var filePath: String? = null
-        val projection = arrayOf(MediaStore.Video.Media.DATA)
-        contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val columnIndex = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATA)
-                filePath = cursor.getString(columnIndex)
-            }
-        }
-        return filePath
     }
 
     // Function to enhance brightness
-    private fun enhanceBrightness(image: org.opencv.core.Mat): org.opencv.core.Mat {
-        val enhancedImage = image.clone()
-        org.opencv.core.Core.multiply(image, org.opencv.core.Scalar(2.0), enhancedImage)
+    private fun enhanceBrightness(image: Mat): Mat {
+        val enhancedImage = Mat()
+        Core.multiply(image, Scalar(2.0), enhancedImage)
         return enhancedImage
     }
 
     // Function to detect contour blob and find center
-    private fun detectContourBlob(image: org.opencv.core.Mat): Pair<org.opencv.core.Point?, org.opencv.core.Mat> {
-        val binaryImage = org.opencv.core.Mat()
-        org.opencv.imgproc.Imgproc.threshold(image, binaryImage, 200.0, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
-        val contours = mutableListOf<org.opencv.core.MatOfPoint>()
-        org.opencv.imgproc.Imgproc.findContours(binaryImage, contours, org.opencv.core.Mat(), org.opencv.imgproc.Imgproc.RETR_EXTERNAL, org.opencv.imgproc.Imgproc.CHAIN_APPROX_SIMPLE)
+    private fun detectContourBlob(image: Mat): Pair<Point?, Mat> {
+        val binaryImage = Mat()
+        Imgproc.threshold(image, binaryImage, 200.0, 255.0, Imgproc.THRESH_BINARY)
+        val contours = mutableListOf<MatOfPoint>()
+        Imgproc.findContours(
+            binaryImage,
+            contours,
+            Mat(),
+            Imgproc.RETR_EXTERNAL,
+            Imgproc.CHAIN_APPROX_SIMPLE
+        )
         var maxArea = 0.0
-        var largestContour: org.opencv.core.MatOfPoint? = null
+        var largestContour: MatOfPoint? = null
         for (contour in contours) {
-            val area = org.opencv.imgproc.Imgproc.contourArea(contour)
+            val area = Imgproc.contourArea(contour)
             if (area > 500 && area > maxArea) {
                 maxArea = area
                 largestContour = contour
             }
         }
-        val outputImage = org.opencv.core.Mat()
-        org.opencv.imgproc.Imgproc.cvtColor(image, outputImage, org.opencv.imgproc.Imgproc.COLOR_GRAY2BGR)
-        var center: org.opencv.core.Point? = null
+        val outputImage = Mat()
+        Imgproc.cvtColor(image, outputImage, Imgproc.COLOR_GRAY2BGR)
+        var center: Point? = null
         largestContour?.let {
-            org.opencv.imgproc.Imgproc.drawContours(outputImage, listOf(it), -1, org.opencv.core.Scalar(255.0, 105.0, 180.0), org.opencv.core.Core.FILLED)
-            val moments = org.opencv.imgproc.Imgproc.moments(it)
+            Imgproc.drawContours(
+                outputImage,
+                listOf(it),
+                -1,
+                Scalar(255.0, 105.0, 180.0),
+                Imgproc.FILLED
+            )
+            val moments = Imgproc.moments(it)
             if (moments.m00 != 0.0) {
                 val centerX = (moments.m10 / moments.m00).toInt()
                 val centerY = (moments.m01 / moments.m00).toInt()
-                center = org.opencv.core.Point(centerX.toDouble(), centerY.toDouble())
-                org.opencv.imgproc.Imgproc.circle(outputImage, center, 10, org.opencv.core.Scalar(0.0, 255.0, 0.0), -1)
+                center = Point(centerX.toDouble(), centerY.toDouble())
+                Imgproc.circle(outputImage, center, 10, Scalar(0.0, 255.0, 0.0), -1)
             }
         }
         return Pair(center, outputImage)
@@ -633,7 +851,9 @@ class MainActivity : AppCompatActivity() {
         }
         val videoUri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
             ?: run {
-                Toast.makeText(this, "Failed to create file", Toast.LENGTH_SHORT).show()
+                runOnUiThread {
+                    Toast.makeText(this, "Failed to save processed video", Toast.LENGTH_SHORT).show()
+                }
                 return
             }
         resolver.openOutputStream(videoUri).use { outputStream ->
@@ -647,8 +867,14 @@ class MainActivity : AppCompatActivity() {
             resolver.update(videoUri, contentValues, null, null)
         }
 
+        // Delete the temporary processed video file
+        processedVideoFile.delete()
+
         // Automatically play the video after saving
-        playVideo(videoUri)
+        runOnUiThread {
+            Toast.makeText(this, "Processed video saved: $videoUri", Toast.LENGTH_LONG).show()
+            playVideo(videoUri)
+        }
     }
 
     // Function to play the video
@@ -658,5 +884,53 @@ class MainActivity : AppCompatActivity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         startActivity(intent)
+    }
+
+    // Function to show permission rationale
+    private fun showPermissionRationale() {
+        AlertDialog.Builder(this)
+            .setTitle("Storage Permission Required")
+            .setMessage("This app needs storage access to select videos.")
+            .setPositiveButton("OK") { _, _ ->
+                requestStoragePermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+            .setNegativeButton("Cancel", null)
+            .create()
+            .show()
+    }
+
+    // Function to show permission denied dialog
+    private fun showPermissionDeniedDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Permission Denied")
+            .setMessage("Please enable storage permission from settings.")
+            .setPositiveButton("Settings") { _, _ ->
+                val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                val uri = Uri.fromParts("package", packageName, null)
+                intent.data = uri
+                startActivity(intent)
+            }
+            .setNegativeButton("Cancel", null)
+            .create()
+            .show()
+    }
+
+    companion object {
+        private const val SETTINGS_REQUEST_CODE = 1
+
+        // Tag for logging
+        private const val TAG = "Xamera"
+
+        // File name format for videos
+        private const val FILENAME_FORMAT = "yyyyMMdd_HHmmss"
+
+        // Orientation constants
+        private val ORIENTATIONS = SparseIntArray()
+        init {
+            ORIENTATIONS.append(Surface.ROTATION_0, 90)
+            ORIENTATIONS.append(Surface.ROTATION_90, 0)
+            ORIENTATIONS.append(Surface.ROTATION_180, 270)
+            ORIENTATIONS.append(Surface.ROTATION_270, 180)
+        }
     }
 }
