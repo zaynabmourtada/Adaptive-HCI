@@ -5,9 +5,9 @@
 // Single node: Index finger connected to D3 (PWM-capable pin)
 int indexFingerLED = 3;  // PWM-capable pin
 
-int pulseWidth = 100;     // Adjustable pulse width
-int gapDuration = 100;     // Gap between pulses
-int delayUnit = 100;       // Base delay unit in microseconds
+int pulseWidth = 1;     // Adjustable pulse width // Visually Represents the Width of each LIGHT Band
+int gapDuration = 100;     // Gap between pulses     // Visually Represents the Width of each DARK Band
+int delayUnit = 1;       // Base delay unit in microseconds // Scale both pulseWidth & gapDuration by a constant
 
 void setup() {
   pinMode(indexFingerLED, OUTPUT);
@@ -32,14 +32,17 @@ void emitGap() {
 }
 
 // Function to emit a symbol with a specified pattern
-void emitSymbol(int onTime, int offTime) {
-  for (int i = 0; i < pulseWidth; i++) {
-    digitalWrite(indexFingerLED, HIGH);   // LED ON for onTime
-    delayMicroseconds(onTime);
-    digitalWrite(indexFingerLED, LOW);    // LED OFF for offTime
-    delayMicroseconds(offTime);
+void emitSymbol(String binaryPattern) {
+  for (char bit : binaryPattern) {
+    if (bit == '1') {
+      digitalWrite(indexFingerLED, HIGH);   // LED ON for "1" bit
+      delayMicroseconds(3);                 // "1" bit on-time
+    } else {
+      digitalWrite(indexFingerLED, LOW);    // LED OFF for "0" bit
+      delayMicroseconds(9);                // "0" bit duration
+    }
   }
-  emitGap();                              // Add gap after symbol
+  emitGap();                                // Add gap after each symbol
 }
 
 void generateOOKSignal() {
@@ -48,20 +51,11 @@ void generateOOKSignal() {
   emitGap();
 
   // Emit symbols as per OOK encoding:
-  // F1: 1  00001
-  emitSymbol(3, 9);
-
-  // F2: 0  00010
-  emitSymbol(3, 9);
-
-  // F3: 1  00011
-  emitSymbol(3, 9);
-
-  // F4: 0  00100
-  emitSymbol(3, 9);
-
-  // F5: 1  00101
-  emitSymbol(3, 9);
+  emitSymbol("00001");  // F1: 1
+  //emitSymbol("00010");  // F2: 0
+  //emitSymbol("00011");  // F3: 1
+  //emitSymbol("00100");  // F4: 0
+  //emitSymbol("00101");  // F5: 1
 }
 
 void loop() {
