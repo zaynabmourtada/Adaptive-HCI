@@ -1,14 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/preview_frame"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
-    <!-- Camera Preview -->
-    <androidx.camera.view.PreviewView
+    <!-- Camera Preview using TextureView -->
+    <TextureView
         android:id="@+id/viewFinder"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
@@ -30,7 +29,7 @@
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:background="@android:color/transparent"
-            app:srcCompat="@drawable/xamera_launcher_foreground"
+            android:src="@drawable/xamera_launcher_foreground"
             android:contentDescription="@string/switch_camera" />
 
         <!-- Title Text -->
@@ -93,6 +92,7 @@
 
     </LinearLayout>
 
+    <!-- Zoom Buttons -->
     <LinearLayout
         android:id="@+id/zoom_button_container"
         android:layout_width="wrap_content"
@@ -104,7 +104,7 @@
 
         <!-- Zoom In Button -->
         <Button
-            android:id="@+id/zoom_in_button"
+            android:id="@+id/zoomInButton"
             android:layout_width="60dp"
             android:layout_height="60dp"
             android:text="+"
@@ -116,7 +116,7 @@
 
         <!-- Zoom Out Button -->
         <Button
-            android:id="@+id/zoom_out_button"
+            android:id="@+id/zoomOutButton"
             android:layout_width="60dp"
             android:layout_height="60dp"
             android:text="-"
@@ -136,20 +136,20 @@
         android:layout_gravity="center_horizontal|bottom"
         android:layout_marginBottom="50dp">
 
-        <!-- Capture Button -->
+        <!-- Start Tracking Button -->
         <Button
-            android:id="@+id/video_capture_button"
+            android:id="@+id/startTrackingButton"
             android:layout_width="110dp"
             android:layout_height="110dp"
             android:backgroundTint="@color/blue"
             android:elevation="2dp"
-            android:text="@string/start_capture"
+            android:text="Start Tracking"
             android:textColor="@android:color/white"
             android:layout_marginEnd="16dp" />
 
         <!-- Switch Camera Button -->
         <Button
-            android:id="@+id/switch_camera_button"
+            android:id="@+id/switchCameraButton"
             android:layout_width="110dp"
             android:layout_height="110dp"
             android:text="@string/switch_camera"
@@ -157,7 +157,6 @@
             android:textSize="16sp"
             android:backgroundTint="@color/white"
             android:elevation="2dp" />
-
 
     </LinearLayout>
 

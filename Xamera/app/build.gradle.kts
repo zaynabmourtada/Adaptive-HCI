@@ -55,12 +55,15 @@ dependencies {
 
     // CameraX dependencies for camera functionality
     var camerax_version = "1.2.2"
-    implementation("androidx.camera:camera-core:${camerax_version}")
+    implementation("androidx.camera:camera-core:$camerax_version")
+    implementation("androidx.camera:camera-camera2:$camerax_version")
+    implementation("androidx.camera:camera-lifecycle:$camerax_version")
+    implementation("androidx.camera:camera-video:$camerax_version")
+    implementation("androidx.camera:camera-view:$camerax_version")
+    implementation("androidx.camera:camera-extensions:$camerax_version")
+
+    // Camera2 dependencies (comes with the Android SDK but can add if needed)
     implementation("androidx.camera:camera-camera2:${camerax_version}")
-    implementation("androidx.camera:camera-lifecycle:${camerax_version}")
-    implementation("androidx.camera:camera-video:${camerax_version}")
-    implementation("androidx.camera:camera-view:${camerax_version}")
-    implementation("androidx.camera:camera-extensions:${camerax_version}")
 
     // Android and Kotlin core libraries
     implementation("androidx.core:core-ktx:1.13.1")
