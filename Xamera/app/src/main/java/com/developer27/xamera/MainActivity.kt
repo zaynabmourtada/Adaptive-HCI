@@ -1,4 +1,5 @@
 package com.developer27.xamera
+import com.developer27.xamera.databinding.ActivityMainBinding
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -29,8 +30,9 @@ import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.developer27.xamera.databinding.ActivityMainBinding
+
 import kotlinx.coroutines.*
+
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
