@@ -31,17 +31,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.developer27.xamera.databinding.ActivityMainBinding
 import kotlinx.coroutines.*
-import org.opencv.android.OpenCVLoader
-import org.opencv.core.*
-import org.opencv.imgproc.Imgproc
-import org.opencv.videoio.VideoCapture
-import org.opencv.videoio.VideoWriter
-import org.opencv.videoio.Videoio
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), VideoProcessorCallback {
 
     // Binding object to access views
     private lateinit var viewBinding: ActivityMainBinding
@@ -86,6 +80,9 @@ class MainActivity : AppCompatActivity() {
 
     // Initialize the ActivityResultLauncher for video selection
     private lateinit var videoPickerLauncher: ActivityResultLauncher<Intent>
+
+    // Create an instance of VideoProcessor
+    private lateinit var videoProcessor: VideoProcessor
 
     // Flag to track which camera is currently active
     private var isFrontCamera = false
@@ -141,15 +138,6 @@ class MainActivity : AppCompatActivity() {
         // Inflate the layout and bind views
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
-
-        // Initialize OpenCV
-        if (OpenCVLoader.initDebug()) {
-            Log.i(TAG, "OpenCV loaded successfully")
-        } else {
-            Log.e(TAG, "OpenCV initialization failed!")
-            Toast.makeText(this, "OpenCV initialization failed!", Toast.LENGTH_LONG).show()
-            return
-        }
 
         // Initialize SharedPreferences
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
@@ -230,13 +218,15 @@ class MainActivity : AppCompatActivity() {
             requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
         }
 
+        videoProcessor = VideoProcessor(this, this) // Init VideoProc Class
+
         // Initialize video picker launcher
         videoPickerLauncher = registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
             if (result.resultCode == RESULT_OK) {
                 result.data?.data?.let { videoUri ->
-                    processVideoWithOpenCV(videoUri)
+                    videoProcessor.processVideoWithOpenCV(videoUri) // Call the method on the VideoProcessor instance
                 } ?: Toast.makeText(this, "No video selected", Toast.LENGTH_SHORT).show()
             }
         }
@@ -822,194 +812,9 @@ class MainActivity : AppCompatActivity() {
         videoPickerLauncher.launch(intent)
     }
 
-    // Function to process and save the video with OpenCV
-    private fun processVideoWithOpenCV(videoUri: Uri) {
-        Toast.makeText(this, "Processing video...", Toast.LENGTH_SHORT).show()
-
-        // Run the processing in a background thread
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                // Create a temporary file to store the original video
-                val tempVideoFile = File.createTempFile("temp_video", ".mp4", cacheDir)
-                val inputStream = contentResolver.openInputStream(videoUri)
-                val outputStream = tempVideoFile.outputStream()
-                inputStream?.use { input ->
-                    outputStream.use { output ->
-                        input.copyTo(output)
-                    }
-                }
-
-                val processedVideoFile = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), "processed_video_${System.currentTimeMillis()}.mp4")
-
-                val capture = VideoCapture(tempVideoFile.absolutePath)
-                if (!capture.isOpened) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Failed to open video", Toast.LENGTH_SHORT).show()
-                    }
-                    return@launch
-                }
-
-                // Set up VideoWriter to save the processed video
-                val fps = capture.get(Videoio.CAP_PROP_FPS)
-                val frameWidth = capture.get(Videoio.CAP_PROP_FRAME_WIDTH).toInt()
-                val frameHeight = capture.get(Videoio.CAP_PROP_FRAME_HEIGHT).toInt()
-
-                // Use H.264 codec for better compatibility
-                val codec = VideoWriter.fourcc('H', '2', '6', '4')
-
-                val writer = VideoWriter(
-                    processedVideoFile.absolutePath,
-                    codec,
-                    fps,
-                    Size(frameWidth.toDouble(), frameHeight.toDouble())
-                )
-
-                if (!writer.isOpened) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Failed to open VideoWriter", Toast.LENGTH_SHORT).show()
-                    }
-                    capture.release()
-                    return@launch
-                }
-
-                // Process each frame and write it to the new video
-                val frame = Mat()
-                val centerDataList = mutableListOf<Point>() // For drawing continuous trace
-
-                while (capture.read(frame)) {
-                    // Convert to grayscale
-                    val grayFrame = Mat()
-                    Imgproc.cvtColor(frame, grayFrame, Imgproc.COLOR_BGR2GRAY)
-
-                    // Enhance brightness
-                    val enhancedFrame = enhanceBrightness(grayFrame)
-
-                    // Detect contour blob and overlay center mass
-                    val (center, overlayedFrame) = detectContourBlob(enhancedFrame)
-
-                    // Draw continuous trace line for detected center points
-                    center?.let {
-                        centerDataList.add(it)
-                        for (i in 1 until centerDataList.size) {
-                            Imgproc.line(
-                                overlayedFrame,
-                                centerDataList[i - 1],
-                                centerDataList[i],
-                                Scalar(255.0, 0.0, 0.0),
-                                2
-                            )
-                        }
-                    }
-                    // Write the processed frame to the output video
-                    writer.write(overlayedFrame)
-                }
-
-                // Release resources
-                capture.release()
-                writer.release()
-                tempVideoFile.delete()
-
-                // Save the processed video to the gallery
-                saveProcessedVideo(processedVideoFile)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Error processing video: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    // Function to enhance brightness
-    private fun enhanceBrightness(image: Mat): Mat {
-        val enhancedImage = Mat()
-        Core.multiply(image, Scalar(2.0), enhancedImage)
-        return enhancedImage
-    }
-
-    // Function to detect contour blob and find center
-    private fun detectContourBlob(image: Mat): Pair<Point?, Mat> {
-        val binaryImage = Mat()
-        Imgproc.threshold(image, binaryImage, 200.0, 255.0, Imgproc.THRESH_BINARY)
-        val contours = mutableListOf<MatOfPoint>()
-        Imgproc.findContours(
-            binaryImage,
-            contours,
-            Mat(),
-            Imgproc.RETR_EXTERNAL,
-            Imgproc.CHAIN_APPROX_SIMPLE
-        )
-        var maxArea = 0.0
-        var largestContour: MatOfPoint? = null
-        for (contour in contours) {
-            val area = Imgproc.contourArea(contour)
-            if (area > 500 && area > maxArea) {
-                maxArea = area
-                largestContour = contour
-            }
-        }
-        val outputImage = Mat()
-        Imgproc.cvtColor(image, outputImage, Imgproc.COLOR_GRAY2BGR)
-        var center: Point? = null
-        largestContour?.let {
-            Imgproc.drawContours(
-                outputImage,
-                listOf(it),
-                -1,
-                Scalar(255.0, 105.0, 180.0),
-                Imgproc.FILLED
-            )
-            val moments = Imgproc.moments(it)
-            if (moments.m00 != 0.0) {
-                val centerX = (moments.m10 / moments.m00).toInt()
-                val centerY = (moments.m01 / moments.m00).toInt()
-                center = Point(centerX.toDouble(), centerY.toDouble())
-                Imgproc.circle(outputImage, center, 10, Scalar(0.0, 255.0, 0.0), -1)
-            }
-        }
-        return Pair(center, outputImage)
-    }
-
-    // Save the video after it is processed
-    private fun saveProcessedVideo(processedVideoFile: File) {
-        val filename = "processed_video_${System.currentTimeMillis()}.mp4"
-        val mimeType = "video/mp4"
-        val directory = Environment.DIRECTORY_MOVIES + "/Xamera-Processed"
-        val resolver = contentResolver
-        val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.MediaColumns.RELATIVE_PATH, directory)
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
-            }
-        }
-        val videoUri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
-            ?: run {
-                runOnUiThread {
-                    Toast.makeText(this, "Failed to save processed video", Toast.LENGTH_SHORT).show()
-                }
-                return
-            }
-        resolver.openOutputStream(videoUri).use { outputStream ->
-            processedVideoFile.inputStream().use { inputStream ->
-                inputStream.copyTo(outputStream!!)
-            }
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            contentValues.clear()
-            contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-            resolver.update(videoUri, contentValues, null, null)
-        }
-
-        // Delete the temporary processed video file
-        processedVideoFile.delete()
-
-        // Automatically play the video after saving
-        runOnUiThread {
-            Toast.makeText(this, "Processed video saved: $videoUri", Toast.LENGTH_LONG).show()
-            playVideo(videoUri)
-        }
+    // Callback method from VideoProcessorCallback
+    override fun onVideoProcessed(videoUri: Uri) {
+        playVideo(videoUri) // Play the processed video
     }
 
     // Function to play the video
