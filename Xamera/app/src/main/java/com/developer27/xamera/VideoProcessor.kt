@@ -1,28 +1,19 @@
 package com.developer27.xamera
 
-import android.content.ContentValues
+import android.graphics.Bitmap
 import android.content.Context
-import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.opencv.android.OpenCVLoader
 import org.opencv.core.*
-import org.opencv.imgproc.*
-import org.opencv.videoio.*
-import java.io.File
+import org.opencv.imgproc.Imgproc
+import java.util.*
 
-// Callback interface to notify when video processing is complete
-interface VideoProcessorCallback {
-    fun onVideoProcessed(videoUri: Uri)
-}
+class VideoProcessor(private val context: Context) {
 
-class VideoProcessor(
-    private val context: Context,
-    private val callback: VideoProcessorCallback
-) {
+    private val centerDataList = LinkedList<Point>()  // Use LinkedList for efficient queue management
 
     init {
         initializeOpenCV()
@@ -30,115 +21,64 @@ class VideoProcessor(
 
     // Initializes OpenCV; assumes libraries are bundled with the app
     private fun initializeOpenCV() {
-        Log.i("VideoProcessor", "Loading OpenCV libraries.")
-        Toast.makeText(context, "OpenCV loaded successfully", Toast.LENGTH_SHORT).show()
-    }
-
-    // Main function to process video using OpenCV
-    fun processVideoWithOpenCV(videoUri: Uri) {
-        notifyUser("Processing video...")
-
-        CoroutineScope(Dispatchers.IO).launch {  // Run in a background thread
-            try {
-                // Step 1: Copy input video to a temporary file
-                val tempVideoFile = createTempVideoFile(videoUri)
-
-                // Step 2: Prepare the output file for the processed video
-                val processedVideoFile = createOutputVideoFile()
-
-                // Step 3: Process frames from the input video and write to output file
-                processAndWriteFrames(tempVideoFile, processedVideoFile)
-
-                // Step 4: Save the processed video to MediaStore
-                saveProcessedVideo(processedVideoFile)
-            } catch (e: Exception) {
-                handleProcessingError(e)  // Handle any errors during processing
-            }
+        if (OpenCVLoader.initDebug()) {
+            Toast.makeText(context, "OpenCV loaded successfully", Toast.LENGTH_LONG).show()
+        } else {
+            Toast.makeText(context, "OpenCV initialization failed!", Toast.LENGTH_LONG).show()
         }
     }
 
-    // Creates a temporary file from the video Uri for easier access
-    private fun createTempVideoFile(videoUri: Uri): File {
-        val tempFile = File.createTempFile("temp_video", ".mp4", context.cacheDir)
-        context.contentResolver.openInputStream(videoUri)?.use { input ->
-            tempFile.outputStream().use { output ->
-                input.copyTo(output)
-            }
+    // Main function to process each frame; converts, enhances, detects and returns the processed bitmap
+    suspend fun processFrame(bitmap: Bitmap): Bitmap? = withContext(Dispatchers.Default) {
+        try {
+            val mat = bitmapToMat(bitmap)
+            val enhancedMat = enhanceBrightness(applyGrayscale(mat))
+            val (center, processedMat) = detectContourBlob(enhancedMat)
+            center?.let { updateCenterTrace(it, processedMat) }
+            val processedBitmap = matToBitmap(processedMat)
+
+            // Release resources
+            mat.release()
+            enhancedMat.release()
+            processedMat.release()
+
+            return@withContext processedBitmap
+        } catch (e: Exception) {
+            Log.e("VideoProcessor", "Error processing frame: ${e.message}")
+            e.printStackTrace()
+            return@withContext null
         }
-        return tempFile
     }
 
-    // Generates an output file in the app's external movies directory
-    private fun createOutputVideoFile(): File {
-        return File(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES),
-            "processed_video_${System.currentTimeMillis()}.mp4")
+    // Converts bitmap to Mat for OpenCV processing
+    private fun bitmapToMat(bitmap: Bitmap): Mat {
+        val mat = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        return mat
     }
 
-    // Reads and processes each frame, then writes to the output video file
-    private fun processAndWriteFrames(inputFile: File, outputFile: File) {
-        val capture = VideoCapture(inputFile.absolutePath)
-        if (!capture.isOpened) {
-            notifyUser("Failed to open video")
-            return
-        }
-
-        // Extract video properties for writing
-        val fps = capture.get(Videoio.CAP_PROP_FPS)
-        val frameWidth = capture.get(Videoio.CAP_PROP_FRAME_WIDTH).toInt()
-        val frameHeight = capture.get(Videoio.CAP_PROP_FRAME_HEIGHT).toInt()
-        val codec = VideoWriter.fourcc('H', '2', '6', '4')
-
-        // Initialize VideoWriter with extracted properties
-        val writer = VideoWriter(outputFile.absolutePath, codec, fps, Size(frameWidth.toDouble(), frameHeight.toDouble()))
-        if (!writer.isOpened) {
-            notifyUser("Failed to open VideoWriter")
-            capture.release()
-            return
-        }
-
-        // Process each frame and write it to output
-        processEachFrame(capture, writer)
-
-        // Release resources after processing
-        capture.release()
-        writer.release()
-        inputFile.delete()
-    }
-
-    // Reads each frame, applies processing, and writes it to the writer
-    private fun processEachFrame(capture: VideoCapture, writer: VideoWriter) {
-        val frame = Mat()
-        val centerDataList = mutableListOf<Point>()
-
-        while (capture.read(frame)) {
-            val grayFrame = applyGrayscale(frame)          // Convert to grayscale
-            val enhancedFrame = enhanceBrightness(grayFrame)  // Enhance brightness
-            val (center, overlayedFrame) = detectContourBlob(enhancedFrame)  // Detect contours
-
-            // Draw trace line for detected center points
-            center?.let {
-                centerDataList.add(it)
-                drawTraceLine(overlayedFrame, centerDataList)
-            }
-            writer.write(overlayedFrame)  // Write the processed frame to output
+    // Converts processed Mat back to bitmap for display
+    private fun matToBitmap(mat: Mat): Bitmap {
+        return Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888).apply {
+            org.opencv.android.Utils.matToBitmap(mat, this)
         }
     }
 
     // Converts frame to grayscale for easier processing
     private fun applyGrayscale(frame: Mat): Mat {
-        val grayFrame = Mat()
-        Imgproc.cvtColor(frame, grayFrame, Imgproc.COLOR_BGR2GRAY)
-        return grayFrame
+        val grayMat = Mat()
+        Imgproc.cvtColor(frame, grayMat, Imgproc.COLOR_BGR2GRAY)
+        return grayMat
     }
 
-    // Enhances brightness to make contour detection easier
+    // Enhances brightness for easier contour detection
     private fun enhanceBrightness(image: Mat): Mat {
         val enhancedImage = Mat()
         Core.multiply(image, Scalar(2.0), enhancedImage)
         return enhancedImage
     }
 
-    // Detects the largest contour in the image, returns center point and modified image
+    // Detects the largest contour in the image, finds center point, and returns it along with processed Mat
     private fun detectContourBlob(image: Mat): Pair<Point?, Mat> {
         val binaryImage = Mat()
         Imgproc.threshold(image, binaryImage, 200.0, 255.0, Imgproc.THRESH_BINARY)
@@ -150,88 +90,32 @@ class VideoProcessor(
         val outputImage = Mat()
         Imgproc.cvtColor(image, outputImage, Imgproc.COLOR_GRAY2BGR)
 
-        var center: Point? = null
-        largestContour?.takeIf { Imgproc.contourArea(it) > 500 }?.let {
+        val center = largestContour?.takeIf { Imgproc.contourArea(it) > 500 }?.let {
             Imgproc.drawContours(outputImage, listOf(it), -1, Scalar(255.0, 105.0, 180.0), Imgproc.FILLED)
-            val moments = Imgproc.moments(it)
-            center = calculateCenter(moments, outputImage)
+            calculateCenter(it, outputImage)
         }
         return Pair(center, outputImage)
     }
 
-    // Calculates center point of a contour based on its moments
-    private fun calculateCenter(moments: Moments, image: Mat): Point? {
+    // Calculates the center point of a contour based on its moments and draws it on the image
+    private fun calculateCenter(contour: MatOfPoint, image: Mat): Point? {
+        val moments = Imgproc.moments(contour)
         return if (moments.m00 != 0.0) {
             val centerX = (moments.m10 / moments.m00).toInt()
             val centerY = (moments.m01 / moments.m00).toInt()
-            val center = Point(centerX.toDouble(), centerY.toDouble())
-            Imgproc.circle(image, center, 10, Scalar(0.0, 255.0, 0.0), -1)  // Mark center
-            center
+            Point(centerX.toDouble(), centerY.toDouble()).also { center ->
+                Imgproc.circle(image, center, 10, Scalar(0.0, 255.0, 0.0), -1)
+            }
         } else null
     }
 
-    // Draws a continuous trace line from detected center points
-    private fun drawTraceLine(image: Mat, centerDataList: List<Point>) {
+    // Updates the centerDataList for trace line management, and draws the trace line on the image
+    private fun updateCenterTrace(center: Point, image: Mat) {
+        centerDataList.add(center)
+        if (centerDataList.size > 50) centerDataList.removeFirst()  // Keep list size manageable
+
         for (i in 1 until centerDataList.size) {
-            Imgproc.line(
-                image,
-                centerDataList[i - 1],
-                centerDataList[i],
-                Scalar(255.0, 0.0, 0.0),
-                2
-            )
+            Imgproc.line(image, centerDataList[i - 1], centerDataList[i], Scalar(255.0, 0.0, 0.0), 2)
         }
-    }
-
-    // Saves the processed video to MediaStore for easy access
-    private fun saveProcessedVideo(processedVideoFile: File) {
-        val videoUri = saveVideoToMediaStore(processedVideoFile)
-        videoUri?.let {
-            notifyUser("Processed video saved: $it")
-            callback.onVideoProcessed(it)
-        }
-    }
-
-    // Adds the processed video file to MediaStore
-    private fun saveVideoToMediaStore(file: File): Uri? {
-        val contentValues = createMediaStoreContentValues(file.name)
-        val resolver = context.contentResolver
-
-        return resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)?.also { videoUri ->
-            resolver.openOutputStream(videoUri).use { outputStream ->
-                file.inputStream().use { inputStream ->
-                    inputStream.copyTo(outputStream!!)
-                }
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentValues.clear()
-                contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                resolver.update(videoUri, contentValues, null, null)
-            }
-            file.delete()
-        }
-    }
-
-    // Generates required MediaStore metadata for the video file
-    private fun createMediaStoreContentValues(filename: String): ContentValues {
-        return ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-            put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Xamera-Processed")
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
-            }
-        }
-    }
-
-    // Handles errors during video processing
-    private fun handleProcessingError(e: Exception) {
-        e.printStackTrace()
-        notifyUser("Error processing video: ${e.message}")
-    }
-
-    // Displays a message to the user
-    private fun notifyUser(message: String) {
-        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 }

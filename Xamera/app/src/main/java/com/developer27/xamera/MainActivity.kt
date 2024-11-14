@@ -44,7 +44,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
-class MainActivity : AppCompatActivity(), VideoProcessorCallback {
+class MainActivity : AppCompatActivity() {
 
     // Binding object to access views
     private lateinit var viewBinding: ActivityMainBinding
@@ -121,7 +121,7 @@ class MainActivity : AppCompatActivity(), VideoProcessorCallback {
 
         override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
             if (isTracking) {
-                processFrameWithOpenCV() // Call processFrame for real-time processing when tracking is active
+                processFrameWithVideoProcessor() // Call processFrame for real-time processing when tracking is active
             }
         }
     }
@@ -153,14 +153,8 @@ class MainActivity : AppCompatActivity(), VideoProcessorCallback {
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
 
-        // Initialize OpenCV
-        if (OpenCVLoader.initDebug()) {
-            Log.i(TAG, "OpenCV loaded successfully")
-        } else {
-            Log.e(TAG, "OpenCV initialization failed!")
-            Toast.makeText(this, "OpenCV initialization failed!", Toast.LENGTH_LONG).show()
-            return
-        }
+        // Initialize the VideoProcessor
+        videoProcessor = VideoProcessor(this)
 
         // Hide the processedFrameView initially
         viewBinding.processedFrameView.visibility = View.GONE
@@ -498,121 +492,26 @@ class MainActivity : AppCompatActivity(), VideoProcessorCallback {
         }
     }
 
-    // Function to process frames
-    // TODO: Soham Naik - Please optimize this video processing algorithm further
-    private fun processFrameWithOpenCV() {
-        if (isProcessingFrame) return // Exit if already processing
+    // Function to process frames - Calls videoProcessor.processFrame(bitmap)
+    private fun processFrameWithVideoProcessor() {
+        if (isProcessingFrame) return
         viewBinding.viewFinder.bitmap?.let { bitmap ->
             isProcessingFrame = true
-            lifecycleScope.launch(Dispatchers.Default) {
+            lifecycleScope.launch {
                 try {
-                    // Convert bitmap to Mat
-                    val mat = Mat()
-                    org.opencv.android.Utils.bitmapToMat(bitmap, mat)
-
-                    // Convert to grayscale
-                    val grayMat = Mat()
-                    Imgproc.cvtColor(mat, grayMat, Imgproc.COLOR_BGR2GRAY)
-
-                    // Enhance brightness using the existing helper function
-                    val enhancedMat = enhanceBrightness(grayMat)
-
-                    // Detect contour blob and find center using the existing helper function
-                    val (center, processedMat) = detectContourBlob(enhancedMat)
-
-                    // Manage centerDataList for continuous trace
-                    center?.let {
-                        centerDataList.add(it)
-                        // Limit the size of centerDataList to prevent memory issues
-                        if (centerDataList.size > 50) { // Adjust the size as needed
-                            centerDataList.removeAt(0)
-                        }
-
-                        // Draw continuous trace lines
-                        for (i in 1 until centerDataList.size) {
-                            Imgproc.line(
-                                processedMat,
-                                centerDataList[i - 1],
-                                centerDataList[i],
-                                Scalar(255.0, 0.0, 0.0), // Blue color
-                                2
-                            )
+                    val processedBitmap = videoProcessor.processFrame(bitmap)
+                    processedBitmap?.let {
+                        withContext(Dispatchers.Main) {
+                            viewBinding.processedFrameView.setImageBitmap(it)
                         }
                     }
-
-                    // Convert processed Mat back to bitmap
-                    val processedBitmap = Bitmap.createBitmap(processedMat.cols(), processedMat.rows(), Bitmap.Config.ARGB_8888)
-                    org.opencv.android.Utils.matToBitmap(processedMat, processedBitmap)
-
-                    // Update UI on the main thread
-                    withContext(Dispatchers.Main) {
-                        viewBinding.processedFrameView.setImageBitmap(processedBitmap)
-                    }
-
-                    // Release Mats to free memory
-                    mat.release()
-                    grayMat.release()
-                    enhancedMat.release()
-                    processedMat.release()
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
-                    isProcessingFrame = false // Reset the flag
+                    isProcessingFrame = false
                 }
             }
         }
-    }
-
-    // Function to enhance brightness
-    // TODO: Soham Naik - Please optimize this video processing algorithm further
-    private fun enhanceBrightness(image: Mat): Mat {
-        val enhancedImage = Mat()
-        Core.multiply(image, Scalar(2.0), enhancedImage)
-        return enhancedImage
-    }
-
-    // Function to detect contour blob and find center
-    // TODO: Soham Naik - Please optimize this video processing algorithm further
-    private fun detectContourBlob(image: Mat): Pair<Point?, Mat> {
-        val binaryImage = Mat()
-        Imgproc.threshold(image, binaryImage, 200.0, 255.0, Imgproc.THRESH_BINARY)
-        val contours = mutableListOf<MatOfPoint>()
-        Imgproc.findContours(
-            binaryImage,
-            contours,
-            Mat(),
-            Imgproc.RETR_EXTERNAL,
-            Imgproc.CHAIN_APPROX_SIMPLE
-        )
-        var maxArea = 0.0
-        var largestContour: MatOfPoint? = null
-        for (contour in contours) {
-            val area = Imgproc.contourArea(contour)
-            if (area > 500 && area > maxArea) {
-                maxArea = area
-                largestContour = contour
-            }
-        }
-        val outputImage = Mat()
-        Imgproc.cvtColor(image, outputImage, Imgproc.COLOR_GRAY2BGR)
-        var center: Point? = null
-        largestContour?.let {
-            Imgproc.drawContours(
-                outputImage,
-                listOf(it),
-                -1,
-                Scalar(255.0, 105.0, 180.0),
-                Imgproc.FILLED
-            )
-            val moments = Imgproc.moments(it)
-            if (moments.m00 != 0.0) {
-                val centerX = (moments.m10 / moments.m00).toInt()
-                val centerY = (moments.m01 / moments.m00).toInt()
-                center = Point(centerX.toDouble(), centerY.toDouble())
-                Imgproc.circle(outputImage, center, 10, Scalar(0.0, 255.0, 0.0), -1)
-            }
-        }
-        return Pair(center, outputImage)
     }
 
     //Function to update shutter speed
@@ -792,9 +691,5 @@ class MainActivity : AppCompatActivity(), VideoProcessorCallback {
             ORIENTATIONS.append(Surface.ROTATION_180, 270)
             ORIENTATIONS.append(Surface.ROTATION_270, 180)
         }
-    }
-
-    override fun onVideoProcessed(videoUri: Uri) {
-        TODO("Not yet implemented")
     }
 }
