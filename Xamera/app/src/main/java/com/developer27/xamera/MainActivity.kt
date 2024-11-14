@@ -99,9 +99,6 @@ class MainActivity : AppCompatActivity() {
     // Add a flag to prevent overlapping frame processing
     private var isProcessingFrame = false
 
-    // List to store center points for continuous trace
-    private val centerDataList = mutableListOf<Point>()
-
     // Handler for camera preview surface texture availability
     private val textureListener = object : TextureView.SurfaceTextureListener {
         @SuppressLint("MissingPermission")
@@ -225,6 +222,7 @@ class MainActivity : AppCompatActivity() {
                 )
                 // Show the processed camera view
                 viewBinding.processedFrameView.visibility = View.VISIBLE
+                videoProcessor.clearTrackingData() // Clear Previous videoProcessor Tracking Data
             }
         }
 
@@ -288,8 +286,6 @@ class MainActivity : AppCompatActivity() {
             // Hide the processed camera view and clear any existing images
             viewBinding.processedFrameView.visibility = View.GONE
             viewBinding.processedFrameView.setImageBitmap(null)
-            // Clear the centerDataList
-            centerDataList.clear()
         }
 
         closeCamera()
@@ -306,8 +302,7 @@ class MainActivity : AppCompatActivity() {
         // Hide the processed camera view and clear any existing images
         viewBinding.processedFrameView.visibility = View.GONE
         viewBinding.processedFrameView.setImageBitmap(null)
-        // Clear the centerDataList
-        centerDataList.clear()
+        videoProcessor.clearTrackingData()
     }
 
     // Function to check if all required permissions are granted
@@ -372,8 +367,6 @@ class MainActivity : AppCompatActivity() {
         // Hide and clear the processed camera view when switching cameras
         viewBinding.processedFrameView.visibility = View.GONE
         viewBinding.processedFrameView.setImageBitmap(null)
-        // Clear the centerDataList
-        centerDataList.clear()
         reopenCamera()
     }
 
