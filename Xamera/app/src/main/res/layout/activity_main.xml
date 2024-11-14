@@ -12,6 +12,15 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- ImageView for displaying processed frames -->
+    <ImageView
+        android:id="@+id/processedFrameView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="visible"
+        android:scaleType="centerCrop"
+        android:alpha="0.8" />
+
     <!-- Title Text with Icon -->
     <LinearLayout
         android:id="@+id/title_container"
@@ -21,7 +30,8 @@
         android:gravity="center"
         android:background="@color/darkBlue"
         android:paddingTop="16dp"
-        android:paddingBottom="16dp">
+        android:paddingBottom="16dp"
+        android:elevation="4dp">
 
         <!-- Icon (ImageButton) -->
         <ImageButton
@@ -55,17 +65,7 @@
         android:layout_gravity="center_horizontal|top"
         android:layout_marginTop="90dp">
 
-        <!-- Process Video Button -->
-        <Button
-            android:id="@+id/processVideoButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Process Video"
-            android:textSize="16sp"
-            android:padding="8dp"
-            android:backgroundTint="@color/white"
-            android:textColor="@color/black"
-            android:layout_marginEnd="16dp" />
+        <!-- Removed Process Video Button -->
 
         <!-- Settings Button -->
         <Button
