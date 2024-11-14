@@ -29,20 +29,22 @@ import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import org.opencv.android.OpenCVLoader
+import org.opencv.core.Point
 import androidx.lifecycle.lifecycleScope
 import com.developer27.xamera.databinding.ActivityMainBinding
 import kotlinx.coroutines.*
-import org.opencv.android.OpenCVLoader
-import org.opencv.core.*
+import org.opencv.core.Core
+import org.opencv.core.Mat
+import org.opencv.core.MatOfPoint
+import org.opencv.core.Scalar
 import org.opencv.imgproc.Imgproc
-import org.opencv.videoio.VideoCapture
-import org.opencv.videoio.VideoWriter
-import org.opencv.videoio.Videoio
+
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), VideoProcessorCallback {
 
     // Binding object to access views
     private lateinit var viewBinding: ActivityMainBinding
@@ -85,6 +87,9 @@ class MainActivity : AppCompatActivity() {
 
     // Initialize the ActivityResultLauncher for video selection
     private lateinit var videoPickerLauncher: ActivityResultLauncher<Intent>
+
+    // Create an instance of VideoProcessor
+    private lateinit var videoProcessor: VideoProcessor
 
     // Flag to track which camera is currently active
     private var isFrontCamera = false
@@ -787,5 +792,9 @@ class MainActivity : AppCompatActivity() {
             ORIENTATIONS.append(Surface.ROTATION_180, 270)
             ORIENTATIONS.append(Surface.ROTATION_270, 180)
         }
+    }
+
+    override fun onVideoProcessed(videoUri: Uri) {
+        TODO("Not yet implemented")
     }
 }
