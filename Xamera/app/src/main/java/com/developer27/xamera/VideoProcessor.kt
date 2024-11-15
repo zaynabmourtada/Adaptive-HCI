@@ -18,6 +18,8 @@ object Settings {
 
     var enableToasts = true   // Toggle for toast messages
     var enableLogging = true  // Toggle for logging messages
+
+    var brightnessThreshold = 150.0
 }
 
 data class FrameData(val x: Int, val y: Int, val area: Double, val frameCount: Int)
@@ -70,7 +72,7 @@ class VideoProcessor(private val context: Context) {
 
             val grayMat = applyGrayscale(mat).also { mat.release() }
             val enhancedMat = enhanceBrightness(grayMat).also { grayMat.release() }
-            val thresholdMat = conditionalThresholding(enhancedMat, 100.0).also { enhancedMat.release() }
+            val thresholdMat = conditionalThresholding(enhancedMat).also { enhancedMat.release() }
             val blurredMat = applyGaussianBlur(thresholdMat).also { thresholdMat.release() }
             val cleanedMat = applyMorphologicalClosing(blurredMat).also { blurredMat.release() }
 
@@ -135,10 +137,10 @@ class VideoProcessor(private val context: Context) {
         Core.multiply(image, Scalar(Settings.brightnessFactor), this)
     }
 
-    private fun conditionalThresholding(image: Mat, threshold: Double): Mat {
-        val thresholdedMat = Mat()
-        Imgproc.threshold(image, thresholdedMat, threshold, 255.0, Imgproc.THRESH_TOZERO)
-        return thresholdedMat
+    private fun conditionalThresholding(image: Mat): Mat {
+        val thresholdMat = Mat()
+        Imgproc.threshold(image, thresholdMat, Settings.brightnessThreshold, 255.0, Imgproc.THRESH_TOZERO)
+        return thresholdMat
     }
 
     private fun applyGaussianBlur(image: Mat): Mat {
