@@ -12,14 +12,20 @@ import org.opencv.video.KalmanFilter
 import java.util.*
 
 object Settings {
-    var brightnessFactor = 2.0
-    var contourThreshold = 500
-    var traceLineLimit = 50   // Limit for Trace Line Length
-
-    var enableToasts = true   // Toggle for toast messages
-    var enableLogging = true  // Toggle for logging messages
-
-    var brightnessThreshold = 150.0
+    object Contour {
+        var threshold = 500
+    }
+    object Trace {
+        var lineLimit = 50
+    }
+    object Brightness {
+        var factor = 2.0
+        var threshold = 150.0
+    }
+    object Debug {
+        var enableToasts = true
+        var enableLogging = true
+    }
 }
 
 data class FrameData(val x: Int, val y: Int, val area: Double, val frameCount: Int)
@@ -68,13 +74,13 @@ class VideoProcessor(private val context: Context) {
 
     suspend fun processFrame(bitmap: Bitmap): Bitmap? = withContext(Dispatchers.Default) {
         try {
-            val mat = bitmapToMat(bitmap)
+            val mat = ImageUtils.bitmapToMat(bitmap)
 
-            val grayMat = applyGrayscale(mat).also { mat.release() }
-            val enhancedMat = enhanceBrightness(grayMat).also { grayMat.release() }
-            val thresholdMat = conditionalThresholding(enhancedMat).also { enhancedMat.release() }
-            val blurredMat = applyGaussianBlur(thresholdMat).also { thresholdMat.release() }
-            val cleanedMat = applyMorphologicalClosing(blurredMat).also { blurredMat.release() }
+            val grayMat = Preprocessing.applyGrayscale(mat).also { mat.release() }
+            val enhancedMat = Preprocessing.enhanceBrightness(grayMat).also { grayMat.release() }
+            val thresholdMat = Preprocessing.conditionalThresholding(enhancedMat).also { enhancedMat.release() }
+            val blurredMat = Preprocessing.applyGaussianBlur(thresholdMat).also { thresholdMat.release() }
+            val cleanedMat = Preprocessing.applyMorphologicalClosing(blurredMat).also { blurredMat.release() }
 
             val (centerInfo, processedMat) = detectContourBlob(cleanedMat).also { cleanedMat.release() }
             val (center, area) = centerInfo
@@ -83,17 +89,14 @@ class VideoProcessor(private val context: Context) {
                 // Store raw point in preFilter4Ddata
                 val frameData = FrameData(it.x.toInt(), it.y.toInt(), area ?: 0.0, frameCount++)
                 preFilter4Ddata.add(frameData)
-
                 // Apply Kalman filter to smooth the data and store in postFilter4Ddata
                 applyKalmanFilter(it, area, frameData.frameCount)
-
                 // Update trace for real-time display
                 updateCenterTrace(it, processedMat)
-
                 logDebug("Raw Frame # ${frameData.frameCount}: X=${frameData.x}, Y=${frameData.y}, Area=${frameData.area}")
             }
 
-            return@withContext matToBitmap(processedMat).also { processedMat.release() }
+            return@withContext ImageUtils.matToBitmap(processedMat).also { processedMat.release() }
         } catch (e: Exception) {
             Log.e("VideoProcessor", "Error processing frame: ${e.message}")
             e.printStackTrace()
@@ -119,43 +122,6 @@ class VideoProcessor(private val context: Context) {
         logDebug("Filtered Frame # ${filteredFrameData.frameCount}: Filtered X=${filteredFrameData.x}, Filtered Y=${filteredFrameData.y}, Area=${filteredFrameData.area}")
     }
 
-    private fun bitmapToMat(bitmap: Bitmap): Mat = Mat().also {
-        org.opencv.android.Utils.bitmapToMat(bitmap, it)
-    }
-
-    private fun matToBitmap(mat: Mat): Bitmap = Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888).apply {
-        org.opencv.android.Utils.matToBitmap(mat, this)
-    }
-
-    private fun applyGrayscale(frame: Mat): Mat {
-        val grayMat = Mat()
-        Imgproc.cvtColor(frame, grayMat, Imgproc.COLOR_BGR2GRAY)
-        return grayMat
-    }
-
-    private fun enhanceBrightness(image: Mat): Mat = Mat().apply {
-        Core.multiply(image, Scalar(Settings.brightnessFactor), this)
-    }
-
-    private fun conditionalThresholding(image: Mat): Mat {
-        val thresholdMat = Mat()
-        Imgproc.threshold(image, thresholdMat, Settings.brightnessThreshold, 255.0, Imgproc.THRESH_TOZERO)
-        return thresholdMat
-    }
-
-    private fun applyGaussianBlur(image: Mat): Mat {
-        val blurredMat = Mat()
-        Imgproc.GaussianBlur(image, blurredMat, Size(5.0, 5.0), 0.0)
-        return blurredMat
-    }
-
-    private fun applyMorphologicalClosing(image: Mat): Mat {
-        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
-        val closedImage = Mat()
-        Imgproc.morphologyEx(image, closedImage, Imgproc.MORPH_CLOSE, kernel)
-        return closedImage
-    }
-
     private fun detectContourBlob(image: Mat): Pair<Pair<Point?, Double?>, Mat> {
         val binaryImage = Mat()
         Imgproc.threshold(image, binaryImage, 200.0, 255.0, Imgproc.THRESH_BINARY)
@@ -167,7 +133,7 @@ class VideoProcessor(private val context: Context) {
         val outputImage = Mat()
         Imgproc.cvtColor(image, outputImage, Imgproc.COLOR_GRAY2BGR)
 
-        val (centerPoint, area) = largestContour?.takeIf { Imgproc.contourArea(it) > Settings.contourThreshold }
+        val (centerPoint, area) = largestContour?.takeIf { Imgproc.contourArea(it) > Settings.Contour.threshold }
             ?.let {
                 Imgproc.drawContours(outputImage, listOf(it), -1, Scalar(255.0, 105.0, 180.0), Imgproc.FILLED)
                 val area = Imgproc.contourArea(it)
@@ -192,7 +158,7 @@ class VideoProcessor(private val context: Context) {
 
     private fun updateCenterTrace(center: Point, image: Mat) {
         centerDataList.add(center)
-        if (centerDataList.size > Settings.traceLineLimit) centerDataList.removeFirst()
+        if (centerDataList.size > Settings.Trace.lineLimit) centerDataList.removeFirst()
 
         for (i in 1 until centerDataList.size) {
             Imgproc.line(image, centerDataList[i - 1], centerDataList[i], Scalar(255.0, 0.0, 0.0), 2)
@@ -203,10 +169,60 @@ class VideoProcessor(private val context: Context) {
     fun retrievePostFilter4Ddata(): List<FrameData> = postFilter4Ddata
 
     private fun showToast(message: String) {
-        if (Settings.enableToasts) Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        if (Settings.Debug.enableToasts) Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
     private fun logDebug(message: String) {
-        if (Settings.enableLogging) Log.d("VideoProcessor", message)
+        if (Settings.Debug.enableLogging) Log.d("VideoProcessor", message)
+    }
+}
+
+class Preprocessing {
+    companion object {
+        fun applyGrayscale(frame: Mat): Mat {
+            val grayMat = Mat()
+            Imgproc.cvtColor(frame, grayMat, Imgproc.COLOR_BGR2GRAY)
+            return grayMat
+        }
+        fun enhanceBrightness(image: Mat): Mat = Mat().apply {
+            Core.multiply(image, Scalar(Settings.Brightness.factor), this)
+        }
+        fun conditionalThresholding(image: Mat): Mat {
+            val thresholdMat = Mat()
+            Imgproc.threshold(image, thresholdMat, Settings.Brightness.threshold, 255.0, Imgproc.THRESH_TOZERO)
+            return thresholdMat
+        }
+        fun applyGaussianBlur(image: Mat): Mat {
+            val blurredMat = Mat()
+            Imgproc.GaussianBlur(image, blurredMat, Size(5.0, 5.0), 0.0)
+            return blurredMat
+        }
+        fun applyMorphologicalClosing(image: Mat): Mat {
+            val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+            val closedImage = Mat()
+            Imgproc.morphologyEx(image, closedImage, Imgproc.MORPH_CLOSE, kernel)
+            return closedImage
+        }
+    }
+}
+
+class ImageUtils {
+    companion object {
+        /**
+         * Converts a Bitmap to an OpenCV Mat.
+         * @param bitmap The input Bitmap.
+         * @return The corresponding Mat.
+         */
+        fun bitmapToMat(bitmap: Bitmap): Mat = Mat().also {
+            org.opencv.android.Utils.bitmapToMat(bitmap, it)
+        }
+        /**
+         * Converts an OpenCV Mat to a Bitmap.
+         * @param mat The input Mat.
+         * @return The corresponding Bitmap.
+         */
+        fun matToBitmap(mat: Mat): Bitmap = Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888).apply {
+            org.opencv.android.Utils.matToBitmap(mat, this)
+        }
     }
 }
