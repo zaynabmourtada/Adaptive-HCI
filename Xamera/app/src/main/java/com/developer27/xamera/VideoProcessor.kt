@@ -14,7 +14,9 @@ import java.util.*
 object Settings {
     var brightnessFactor = 2.0
     var contourThreshold = 500
-    var traceLineLimit = 50
+    var traceLineLimit = 50   // Limit for Trace Line Length
+
+    var enableToasts = true   // Toggle for toast messages
     var enableLogging = true  // Toggle for logging messages
 }
 
@@ -65,9 +67,14 @@ class VideoProcessor(private val context: Context) {
     suspend fun processFrame(bitmap: Bitmap): Bitmap? = withContext(Dispatchers.Default) {
         try {
             val mat = bitmapToMat(bitmap)
+
             val grayMat = applyGrayscale(mat).also { mat.release() }
             val enhancedMat = enhanceBrightness(grayMat).also { grayMat.release() }
-            val (centerInfo, processedMat) = detectContourBlob(enhancedMat).also { enhancedMat.release() }
+            val thresholdMat = conditionalThresholding(enhancedMat, 100.0).also { enhancedMat.release() }
+            val blurredMat = applyGaussianBlur(thresholdMat).also { thresholdMat.release() }
+            val cleanedMat = applyMorphologicalClosing(blurredMat).also { blurredMat.release() }
+
+            val (centerInfo, processedMat) = detectContourBlob(cleanedMat).also { cleanedMat.release() }
             val (center, area) = centerInfo
 
             center?.let {
@@ -128,6 +135,25 @@ class VideoProcessor(private val context: Context) {
         Core.multiply(image, Scalar(Settings.brightnessFactor), this)
     }
 
+    private fun conditionalThresholding(image: Mat, threshold: Double): Mat {
+        val thresholdedMat = Mat()
+        Imgproc.threshold(image, thresholdedMat, threshold, 255.0, Imgproc.THRESH_TOZERO)
+        return thresholdedMat
+    }
+
+    private fun applyGaussianBlur(image: Mat): Mat {
+        val blurredMat = Mat()
+        Imgproc.GaussianBlur(image, blurredMat, Size(5.0, 5.0), 0.0)
+        return blurredMat
+    }
+
+    private fun applyMorphologicalClosing(image: Mat): Mat {
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+        val closedImage = Mat()
+        Imgproc.morphologyEx(image, closedImage, Imgproc.MORPH_CLOSE, kernel)
+        return closedImage
+    }
+
     private fun detectContourBlob(image: Mat): Pair<Pair<Point?, Double?>, Mat> {
         val binaryImage = Mat()
         Imgproc.threshold(image, binaryImage, 200.0, 255.0, Imgproc.THRESH_BINARY)
@@ -175,7 +201,7 @@ class VideoProcessor(private val context: Context) {
     fun retrievePostFilter4Ddata(): List<FrameData> = postFilter4Ddata
 
     private fun showToast(message: String) {
-        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        if (Settings.enableToasts) Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
     private fun logDebug(message: String) {
