@@ -130,9 +130,6 @@ ax = fig.add_subplot(111, projection='3d')
 
 
 while(True):
-
-    
-
     for c, m, zlow, zhigh in [('r', 'o', 0, 20)]:
         for i in range(len(xS)):
 
@@ -218,9 +215,6 @@ while(True):
             srf = Poly3DCollection(verts, alpha=.25, facecolor='#800000')
             # 3. add polygon to the figure (current axes)
             plt.gca().add_collection3d(srf)
-
-
-
 
             def euclideanDistance(p1, p2):
                 return math.sqrt(((p1[0]-p2[0])**2) + (p1[1]-p2[1])**2 + (p1[2]-p2[2])**2)
