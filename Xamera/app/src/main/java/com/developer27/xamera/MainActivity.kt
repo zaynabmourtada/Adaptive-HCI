@@ -2,22 +2,17 @@ package com.developer27.xamera
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.AppOpsManager
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
-import android.graphics.Bitmap
 import android.graphics.Rect
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.*
 import android.media.MediaRecorder
-import android.net.Uri
 import android.os.*
 import android.preference.PreferenceManager
-import android.provider.MediaStore
 import android.util.Log
 import android.util.Size
 import android.util.SparseIntArray
@@ -26,30 +21,20 @@ import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresPermission
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import org.opencv.android.OpenCVLoader
-import org.opencv.core.Point
 import androidx.lifecycle.lifecycleScope
 import com.developer27.xamera.databinding.ActivityMainBinding
-import kotlinx.coroutines.*
-import org.opencv.core.Core
-import org.opencv.core.Mat
-import org.opencv.core.MatOfPoint
-import org.opencv.core.Scalar
-import org.opencv.imgproc.Imgproc
-
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
-    // Binding object to access views
+    // View binding for accessing UI components
     private lateinit var viewBinding: ActivityMainBinding
 
-    // SharedPreferences
+    // SharedPreferences for storing user settings
     private lateinit var sharedPreferences: SharedPreferences
 
     // Camera2 API variables
@@ -61,10 +46,10 @@ class MainActivity : AppCompatActivity() {
     private var cameraCaptureSessions: CameraCaptureSession? = null
     private var captureRequestBuilder: CaptureRequest.Builder? = null
 
-    // Make sure if it is tracking or not
+    // Flag to track whether tracking is active
     private var isTracking = false
 
-    // Handler for camera operations
+    // Handler and thread for camera operations
     private var backgroundHandler: Handler? = null
     private var backgroundThread: HandlerThread? = null
 
@@ -79,27 +64,29 @@ class MainActivity : AppCompatActivity() {
         Manifest.permission.RECORD_AUDIO
     )
 
-    // Declare the ActivityResultLauncher for permissions
+    // ActivityResultLauncher for permissions
     private lateinit var requestPermissionLauncher: ActivityResultLauncher<Array<String>>
-    private lateinit var requestStoragePermissionLauncher: ActivityResultLauncher<String>
 
+    // TextureView for camera preview
     private lateinit var textureView: TextureView
 
-    // Initialize the ActivityResultLauncher for video selection
-    private lateinit var videoPickerLauncher: ActivityResultLauncher<Intent>
-
-    // Create an instance of VideoProcessor
+    // VideoProcessor instance for frame processing (assuming you have this class)
     private lateinit var videoProcessor: VideoProcessor
 
     // Flag to track which camera is currently active
     private var isFrontCamera = false
 
-    private var shutterSpeed: Long = 1000000000L / 60 // Default to 1/60s in nanoseconds
+    // Shutter speed variable (default to 1/60s in nanoseconds)
+    private var shutterSpeed: Long = 1000000000L / 60
 
-    // Add a flag to prevent overlapping frame processing
+    // Flag to prevent overlapping frame processing
     private var isProcessingFrame = false
 
-    // Handler for camera preview surface texture availability
+    // OpenGLTextureView for OpenGL rendering
+    private lateinit var glTextureView: OpenGLTextureView
+    private var isOpenGLDemoActive = false
+
+    // Listener for TextureView surface texture availability
     private val textureListener = object : TextureView.SurfaceTextureListener {
         @SuppressLint("MissingPermission")
         override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
@@ -110,15 +97,19 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
+        override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+            // Handle size changes if needed
+        }
 
         override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+            // Return true if no further drawing should happen
             return false
         }
 
         override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
+            // Process frame when tracking is active
             if (isTracking) {
-                processFrameWithVideoProcessor() // Call processFrame for real-time processing when tracking is active
+                processFrameWithVideoProcessor()
             }
         }
     }
@@ -126,17 +117,19 @@ class MainActivity : AppCompatActivity() {
     // CameraDevice state callback
     private val stateCallback = object : CameraDevice.StateCallback() {
         override fun onOpened(camera: CameraDevice) {
-            // This is called when the camera is open
+            // Camera is open, start preview
             cameraDevice = camera
             createCameraPreview()
         }
 
         override fun onDisconnected(camera: CameraDevice) {
+            // Close camera when disconnected
             cameraDevice?.close()
             cameraDevice = null
         }
 
         override fun onError(camera: CameraDevice, error: Int) {
+            // Close camera on error
             cameraDevice?.close()
             cameraDevice = null
             finish()
@@ -146,7 +139,7 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Inflate the layout and bind views
+        // Inflate layout and bind views
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
 
@@ -159,6 +152,7 @@ class MainActivity : AppCompatActivity() {
         // Initialize SharedPreferences
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
 
+        // Listen for changes in SharedPreferences
         sharedPreferences.registerOnSharedPreferenceChangeListener { prefs, key ->
             if (key == "shutter_speed") {
                 // Get the updated shutter speed setting
@@ -175,8 +169,11 @@ class MainActivity : AppCompatActivity() {
         // Initialize CameraManager
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
 
-        // Initialize TextureView
+        // Initialize TextureView for camera preview
         textureView = viewBinding.viewFinder
+
+        // Initialize OpenGLTextureView
+        glTextureView = viewBinding.glTextureView
 
         // Initialize the ActivityResultLauncher for requesting permissions
         requestPermissionLauncher = registerForActivityResult(
@@ -193,36 +190,33 @@ class MainActivity : AppCompatActivity() {
                 }
             } else {
                 Toast.makeText(this, "Camera and Audio permissions are required.", Toast.LENGTH_SHORT).show()
-                // Optionally disable camera functionality or guide the user
             }
         }
 
-        // Check permissions and request if not granted
+        // Check permissions and set up camera preview
         if (allPermissionsGranted()) {
-            textureView.surfaceTextureListener = textureListener
+            if (textureView.isAvailable) {
+                openCamera()
+            } else {
+                textureView.surfaceTextureListener = textureListener
+            }
         } else {
-            // Request permissions
             requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
         }
 
-        // Make the Start Recording button visible
-        viewBinding.startTrackingButton.visibility = View.VISIBLE
-
         // Set up listener for the Start Tracking button
         viewBinding.startTrackingButton.setOnClickListener {
+            toggleOpenGLDemo()
             if (isTracking) {
-                // Stop tracking
                 stopTracking()
             } else {
-                // Start tracking
                 isTracking = true
                 viewBinding.startTrackingButton.text = "Stop Tracking"
                 viewBinding.startTrackingButton.backgroundTintList = ColorStateList.valueOf(
                     ContextCompat.getColor(this, R.color.red) // Change to red color
                 )
-                // Show the processed camera view
                 viewBinding.processedFrameView.visibility = View.VISIBLE
-                videoProcessor.clearTrackingData() // Clear Previous videoProcessor Tracking Data
+                videoProcessor.clearTrackingData()
             }
         }
 
@@ -247,6 +241,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Handle results from activities (e.g., settings)
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == SETTINGS_REQUEST_CODE && resultCode == RESULT_OK) {
@@ -278,21 +273,15 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         // Stop tracking if active
         if (isTracking) {
-            isTracking = false
-            viewBinding.startTrackingButton.text = "Start Tracking"
-            viewBinding.startTrackingButton.backgroundTintList = ColorStateList.valueOf(
-                ContextCompat.getColor(this, R.color.blue) // Revert to default color
-            )
-            // Hide the processed camera view and clear any existing images
-            viewBinding.processedFrameView.visibility = View.GONE
-            viewBinding.processedFrameView.setImageBitmap(null)
+            stopTracking()
         }
-
+        // Close camera and stop background thread
         closeCamera()
         stopBackgroundThread()
         super.onPause()
     }
 
+    // Function to stop tracking
     private fun stopTracking() {
         isTracking = false
         viewBinding.startTrackingButton.text = "Start Tracking"
@@ -465,7 +454,7 @@ class MainActivity : AppCompatActivity() {
         cameraDevice = null
     }
 
-    //Function to apply rolling shutter speed
+    // Function to apply rolling shutter speed
     private fun applyRollingShutter() {
         // Retrieve the selected shutter speed setting from SharedPreferences
         val shutterSpeedSetting = sharedPreferences.getString("shutter_speed", "15")?.toInt() ?: 15
@@ -507,7 +496,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    //Function to update shutter speed
+    // Function to update shutter speed
     private fun updateShutterSpeed() {
         // Retrieve the selected shutter speed from SharedPreferences
         val shutterSpeedSetting = sharedPreferences.getString("shutter_speed", "15")?.toInt() ?: 15
@@ -670,6 +659,7 @@ class MainActivity : AppCompatActivity() {
         cameraCaptureSessions?.setRepeatingRequest(captureRequestBuilder!!.build(), null, backgroundHandler)
     }
 
+    // Companion object for constants
     companion object {
         private const val SETTINGS_REQUEST_CODE = 1
 
@@ -683,6 +673,17 @@ class MainActivity : AppCompatActivity() {
             ORIENTATIONS.append(Surface.ROTATION_90, 0)
             ORIENTATIONS.append(Surface.ROTATION_180, 270)
             ORIENTATIONS.append(Surface.ROTATION_270, 180)
+        }
+    }
+
+    // Function to toggle the OpenGL Demo
+    private fun toggleOpenGLDemo() {
+        if (isOpenGLDemoActive) {
+            glTextureView.visibility = View.GONE
+            isOpenGLDemoActive = false
+        } else {
+            glTextureView.visibility = View.VISIBLE
+            isOpenGLDemoActive = true
         }
     }
 }
