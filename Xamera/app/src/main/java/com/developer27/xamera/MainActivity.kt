@@ -516,11 +516,11 @@ class MainActivity : AppCompatActivity() {
         captureRequestBuilder?.apply {
             set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_OFF) // Manual control
 
-            if (shutterSpeedSetting >= 5) {
+            if (shutterSpeedSetting in 5..6000) { // Ensure the setting is valid
                 // Apply the calculated shutter speed for selected Hz values
                 set(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterSpeedValue)
             } else {
-                // Default to auto control if shutter speed is not set (shouldn't be lower than 5 Hz)
+                // Default to auto control if shutter speed is invalid (below 5 Hz)
                 set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
             }
 
@@ -530,18 +530,15 @@ class MainActivity : AppCompatActivity() {
 
             // Apply exposure compensation based on selected shutter speed value
             var exposureCompensation = 0
-            if (exposureRange != null && shutterSpeedSetting >= 5) {
-                exposureCompensation = when (shutterSpeedSetting) {
-                    5 -> exposureRange.lower // Lowest compensation for 5 Hz
-                    10 -> exposureRange.lower / 2 // Reduced compensation for 10 Hz
-                    15 -> exposureRange.lower // Minimal compensation for 15 Hz
-                    50 -> exposureRange.lower
-                    100 -> (exposureRange.lower + exposureRange.upper) / 4
-                    200 -> exposureRange.upper / 2
-                    250 -> (3 * exposureRange.upper) / 4
-                    500 -> exposureRange.upper
-                    else -> 0
-                }
+            if (exposureRange != null && shutterSpeedSetting in 5..6000) {
+                // Interpolate exposure compensation based on shutter speed
+                val maxExposure = exposureRange.upper
+                val minExposure = exposureRange.lower
+
+                // Calculate compensation based on normalized shutter speed
+                val normalizedShutterSpeed = (shutterSpeedSetting - 5).toFloat() / (6000 - 5) // Scale between 0.0 and 1.0
+                exposureCompensation = (minExposure + normalizedShutterSpeed * (maxExposure - minExposure)).toInt()
+
                 set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, exposureCompensation)
             }
 
@@ -550,8 +547,11 @@ class MainActivity : AppCompatActivity() {
                 cameraCaptureSessions?.setRepeatingRequest(build(), null, backgroundHandler)
 
                 // Log and Toast messages to verify the correct values
-                val shutterSpeedText = "1/$shutterSpeedSetting Hz"
-                Log.d("RollingShutterUpdate", "Set shutter speed to $shutterSpeedText with exposure compensation: $exposureCompensation")
+                val shutterSpeedText = if (shutterSpeedSetting <= 6000) "1/$shutterSpeedSetting Hz" else "Auto"
+                Log.d(
+                    "RollingShutterUpdate",
+                    "Set shutter speed to $shutterSpeedText with exposure compensation: $exposureCompensation"
+                )
                 Toast.makeText(
                     this@MainActivity,
                     "Shutter speed set to $shutterSpeedText with exposure compensation: $exposureCompensation",
