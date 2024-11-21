@@ -7,10 +7,18 @@
     tools:context=".MainActivity">
 
     <!-- Camera Preview using TextureView -->
+    <!-- Camera Preview -->
     <TextureView
         android:id="@+id/viewFinder"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
+
+    <!-- OpenGL Simulation -->
+    <com.developer27.xamera.OpenGLTextureView
+        android:id="@+id/glTextureView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
 
     <!-- ImageView for displaying processed frames -->
     <ImageView
@@ -65,8 +73,6 @@
         android:layout_gravity="center_horizontal|top"
         android:layout_marginTop="90dp">
 
-        <!-- Removed Process Video Button -->
-
         <!-- Settings Button -->
         <Button
             android:id="@+id/settingsButton"
@@ -89,7 +95,6 @@
             android:textColor="@color/white"
             android:elevation="2dp"
             android:layout_marginStart="16dp" />
-
     </LinearLayout>
 
     <!-- Zoom Buttons -->
@@ -159,5 +164,4 @@
             android:elevation="2dp" />
 
     </LinearLayout>
-
 </FrameLayout>
