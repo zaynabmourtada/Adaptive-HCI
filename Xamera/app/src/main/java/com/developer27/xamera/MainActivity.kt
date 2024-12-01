@@ -7,16 +7,32 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.SurfaceTexture
-import android.hardware.camera2.*
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CameraMetadata
+import android.hardware.camera2.CaptureRequest
 import android.media.MediaRecorder
-import android.os.*
+import android.os.Bundle
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Looper
 import android.preference.PreferenceManager
 import android.util.Log
 import android.util.Size
 import android.util.SparseIntArray
-import android.view.*
+import android.view.MotionEvent
+import android.view.Surface
+import android.view.TextureView
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,6 +44,14 @@ import com.developer27.xamera.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.pytorch.IValue
+import org.pytorch.Module
+import org.pytorch.Tensor
+import org.pytorch.torchvision.TensorImageUtils
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+
 
 class MainActivity : AppCompatActivity() {
 
@@ -85,6 +109,9 @@ class MainActivity : AppCompatActivity() {
     // OpenGLTextureView for OpenGL rendering
     private lateinit var glTextureView: OpenGLTextureView
     private var isOpenGLDemoActive = false
+
+    // TODO <Zaynab Mourtada>: Declare your PyTorch Module
+    private var pytorchModule: Module? = null
 
     // Listener for TextureView surface texture availability
     private val textureListener = object : TextureView.SurfaceTextureListener {
@@ -239,6 +266,40 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(this, SettingsActivity::class.java)
             startActivityForResult(intent, SETTINGS_REQUEST_CODE)
         }
+
+        // TODO <Zaynab Mourtada>: Load your PyTorch model
+        loadPyTorchModel()
+    }
+
+    // TODO <Zaynab Mourtada>: Function to load PyTorch Model
+    private fun loadPyTorchModel() {
+        // TODO <Zaynab Mourtada>: Replace "model.pt" with the actual filename of your model
+        try {
+            pytorchModule = Module.load(assetFilePath(this, "model.pt"))
+        } catch (e: IOException) {
+            Toast.makeText(this, "Error reading assets: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // TODO <Zaynab Mourtada>: Function to get the asset file name
+    @Throws(IOException::class)
+    private fun assetFilePath(context: Context, assetName: String): String {
+        val file = File(context.filesDir, assetName)
+        if (file.exists() && file.length() > 0) {
+            return file.absolutePath
+        }
+
+        context.assets.open(assetName).use { inputStream ->
+            FileOutputStream(file).use { outputStream ->
+                val buffer = ByteArray(4 * 1024)
+                var read: Int
+                while (inputStream.read(buffer).also { read = it } != -1) {
+                    outputStream.write(buffer, 0, read)
+                }
+                outputStream.flush()
+            }
+        }
+        return file.absolutePath
     }
 
     // Handle results from activities (e.g., settings)
@@ -479,13 +540,20 @@ class MainActivity : AppCompatActivity() {
         if (isProcessingFrame) return
         viewBinding.viewFinder.bitmap?.let { bitmap ->
             isProcessingFrame = true
-            lifecycleScope.launch {
+            lifecycleScope.launch(Dispatchers.Default) {
                 try {
+                    // First, process the bitmap with videoProcessor
                     val processedBitmap = videoProcessor.processFrame(bitmap)
-                    processedBitmap?.let {
+                    processedBitmap?.let { processedFrame ->
                         withContext(Dispatchers.Main) {
-                            viewBinding.processedFrameView.setImageBitmap(it)
+                            // Update the UI with the processed bitmap from videoProcessor
+                            viewBinding.processedFrameView.setImageBitmap(processedFrame)
                         }
+
+                        // TODO <Zaynab Mourtada>: Now, run PyTorch inference on the processed frame
+                        val inputTensor = bitmapToTensor(processedFrame)
+                        val outputTensor = runInference(inputTensor)
+                        val pytorchProcessedBitmap = processOutput(outputTensor, processedFrame.width, processedFrame.height)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -494,6 +562,60 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    // TODO <Zaynab Mourtada>: Use the PyTorch model in your code
+    private fun runInference(inputTensor: Tensor): Tensor {
+        // Ensure the model is loaded
+        if (pytorchModule == null) {
+            loadPyTorchModel()
+        }
+
+        // Run the model inference
+        val outputTensor = pytorchModule!!.forward(IValue.from(inputTensor)).toTensor()
+        return outputTensor
+    }
+
+    // TODO <Zaynab Mourtada>: Function to transform bitmap to Tensor
+    private fun bitmapToTensor(bitmap: Bitmap): Tensor {
+        // Preprocess the bitmap as per your model's requirement
+        val resizedBitmap = Bitmap.createScaledBitmap(bitmap, INPUT_WIDTH, INPUT_HEIGHT, true)
+        return TensorImageUtils.bitmapToFloat32Tensor(
+            resizedBitmap,
+            NO_MEAN_RGB,
+            NO_STD_RGB
+        )
+    }
+
+    // TODO <Zaynab Mourtada>: Constants for input size and normalization
+    private val INPUT_WIDTH = 224  // Replace with your model's input width
+    private val INPUT_HEIGHT = 224 // Replace with your model's input height
+    private val NO_MEAN_RGB = floatArrayOf(0.0f, 0.0f, 0.0f)
+    private val NO_STD_RGB = floatArrayOf(1.0f, 1.0f, 1.0f)
+
+    // TODO <Zaynab Mourtada>: Algorithm to process the output
+    private fun processOutput(outputTensor: Tensor, width: Int, height: Int): Bitmap {
+        // TODO <Zaynab Mourtada>: Implement your processing logic here using outputTensor, width, and height
+
+        // Create a new bitmap with the specified width and height
+        val resultBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(resultBitmap)
+        val paint = Paint()
+
+        // Example processing based on the output tensor
+        val scores = outputTensor.dataAsFloatArray
+
+        // For demonstration, let's fill the bitmap with a color based on the first score
+        if (scores.isNotEmpty()) {
+            val colorValue = (scores[0] * 255).toInt().coerceIn(0, 255)
+            val color = Color.rgb(colorValue, 0, 255 - colorValue)
+            canvas.drawColor(color)
+        } else {
+            // Default color if scores are empty
+            canvas.drawColor(Color.BLACK)
+        }
+
+        return resultBitmap
     }
 
     // Function to update shutter speed
