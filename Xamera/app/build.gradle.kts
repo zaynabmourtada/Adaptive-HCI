@@ -46,6 +46,11 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+
+    packagingOptions {
+        pickFirst("lib/armeabi-v7a/libc++_shared.so")
+        pickFirst("lib/arm64-v8a/libc++_shared.so")
+    }
 }
 
 dependencies {
@@ -65,6 +70,10 @@ dependencies {
 
     // Camera2 dependencies (comes with the Android SDK but can add if needed)
     implementation("androidx.camera:camera-camera2:${camerax_version}")
+
+    // Add PyTorch dependencies
+    implementation("org.pytorch:pytorch_android:1.13.1")
+    implementation("org.pytorch:pytorch_android_torchvision:1.13.1")
 
     // Android and Kotlin core libraries
     implementation("androidx.core:core-ktx:1.13.1")
