@@ -9,6 +9,7 @@ import java.nio.FloatBuffer
 
 //TODO - Alan Raj <Due December 6th 2024>: Implement the isolated code you have created for OpenGL here.
 //                 Make sure your code works as synchronized with Soham`s Video Processing Code.
+// Alan successfully setup the project
 class OpenGLRenderer {
 
     private var eglDisplay: EGLDisplay? = null
