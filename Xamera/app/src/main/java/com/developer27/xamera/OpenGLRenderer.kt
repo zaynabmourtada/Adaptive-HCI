@@ -3,10 +3,11 @@ package com.developer27.xamera
 import android.graphics.SurfaceTexture
 import android.opengl.*
 import android.util.Log
-import android.widget.Toast
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
+
 
 // TODO - Alan Raj <Due December 6th 2024>: Implement the isolated code you have created for OpenGL here.
 // Ensure synchronization with Soham's Video Processing Code.
@@ -120,10 +121,13 @@ class OpenGLRenderer(private val videoProcessor: VideoProcessor) {
     private fun onDrawFrame() {
         // Data retrieval from videoProcessor (currently unused in drawing logic)
         val preFilterData = videoProcessor.retrievePreFilter4Ddata()
-        //val postFilterData = videoProcessor.retrievePostFilter4Ddata()
-
+        val postFilterData = videoProcessor.retrievePostFilter4Ddata()
         if (preFilterData.isNotEmpty()) {
             val latestFrame = preFilterData.last() // Access the last element
+            logDebug("OpenGL - Raw Data: | Frame(T)=${latestFrame.frameCount} | X=${latestFrame.x} | Y=${latestFrame.y} | Area=${latestFrame.area}")
+        }
+        if (postFilterData.isNotEmpty()) {
+            val latestFrame = postFilterData.last() // Access the last element
             logDebug("OpenGL - Raw Data: | Frame(T)=${latestFrame.frameCount} | X=${latestFrame.x} | Y=${latestFrame.y} | Area=${latestFrame.area}")
         }
         // The preFilterData and postFilterData are obtained but not used.
