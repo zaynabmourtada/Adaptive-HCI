@@ -170,9 +170,6 @@ class MainActivity : AppCompatActivity() {
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
 
-        // Initialize the VideoProcessor
-        videoProcessor = VideoProcessor(this)
-
         // Hide the processedFrameView initially
         viewBinding.processedFrameView.visibility = View.GONE
 
@@ -199,8 +196,14 @@ class MainActivity : AppCompatActivity() {
         // Initialize TextureView for camera preview
         textureView = viewBinding.viewFinder
 
+        // Initialize the VideoProcessor
+        videoProcessor = VideoProcessor(this)
+
         // Initialize OpenGLTextureView
         glTextureView = viewBinding.glTextureView
+
+        // Pass the VideoProcessor to OpenGLTextureView
+        glTextureView.setVideoProcessor(videoProcessor)
 
         // Initialize the ActivityResultLauncher for requesting permissions
         requestPermissionLauncher = registerForActivityResult(

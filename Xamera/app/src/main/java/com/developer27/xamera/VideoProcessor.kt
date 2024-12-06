@@ -28,7 +28,7 @@ object Settings {
     }
 }
 
-data class FrameData(val x: Int, val y: Int, val area: Double, val frameCount: Int)
+data class FrameData(val x: Double, val y: Double, val area: Double, val frameCount: Int)
 
 class VideoProcessor(private val context: Context) {
 
@@ -40,6 +40,7 @@ class VideoProcessor(private val context: Context) {
 
     init {
         initializeOpenCV()
+        //System.loadLibrary("opencv_java3")
     }
 
     private fun initializeOpenCV() {
@@ -47,7 +48,7 @@ class VideoProcessor(private val context: Context) {
             showToast("OpenCV loaded successfully")
             initializeKalmanFilter()
         } else {
-            showToast("OpenCV initialization failed!")
+            //showToast("OpenCV initialization failed!")
         }
     }
 
@@ -61,7 +62,7 @@ class VideoProcessor(private val context: Context) {
         kalmanFilter._processNoiseCov = Mat.eye(4, 4, CvType.CV_32F).apply { setTo(Scalar(1e-4)) }
         kalmanFilter._measurementNoiseCov = Mat.eye(2, 2, CvType.CV_32F).apply { setTo(Scalar(1e-2)) }
         kalmanFilter._errorCovPost = Mat.eye(4, 4, CvType.CV_32F)
-        showToast("Kalman filter initialized")
+        //showToast("Kalman filter initialized")
     }
 
     fun clearTrackingData() {
@@ -87,13 +88,13 @@ class VideoProcessor(private val context: Context) {
 
             center?.let {
                 // Store raw point in preFilter4Ddata
-                val frameData = FrameData(it.x.toInt(), it.y.toInt(), area ?: 0.0, frameCount++)
+                val frameData = FrameData(it.x, it.y, area ?: 0.0, frameCount++)
                 preFilter4Ddata.add(frameData)
                 // Apply Kalman filter to smooth the data and store in postFilter4Ddata
                 applyKalmanFilter(it, area, frameData.frameCount)
                 // Update trace for real-time display
                 updateCenterTrace(it, processedMat)
-                logDebug("Raw Frame # ${frameData.frameCount}: X=${frameData.x}, Y=${frameData.y}, Area=${frameData.area}")
+                //logDebug("Raw Data:  | Frame(T)=${frameData.frameCount} | X=${frameData.x} | Y=${frameData.y} | Area=${frameData.area}")
             }
 
             return@withContext ImageUtils.matToBitmap(processedMat).also { processedMat.release() }
@@ -113,13 +114,13 @@ class VideoProcessor(private val context: Context) {
         kalmanFilter.predict()
 
         val corrected = kalmanFilter.correct(measurement)
-        val filteredX = corrected[0, 0][0].toInt()
-        val filteredY = corrected[1, 0][0].toInt()
+        val filteredX = corrected[0, 0][0]
+        val filteredY = corrected[1, 0][0]
 
         // Store filtered data in postFilter4Ddata
         val filteredFrameData = FrameData(filteredX, filteredY, area ?: 0.0, frame)
         postFilter4Ddata.add(filteredFrameData)
-        logDebug("Filtered Frame # ${filteredFrameData.frameCount}: Filtered X=${filteredFrameData.x}, Filtered Y=${filteredFrameData.y}, Area=${filteredFrameData.area}")
+        //logDebug("Filtered Data: | Frame(T)=${filteredFrameData.frameCount} | X=${filteredFrameData.x} | Y=${filteredFrameData.y} | Area=${filteredFrameData.area}")
     }
 
     private fun detectContourBlob(image: Mat): Pair<Pair<Point?, Double?>, Mat> {
@@ -159,10 +160,7 @@ class VideoProcessor(private val context: Context) {
     private fun updateCenterTrace(center: Point, image: Mat) {
         centerDataList.add(center)
         if (centerDataList.size > Settings.Trace.lineLimit) centerDataList.removeFirst()
-
-        for (i in 1 until centerDataList.size) {
-            Imgproc.line(image, centerDataList[i - 1], centerDataList[i], Scalar(255.0, 0.0, 0.0), 2)
-        }
+        for (i in 1 until centerDataList.size) { Imgproc.line(image, centerDataList[i - 1], centerDataList[i], Scalar(255.0, 0.0, 0.0), 2) }
     }
 
     fun retrievePreFilter4Ddata(): List<FrameData> = preFilter4Ddata
