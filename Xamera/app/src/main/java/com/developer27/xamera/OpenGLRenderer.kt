@@ -1,62 +1,92 @@
+// File: OpenGLRenderer.kt
 package com.developer27.xamera
 
 import android.graphics.SurfaceTexture
-import android.opengl.*
+import android.opengl.EGL14
+import android.opengl.EGLConfig
+import android.opengl.EGLContext
+import android.opengl.EGLDisplay
+import android.opengl.EGLSurface
+import android.opengl.GLES20
+import android.opengl.Matrix
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.Runnable
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.nio.FloatBuffer
-import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
 
-
-// TODO - Alan Raj <Due December 6th 2024>: Implement the isolated code you have created for OpenGL here.
-// Ensure synchronization with Soham's Video Processing Code.
-// Alan successfully setup the project.
-
+// TODO <Soham Naik>: Test this code whether it is working as it is. Otherwise, make adjustments.
 /**
- * The OpenGLRenderer sets up an EGL context, manages an OpenGL ES 2.0 rendering pipeline,
- * and renders a rotating, scaling triangle. It retrieves data from the VideoProcessor,
- * although that data is not currently used in the rendering logic.
+ * Simplified OpenGLRenderer for rendering pre-filtered and post-filtered paths.
+ * It initializes OpenGL ES 2.0, compiles shaders, sets up VBOs, and renders the paths.
  */
 class OpenGLRenderer(private val videoProcessor: VideoProcessor) {
+
     // EGL context-related members
     private var eglDisplay: EGLDisplay? = null
     private var eglContext: EGLContext? = null
     private var eglSurface: EGLSurface? = null
-    // Rendering control flag
-    private var running = false
-    // The triangle to be drawn
-    private var triangle: Triangle? = null
-    // Transformation matrices for the rendering pipeline
+
+    // Shader program and handles
+    private var shaderProgram: Int = 0
+    private var positionHandle: Int = 0
+    private var colorHandle: Int = 0
+    private var mvpHandle: Int = 0
+
+    // VBOs for pre-filtered and post-filtered paths
+    private var preFilterVBO: Int = 0
+    private var postFilterVBO: Int = 0
+
+    // Vertex counts
+    private var preFilterVertexCount: Int = 0
+    private var postFilterVertexCount: Int = 0
+
+    // Colors for the paths
+    private val preFilterColor = floatArrayOf(0f, 0f, 1f, 1f)    // Blue
+    private val postFilterColor = floatArrayOf(1f, 1f, 0f, 1f)   // Yellow
+
+    // Transformation matrices
     private val mvpMatrix = FloatArray(16)
     private val projectionMatrix = FloatArray(16)
     private val viewMatrix = FloatArray(16)
     private val modelMatrix = FloatArray(16)
-    // Rotation angle for the animation
-    private var angle = 0.0f
+
+    // Coroutine scope for asynchronous tasks
+    private val rendererScope = CoroutineScope(Dispatchers.Main + Job())
+
+    // Handler for frame rendering
+    private val handler = Handler(Looper.getMainLooper())
+
     /**
-     * Begins the rendering process by initializing EGL and starting the render loop.
+     * Starts the renderer by setting up EGL, initializing OpenGL resources,
+     * handling surface changes, and entering the render loop.
      */
     fun start(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
         setupEGL(surfaceTexture)
-        onSurfaceCreated()
+        initializeOpenGL()
         onSurfaceChanged(width, height)
         renderLoop()
-        release()
     }
+
     /**
-     * Sets up the EGL environment: display, context, and surface.
+     * Sets up the EGL context and surface.
      */
     private fun setupEGL(surfaceTexture: SurfaceTexture) {
         eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
         if (eglDisplay == EGL14.EGL_NO_DISPLAY) {
             throw RuntimeException("Unable to get EGL14 display")
         }
+
         val version = IntArray(2)
         if (!EGL14.eglInitialize(eglDisplay, version, 0, version, 1)) {
             throw RuntimeException("Unable to initialize EGL14")
         }
-        // Attributes for choosing a suitable EGL configuration
+
         val eglConfigAttributes = intArrayOf(
             EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
             EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT,
@@ -66,6 +96,7 @@ class OpenGLRenderer(private val videoProcessor: VideoProcessor) {
             EGL14.EGL_ALPHA_SIZE, 8,
             EGL14.EGL_NONE
         )
+
         val configs = arrayOfNulls<EGLConfig>(1)
         val numConfigs = IntArray(1)
         if (!EGL14.eglChooseConfig(
@@ -75,10 +106,10 @@ class OpenGLRenderer(private val videoProcessor: VideoProcessor) {
         ) {
             throw RuntimeException("Unable to choose EGL config")
         }
-        // Attributes for creating an OpenGL ES 2.0 context
+
         val eglContextAttributes = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE)
         eglContext = EGL14.eglCreateContext(eglDisplay, configs[0], EGL14.EGL_NO_CONTEXT, eglContextAttributes, 0)
-        // Attributes for creating a window surface
+
         val eglSurfaceAttributes = intArrayOf(EGL14.EGL_NONE)
         eglSurface = EGL14.eglCreateWindowSurface(eglDisplay, configs[0], surfaceTexture, eglSurfaceAttributes, 0)
 
@@ -86,124 +117,184 @@ class OpenGLRenderer(private val videoProcessor: VideoProcessor) {
             throw RuntimeException("Failed to make EGL context current")
         }
     }
+
     /**
-     * Main render loop that runs until 'stop()' is called. Clears the screen and redraws.
+     * Initializes OpenGL resources like shaders and VBOs.
      */
-    private fun renderLoop() {
-        running = true
-        while (running) {
-            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
-            onDrawFrame()
-            EGL14.eglSwapBuffers(eglDisplay, eglSurface)
-        }
-    }
-    /**
-     * Called once the surface is created. Sets the initial OpenGL state.
-     */
-    private fun onSurfaceCreated() {
-        GLES20.glClearColor(0f, 0f, 0f, 0f)
+    private fun initializeOpenGL() {
+        GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glEnable(GLES20.GL_BLEND)
         GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
-        triangle = Triangle()
+
+        // Compile and link shaders
+        shaderProgram = createShaderProgram()
+        GLES20.glUseProgram(shaderProgram)
+
+        // Get shader attribute and uniform locations
+        positionHandle = GLES20.glGetAttribLocation(shaderProgram, "vPosition")
+        colorHandle = GLES20.glGetUniformLocation(shaderProgram, "vColor")
+        mvpHandle = GLES20.glGetUniformLocation(shaderProgram, "uMVPMatrix")
+
+        // Initialize VBOs
+        val vbos = IntArray(2)
+        GLES20.glGenBuffers(2, vbos, 0)
+        preFilterVBO = vbos[0]
+        postFilterVBO = vbos[1]
+
+        // Allocate buffer storage for VBOs
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, preFilterVBO)
+        GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, MAX_PATH_POINTS * 3 * 4, null, GLES20.GL_DYNAMIC_DRAW)
+
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, postFilterVBO)
+        GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, MAX_PATH_POINTS * 3 * 4, null, GLES20.GL_DYNAMIC_DRAW)
+
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
     }
+
     /**
-     * Called when the surface size changes (e.g., device rotation).
-     * Adjusts the viewport and projection matrix.
+     * Adjusts the viewport and projection matrix when the surface size changes.
      */
     fun onSurfaceChanged(width: Int, height: Int) {
         GLES20.glViewport(0, 0, width, height)
         val aspectRatio = width.toFloat() / height
-        Matrix.frustumM(projectionMatrix, 0, -aspectRatio, aspectRatio, -1f, 1f, 3f, 7f)
+        Matrix.frustumM(projectionMatrix, 0, -aspectRatio, aspectRatio, -1f, 1f, 3f, 7000f)
     }
+
     /**
-     * Called each frame to update transformations and draw the scene.
+     * The main rendering loop, scheduled on the main thread with frame rate control.
+     */
+    private fun renderLoop() {
+        val targetFps = 60
+        val frameDuration = 1000 / targetFps
+
+        val renderRunnable = object : Runnable {
+            override fun run() {
+
+                val startTime = System.currentTimeMillis()
+
+                GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+
+                onDrawFrame()
+
+                EGL14.eglSwapBuffers(eglDisplay, eglSurface)
+
+                val elapsedTime = System.currentTimeMillis() - startTime
+                val delay = (frameDuration - elapsedTime).coerceAtLeast(0)
+                handler.postDelayed(this, delay)
+            }
+        }
+
+        handler.post(renderRunnable)
+    }
+
+    /**
+     * Handles drawing each frame, including pre-filtered and post-filtered paths.
      */
     private fun onDrawFrame() {
-        // Data retrieval from videoProcessor (currently unused in drawing logic)
-        val preFilterData = videoProcessor.retrievePreFilter4Ddata()
-        val postFilterData = videoProcessor.retrievePostFilter4Ddata()
-        if (preFilterData.isNotEmpty()) {
-            val latestFrame = preFilterData.last() // Access the last element
-            logDebug("OpenGL - Raw Data: | Frame(T)=${latestFrame.frameCount} | X=${latestFrame.x} | Y=${latestFrame.y} | Area=${latestFrame.area}")
-        }
-        if (postFilterData.isNotEmpty()) {
-            val latestFrame = postFilterData.last() // Access the last element
-            logDebug("OpenGL - Raw Data: | Frame(T)=${latestFrame.frameCount} | X=${latestFrame.x} | Y=${latestFrame.y} | Area=${latestFrame.area}")
-        }
-        // The preFilterData and postFilterData are obtained but not used.
-
         // Set up the camera view
         Matrix.setLookAtM(viewMatrix, 0,
-            0f, 0f, -5f,  // Eye position
-            0f, 0f, 0f,   // Look at center
-            0f, 1f, 0f    // Up vector
+            0f, 0f, -1000f,  // Camera position
+            0f, 0f, 0f,      // Look at point
+            0f, 1f, 0f       // Up vector
         )
-        // Apply rotation and scaling to the model matrix
+
+        // Identity model matrix (no transformations)
         Matrix.setIdentityM(modelMatrix, 0)
-        angle += 1.0f
-        Matrix.rotateM(modelMatrix, 0, angle, 0f, 0f, 1f)
-        val scaleFactor = 0.5f + 0.5f * kotlin.math.abs(kotlin.math.sin(Math.toRadians(angle.toDouble()))).toFloat()
-        Matrix.scaleM(modelMatrix, 0, scaleFactor, scaleFactor, scaleFactor)
-        // Combine the view and model matrices, then apply the projection
+
+        // Calculate the Model-View-Projection matrix
         Matrix.multiplyMM(mvpMatrix, 0, viewMatrix, 0, modelMatrix, 0)
         Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, mvpMatrix, 0)
-        // Draw the triangle with the final MVP matrix
-        triangle?.draw(mvpMatrix)
-    }
-    /**
-     * Stops the render loop.
-     */
-    fun stop() {
-        running = false
-    }
-    /**
-     * Cleans up and releases all EGL resources.
-     */
-    private fun release() {
-        if (eglDisplay != null && eglDisplay != EGL14.EGL_NO_DISPLAY) {
-            EGL14.eglMakeCurrent(
-                eglDisplay, EGL14.EGL_NO_SURFACE,
-                EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT
-            )
-            EGL14.eglDestroySurface(eglDisplay, eglSurface)
-            EGL14.eglDestroyContext(eglDisplay, eglContext)
-            EGL14.eglTerminate(eglDisplay)
+
+        // Launch a coroutine to update VBOs with new data
+        rendererScope.launch {
+            try {
+                // Retrieve pre-filtered and post-filtered data
+                val preFilterData = videoProcessor.retrievePreFilter4Ddata()
+                val postFilterData = videoProcessor.retrievePostFilter4Ddata()
+
+                Log.d("OpenGLRenderer", "Pre-filtered data size: ${preFilterData.size}")
+                Log.d("OpenGLRenderer", "Post-filtered data size: ${postFilterData.size}")
+
+                // Update VBOs
+                preFilterVertexCount = updateVBO(preFilterVBO, preFilterData)
+                postFilterVertexCount = updateVBO(postFilterVBO, postFilterData)
+            } catch (e: Exception) {
+                Log.e("OpenGLRenderer", "Error updating VBOs: ${e.message}")
+                e.printStackTrace()
+            }
         }
 
-        eglDisplay = null
-        eglContext = null
-        eglSurface = null
-    }
-    private fun logDebug(message: String) {
-        if (Settings.Debug.enableLogging) Log.d("VideoProcessor", message)
-    }
-}
+        // Draw pre-filtered path
+        drawPath(preFilterVBO, preFilterVertexCount, preFilterColor, mvpMatrix)
 
-/**
- * The Triangle class sets up a simple vertex and fragment shader,
- * compiles them into a program, and draws a single triangle using that program.
- */
-class Triangle {
-    companion object {
-        // Defines a simple triangle in normalized device coordinates
-        private val vertices = floatArrayOf(
-            0.0f,  0.5f, 0.0f,  // Top vertex
-            -0.5f, -0.5f, 0.0f, // Bottom-left vertex
-            0.5f, -0.5f, 0.0f   // Bottom-right vertex
+        // Draw post-filtered path
+        drawPath(postFilterVBO, postFilterVertexCount, postFilterColor, mvpMatrix)
+    }
+
+    /**
+     * Updates a VBO with the provided FrameData.
+     * @param vbo The Vertex Buffer Object to update.
+     * @param data The list of FrameData to render.
+     * @return The number of vertices updated.
+     */
+    private fun updateVBO(vbo: Int, data: List<FrameData>): Int {
+        val vertexCount = minOf(data.size, MAX_PATH_POINTS)
+        val buffer = FloatArray(vertexCount * 3)
+
+        for (i in 0 until vertexCount) {
+            val frame = data[i]
+            buffer[i * 3] = frame.x.toFloat()
+            buffer[i * 3 + 1] = frame.y.toFloat()
+            buffer[i * 3 + 2] = 0f // Z-coordinate can be set to 0 for 2D paths
+        }
+
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vbo)
+        GLES20.glBufferSubData(
+            GLES20.GL_ARRAY_BUFFER,
+            0,
+            vertexCount * 3 * 4,
+            FloatBuffer.wrap(buffer, 0, vertexCount * 3)
         )
-        private const val COORDS_PER_VERTEX = 3
-        private val color = floatArrayOf(0.0f, 1.0f, 0.0f, 1.0f) // Green color
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
+
+
+        Log.d("OpenGLRenderer", "Updated VBO $vbo with $vertexCount vertices.")
+
+        return vertexCount
     }
 
-    private val vertexBuffer: FloatBuffer = ByteBuffer
-        .allocateDirect(vertices.size * 4)
-        .order(ByteOrder.nativeOrder())
-        .asFloatBuffer().apply {
-            put(vertices)
-            position(0)
-        }
-    private var shaderProgram: Int
-    init {
+    /**
+     * Draws a path using a Vertex Buffer Object (VBO).
+     * @param vbo The Vertex Buffer Object containing path vertices.
+     * @param count The number of vertices to draw.
+     * @param color The color of the path.
+     * @param mvpMatrix The Model-View-Projection matrix.
+     */
+    private fun drawPath(vbo: Int, count: Int, color: FloatArray, mvpMatrix: FloatArray) {
+        if (count == 0) return
+
+        GLES20.glUseProgram(shaderProgram)
+
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vbo)
+        GLES20.glEnableVertexAttribArray(positionHandle)
+        GLES20.glVertexAttribPointer(
+            positionHandle, 3, GLES20.GL_FLOAT, false, 3 * 4, 0
+        )
+
+        GLES20.glUniform4fv(colorHandle, 1, color, 0)
+        GLES20.glUniformMatrix4fv(mvpHandle, 1, false, mvpMatrix, 0)
+
+        GLES20.glDrawArrays(GLES20.GL_LINE_STRIP, 0, count)
+
+        GLES20.glDisableVertexAttribArray(positionHandle)
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
+    }
+
+    /**
+     * Creates and compiles the shader program, then links vertex and fragment shaders.
+     * @return The OpenGL shader program ID.
+     */
+    private fun createShaderProgram(): Int {
         val vertexShaderCode = """
             uniform mat4 uMVPMatrix;
             attribute vec4 vPosition;
@@ -223,48 +314,75 @@ class Triangle {
         val vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode)
         val fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, fragmentShaderCode)
 
-        shaderProgram = GLES20.glCreateProgram().also {
-            GLES20.glAttachShader(it, vertexShader)
-            GLES20.glAttachShader(it, fragmentShader)
-            GLES20.glLinkProgram(it)
+        return GLES20.glCreateProgram().also { program ->
+            GLES20.glAttachShader(program, vertexShader)
+            GLES20.glAttachShader(program, fragmentShader)
+            GLES20.glLinkProgram(program)
+
+            // Check linking status
+            val linkStatus = IntArray(1)
+            GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, linkStatus, 0)
+            if (linkStatus[0] == 0) {
+                Log.e("ShaderProgram", "Error linking program: ${GLES20.glGetProgramInfoLog(program)}")
+                GLES20.glDeleteProgram(program)
+                throw RuntimeException("Error creating shader program.")
+            }
         }
     }
+
     /**
-     * Draws the triangle using the provided MVP matrix.
-     */
-    fun draw(mvpMatrix: FloatArray) {
-        GLES20.glUseProgram(shaderProgram)
-
-        val positionHandle = GLES20.glGetAttribLocation(shaderProgram, "vPosition").also {
-            GLES20.glEnableVertexAttribArray(it)
-            GLES20.glVertexAttribPointer(
-                it,
-                COORDS_PER_VERTEX,
-                GLES20.GL_FLOAT,
-                false,
-                COORDS_PER_VERTEX * 4,
-                vertexBuffer
-            )
-        }
-
-        GLES20.glGetUniformLocation(shaderProgram, "vColor").also {
-            GLES20.glUniform4fv(it, 1, color, 0)
-        }
-
-        GLES20.glGetUniformLocation(shaderProgram, "uMVPMatrix").also {
-            GLES20.glUniformMatrix4fv(it, 1, false, mvpMatrix, 0)
-        }
-
-        GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, vertices.size / COORDS_PER_VERTEX)
-        GLES20.glDisableVertexAttribArray(positionHandle)
-    }
-    /**
-     * Compiles an OpenGL shader from the given source code.
+     * Compiles a shader of the given type with the provided source code.
+     * @param type The type of shader (vertex or fragment).
+     * @param shaderCode The GLSL code of the shader.
+     * @return The OpenGL shader ID.
      */
     private fun loadShader(type: Int, shaderCode: String): Int {
         return GLES20.glCreateShader(type).also { shader ->
             GLES20.glShaderSource(shader, shaderCode)
             GLES20.glCompileShader(shader)
+
+            // Check compile status
+            val compileStatus = IntArray(1)
+            GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compileStatus, 0)
+            if (compileStatus[0] == 0) {
+                Log.e("Shader", "Error compiling shader: ${GLES20.glGetShaderInfoLog(shader)}")
+                GLES20.glDeleteShader(shader)
+                throw RuntimeException("Error compiling shader.")
+            }
         }
+    }
+
+    /**
+     * Stops the rendering loop and cancels coroutines.
+     */
+    fun stop() {
+        rendererScope.cancel()
+    }
+
+    /**
+     * Releases EGL and OpenGL resources.
+     */
+    fun release() {
+        if (eglDisplay != null && eglDisplay != EGL14.EGL_NO_DISPLAY) {
+            EGL14.eglMakeCurrent(
+                eglDisplay, EGL14.EGL_NO_SURFACE,
+                EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT
+            )
+            EGL14.eglDestroySurface(eglDisplay, eglSurface)
+            EGL14.eglDestroyContext(eglDisplay, eglContext)
+            EGL14.eglTerminate(eglDisplay)
+        }
+
+        eglDisplay = null
+        eglContext = null
+        eglSurface = null
+
+        // Delete VBOs
+        val vbos = intArrayOf(preFilterVBO, postFilterVBO)
+        GLES20.glDeleteBuffers(2, vbos, 0)
+    }
+
+    companion object {
+        private const val MAX_PATH_POINTS = 1000 // Maximum number of points per path
     }
 }
