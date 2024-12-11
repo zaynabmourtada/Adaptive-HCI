@@ -1,4 +1,6 @@
+// File: VideoProcessor.kt
 package com.developer27.xamera
+
 import android.graphics.Bitmap
 import android.content.Context
 import android.util.Log
@@ -160,7 +162,9 @@ class VideoProcessor(private val context: Context) {
     private fun updateCenterTrace(center: Point, image: Mat) {
         centerDataList.add(center)
         if (centerDataList.size > Settings.Trace.lineLimit) centerDataList.removeFirst()
-        for (i in 1 until centerDataList.size) { Imgproc.line(image, centerDataList[i - 1], centerDataList[i], Scalar(255.0, 0.0, 0.0), 2) }
+        for (i in 1 until centerDataList.size) {
+            Imgproc.line(image, centerDataList[i - 1], centerDataList[i], Scalar(255.0, 0.0, 0.0), 2)
+        }
     }
 
     fun retrievePreFilter4Ddata(): List<FrameData> = preFilter4Ddata
@@ -175,6 +179,9 @@ class VideoProcessor(private val context: Context) {
     }
 }
 
+/**
+ * Preprocessing utilities for image processing.
+ */
 class Preprocessing {
     companion object {
         fun applyGrayscale(frame: Mat): Mat {
@@ -182,19 +189,23 @@ class Preprocessing {
             Imgproc.cvtColor(frame, grayMat, Imgproc.COLOR_BGR2GRAY)
             return grayMat
         }
+
         fun enhanceBrightness(image: Mat): Mat = Mat().apply {
             Core.multiply(image, Scalar(Settings.Brightness.factor), this)
         }
+
         fun conditionalThresholding(image: Mat): Mat {
             val thresholdMat = Mat()
             Imgproc.threshold(image, thresholdMat, Settings.Brightness.threshold, 255.0, Imgproc.THRESH_TOZERO)
             return thresholdMat
         }
+
         fun applyGaussianBlur(image: Mat): Mat {
             val blurredMat = Mat()
             Imgproc.GaussianBlur(image, blurredMat, Size(5.0, 5.0), 0.0)
             return blurredMat
         }
+
         fun applyMorphologicalClosing(image: Mat): Mat {
             val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
             val closedImage = Mat()
@@ -204,6 +215,9 @@ class Preprocessing {
     }
 }
 
+/**
+ * Utility class for image conversion between Bitmap and Mat.
+ */
 class ImageUtils {
     companion object {
         /**
@@ -214,6 +228,7 @@ class ImageUtils {
         fun bitmapToMat(bitmap: Bitmap): Mat = Mat().also {
             org.opencv.android.Utils.bitmapToMat(bitmap, it)
         }
+
         /**
          * Converts an OpenCV Mat to a Bitmap.
          * @param mat The input Mat.
