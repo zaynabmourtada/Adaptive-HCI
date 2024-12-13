@@ -12,6 +12,8 @@ import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import org.opencv.video.KalmanFilter
 import java.util.*
+import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
+import org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction
 
 object Settings {
     object Contour {
@@ -19,6 +21,13 @@ object Settings {
     }
     object Trace {
         var lineLimit = 50
+
+        // Added for spline interpolation and drawing
+        var syntheticPointsCount = 10
+        var splineStep = 0.01
+        var originalLineColor = Scalar(255.0, 0.0, 0.0) // Red
+        var splineLineColor = Scalar(0.0, 0.0, 255.0)   // Blue
+        var lineThickness = 2
     }
     object Brightness {
         var factor = 2.0
@@ -35,7 +44,10 @@ data class FrameData(val x: Double, val y: Double, val area: Double, val frameCo
 class VideoProcessor(private val context: Context) {
 
     private lateinit var kalmanFilter: KalmanFilter
+
     private val centerDataList = LinkedList<Point>() // Real-time trace with limited points
+    private val allPointsList = LinkedList<Point>() // List to store both original and synthetic points
+
     private val preFilter4Ddata = mutableListOf<FrameData>() // Complete raw data
     private val postFilter4Ddata = mutableListOf<FrameData>() // Complete filtered data
     private var frameCount = 0
@@ -95,7 +107,7 @@ class VideoProcessor(private val context: Context) {
                 // Apply Kalman filter to smooth the data and store in postFilter4Ddata
                 applyKalmanFilter(it, area, frameData.frameCount)
                 // Update trace for real-time display
-                //updateCenterTrace(it, processedMat)
+                updateCenterTrace(it, processedMat)
                 //logDebug("Raw Data:  | Frame(T)=${frameData.frameCount} | X=${frameData.x} | Y=${frameData.y} | Area=${frameData.area}")
             }
 
@@ -159,12 +171,63 @@ class VideoProcessor(private val context: Context) {
         } else Pair(null, null)
     }
 
-    private fun updateCenterTrace(center: Point, image: Mat) {
-        centerDataList.add(center)
-        if (centerDataList.size > Settings.Trace.lineLimit) centerDataList.removeFirst()
-        for (i in 1 until centerDataList.size) {
-            Imgproc.line(image, centerDataList[i - 1], centerDataList[i], Scalar(255.0, 0.0, 0.0), 2)
+    // Helper function for drawing the spline curve
+    private fun drawSplineCurve(data: List<Point>, image: Mat) {
+        // If there are fewer than 2 points, we cannot form a spline
+        if (data.size < 2) return
+
+        val interpolator = SplineInterpolator()
+        val xData = data.map { it.x }.toDoubleArray()
+        val yData = data.map { it.y }.toDoubleArray()
+        val tData = (0 until data.size).map { it.toDouble() }.toDoubleArray()
+
+        val splineX = interpolator.interpolate(tData, xData)
+        val splineY = interpolator.interpolate(tData, yData)
+
+        // Draw the spline curve by evaluating it at finely spaced intervals
+        var prevPoint: Point? = null
+        var t = 0.0
+        while (t <= (data.size - 1).toDouble()) {
+            val interpolatedX = splineX.value(t)
+            val interpolatedY = splineY.value(t)
+            val currentPoint = Point(interpolatedX, interpolatedY)
+
+            prevPoint?.let {
+                Imgproc.line(
+                    image,
+                    it,
+                    currentPoint,
+                    Settings.Trace.splineLineColor,
+                    Settings.Trace.lineThickness
+                )
+            }
+
+            prevPoint = currentPoint
+            t += Settings.Trace.splineStep
         }
+    }
+
+    // Updated function to handle the centerDataList trace and spline drawing
+    private fun updateCenterTrace(center: Point, image: Mat) {
+        // Add the current center to the centerDataList and enforce the line limit
+        centerDataList.add(center)
+        if (centerDataList.size > Settings.Trace.lineLimit) {
+            centerDataList.removeFirst()
+        }
+
+        // Draw the centerDataList as discrete points in red
+        for (i in 1 until centerDataList.size) {
+            Imgproc.line(
+                image,
+                centerDataList[i - 1],
+                centerDataList[i],
+                Settings.Trace.originalLineColor,
+                Settings.Trace.lineThickness
+            )
+        }
+
+        // Draw the spline curve for the current data
+        drawSplineCurve(centerDataList, image)
     }
 
     fun retrievePreFilter4Ddata(): List<FrameData> = preFilter4Ddata
