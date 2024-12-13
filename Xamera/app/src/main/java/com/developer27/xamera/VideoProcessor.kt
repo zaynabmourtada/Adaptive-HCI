@@ -95,7 +95,7 @@ class VideoProcessor(private val context: Context) {
                 // Apply Kalman filter to smooth the data and store in postFilter4Ddata
                 applyKalmanFilter(it, area, frameData.frameCount)
                 // Update trace for real-time display
-                updateCenterTrace(it, processedMat)
+                //updateCenterTrace(it, processedMat)
                 //logDebug("Raw Data:  | Frame(T)=${frameData.frameCount} | X=${frameData.x} | Y=${frameData.y} | Area=${frameData.area}")
             }
 

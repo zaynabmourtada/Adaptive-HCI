@@ -19,6 +19,7 @@ import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.nio.FloatBuffer
+import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
 
 // TODO <Soham Naik>: Test this code whether it is working as it is. Otherwise, make adjustments.
 /**
@@ -99,11 +100,7 @@ class OpenGLRenderer(private val videoProcessor: VideoProcessor) {
 
         val configs = arrayOfNulls<EGLConfig>(1)
         val numConfigs = IntArray(1)
-        if (!EGL14.eglChooseConfig(
-                eglDisplay, eglConfigAttributes, 0,
-                configs, 0, configs.size, numConfigs, 0
-            )
-        ) {
+        if (!EGL14.eglChooseConfig(eglDisplay, eglConfigAttributes, 0, configs, 0, configs.size, numConfigs, 0)) {
             throw RuntimeException("Unable to choose EGL config")
         }
 
@@ -126,27 +123,29 @@ class OpenGLRenderer(private val videoProcessor: VideoProcessor) {
         GLES20.glEnable(GLES20.GL_BLEND)
         GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
 
-        // Compile and link shaders
         shaderProgram = createShaderProgram()
         GLES20.glUseProgram(shaderProgram)
 
-        // Get shader attribute and uniform locations
         positionHandle = GLES20.glGetAttribLocation(shaderProgram, "vPosition")
         colorHandle = GLES20.glGetUniformLocation(shaderProgram, "vColor")
         mvpHandle = GLES20.glGetUniformLocation(shaderProgram, "uMVPMatrix")
 
-        // Initialize VBOs
+        Log.d("OpenGLRenderer", "Shader program initialized. Handles - Position: $positionHandle, Color: $colorHandle, MVP: $mvpHandle")
+
         val vbos = IntArray(2)
         GLES20.glGenBuffers(2, vbos, 0)
         preFilterVBO = vbos[0]
         postFilterVBO = vbos[1]
 
-        // Allocate buffer storage for VBOs
+        Log.d("OpenGLRenderer", "VBOs initialized. preFilterVBO: $preFilterVBO, postFilterVBO: $postFilterVBO")
+
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, preFilterVBO)
         GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, MAX_PATH_POINTS * 3 * 4, null, GLES20.GL_DYNAMIC_DRAW)
+        checkGLError("initializeOpenGL - preFilterVBO")
 
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, postFilterVBO)
         GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, MAX_PATH_POINTS * 3 * 4, null, GLES20.GL_DYNAMIC_DRAW)
+        checkGLError("initializeOpenGL - postFilterVBO")
 
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
     }
@@ -231,6 +230,14 @@ class OpenGLRenderer(private val videoProcessor: VideoProcessor) {
         drawPath(postFilterVBO, postFilterVertexCount, postFilterColor, mvpMatrix)
     }
 
+    private fun checkGLError(operation: String) {
+        val error = GLES20.glGetError()
+        if (error != GLES20.GL_NO_ERROR) {
+            Log.e("OpenGLRenderer", "$operation: glError $error")
+            throw RuntimeException("$operation: glError $error")
+        }
+    }
+
     /**
      * Updates a VBO with the provided FrameData.
      * @param vbo The Vertex Buffer Object to update.
@@ -245,20 +252,15 @@ class OpenGLRenderer(private val videoProcessor: VideoProcessor) {
             val frame = data[i]
             buffer[i * 3] = frame.x.toFloat()
             buffer[i * 3 + 1] = frame.y.toFloat()
-            buffer[i * 3 + 2] = 0f // Z-coordinate can be set to 0 for 2D paths
+            buffer[i * 3 + 2] = 0f
         }
 
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vbo)
-        GLES20.glBufferSubData(
-            GLES20.GL_ARRAY_BUFFER,
-            0,
-            vertexCount * 3 * 4,
-            FloatBuffer.wrap(buffer, 0, vertexCount * 3)
-        )
+        GLES20.glBufferSubData(GLES20.GL_ARRAY_BUFFER, 0, vertexCount * 3 * 4, FloatBuffer.wrap(buffer, 0, vertexCount * 3))
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
 
-
         Log.d("OpenGLRenderer", "Updated VBO $vbo with $vertexCount vertices.")
+        checkGLError("updateVBO")
 
         return vertexCount
     }
