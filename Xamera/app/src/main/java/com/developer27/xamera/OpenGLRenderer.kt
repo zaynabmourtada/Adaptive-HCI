@@ -10,9 +10,6 @@ import android.opengl.Matrix
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
-
-//TODO - Alan Raj: Implement the isolated code you have created for OpenGL here.
-//                 Make sure your code works as synchronized with Soham`s Video Processing Code.
 class OpenGLRenderer {
     private var eglDisplay: EGLDisplay? = null
     private var eglContext: EGLContext? = null
