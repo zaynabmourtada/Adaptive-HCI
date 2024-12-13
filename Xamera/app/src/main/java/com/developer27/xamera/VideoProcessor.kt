@@ -1,6 +1,7 @@
-// File: VideoProcessor.kt
+// File: VideoProcessor.kt // Written by Soham Naik // Last Updated 12/12/2024
 package com.developer27.xamera
 
+import org.opencv.android.Utils
 import android.graphics.Bitmap
 import android.content.Context
 import android.util.Log
@@ -15,70 +16,97 @@ import java.util.*
 import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
 import org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction
 
+/**
+ * Global application settings.
+ */
 object Settings {
     object Contour {
+        /** The minimum area threshold for contour detection. */
         var threshold = 500
     }
     object Trace {
+        /** The maximum number of raw points to store and display. */
         var lineLimit = 50
-
-        // Added for spline interpolation and drawing
-        var syntheticPointsCount = 10
+        /** Step size for spline evaluation. Smaller values yield smoother curves. */
         var splineStep = 0.01
-        var originalLineColor = Scalar(255.0, 0.0, 0.0) // Red
-        var splineLineColor = Scalar(0.0, 0.0, 255.0)   // Blue
-        var lineThickness = 2
+        /** Color of the raw trace line (red). */
+        var originalLineColor = Scalar(255.0, 0.0, 0.0)
+        /** Color of the spline curve line (blue). */
+        var splineLineColor = Scalar(0.0, 0.0, 255.0)
+        /** Thickness of the trace and spline lines. */
+        var lineThickness = 4
     }
     object Brightness {
+        /** Factor by which the brightness is enhanced. */
         var factor = 2.0
+        /** Threshold to apply for conditional thresholding. */
         var threshold = 150.0
     }
     object Debug {
+        /** Enable user-facing toasts for debugging. */
         var enableToasts = true
+        /** Enable log debugging statements. */
         var enableLogging = true
     }
 }
-
+/**
+ * Data class representing frame-level information about a detected point.
+ *
+ * @param x The x-coordinate of the detected point.
+ * @param y The y-coordinate of the detected point.
+ * @param area The area of the detected contour at this frame.
+ * @param frameCount The sequential frame number.
+ */
 data class FrameData(val x: Double, val y: Double, val area: Double, val frameCount: Int)
-
+/**
+ * The VideoProcessor class handles frame-by-frame image analysis, point tracking,
+ * data filtering (via Kalman filter), and delegates rendering (raw trace and spline) to TraceRenderer.
+ *
+ * @param context The Android context used for UI feedback (toasts, logs).
+ */
 class VideoProcessor(private val context: Context) {
-
     private lateinit var kalmanFilter: KalmanFilter
-
-    private val centerDataList = LinkedList<Point>() // Real-time trace with limited points
-    private val allPointsList = LinkedList<Point>() // List to store both original and synthetic points
-
-    private val preFilter4Ddata = mutableListOf<FrameData>() // Complete raw data
-    private val postFilter4Ddata = mutableListOf<FrameData>() // Complete filtered data
+    /**
+     * The list of raw detected points limited by Settings.Trace.lineLimit.
+     */
+    private val centerDataList = LinkedList<Point>()
+    /**
+     * Lists for storing frame data before and after Kalman filtering.
+     */
+    private val preFilter4Ddata = mutableListOf<FrameData>()
+    private val postFilter4Ddata = mutableListOf<FrameData>()
     private var frameCount = 0
-
     init {
         initializeOpenCV()
-        //System.loadLibrary("opencv_java3")
     }
-
+    /**
+     * Attempts to load and initialize OpenCV and the Kalman filter.
+     */
     private fun initializeOpenCV() {
         if (OpenCVLoader.initDebug()) {
             showToast("OpenCV loaded successfully")
             initializeKalmanFilter()
         } else {
-            //showToast("OpenCV initialization failed!")
+            // Optionally handle initialization failure
         }
     }
-
+    /**
+     * Initializes the Kalman filter parameters for smoothing detections.
+     */
     private fun initializeKalmanFilter() {
         kalmanFilter = KalmanFilter(4, 2)
         kalmanFilter._transitionMatrix = Mat.eye(4, 4, CvType.CV_32F).apply {
-            put(0, 2, 1.0) // Linking position to velocity for x
-            put(1, 3, 1.0) // Linking position to velocity for y
+            put(0, 2, 1.0)
+            put(1, 3, 1.0)
         }
         kalmanFilter._measurementMatrix = Mat.eye(2, 4, CvType.CV_32F)
         kalmanFilter._processNoiseCov = Mat.eye(4, 4, CvType.CV_32F).apply { setTo(Scalar(1e-4)) }
         kalmanFilter._measurementNoiseCov = Mat.eye(2, 2, CvType.CV_32F).apply { setTo(Scalar(1e-2)) }
         kalmanFilter._errorCovPost = Mat.eye(4, 4, CvType.CV_32F)
-        //showToast("Kalman filter initialized")
     }
-
+    /**
+     * Clears all tracking data and resets the frame count.
+     */
     fun clearTrackingData() {
         frameCount = 0
         preFilter4Ddata.clear()
@@ -86,31 +114,38 @@ class VideoProcessor(private val context: Context) {
         centerDataList.clear()
         showToast("Tracking started: data reset.")
     }
-
+    /**
+     * Processes a single frame asynchronously. Performs preprocessing, contour detection,
+     * Kalman filtering, and updates the trace.
+     *
+     * @param bitmap The input frame as a Bitmap.
+     * @return The processed frame as a Bitmap with overlays, or null if processing fails.
+     */
     suspend fun processFrame(bitmap: Bitmap): Bitmap? = withContext(Dispatchers.Default) {
         try {
             val mat = ImageUtils.bitmapToMat(bitmap)
-
+            // Apply preprocessing steps
             val grayMat = Preprocessing.applyGrayscale(mat).also { mat.release() }
             val enhancedMat = Preprocessing.enhanceBrightness(grayMat).also { grayMat.release() }
             val thresholdMat = Preprocessing.conditionalThresholding(enhancedMat).also { enhancedMat.release() }
             val blurredMat = Preprocessing.applyGaussianBlur(thresholdMat).also { thresholdMat.release() }
             val cleanedMat = Preprocessing.applyMorphologicalClosing(blurredMat).also { blurredMat.release() }
-
+            // Detect the largest contour blob and compute its center
             val (centerInfo, processedMat) = detectContourBlob(cleanedMat).also { cleanedMat.release() }
             val (center, area) = centerInfo
-
+            // If a center is found, process and update the trace
             center?.let {
-                // Store raw point in preFilter4Ddata
                 val frameData = FrameData(it.x, it.y, area ?: 0.0, frameCount++)
                 preFilter4Ddata.add(frameData)
-                // Apply Kalman filter to smooth the data and store in postFilter4Ddata
                 applyKalmanFilter(it, area, frameData.frameCount)
-                // Update trace for real-time display
-                updateCenterTrace(it, processedMat)
-                //logDebug("Raw Data:  | Frame(T)=${frameData.frameCount} | X=${frameData.x} | Y=${frameData.y} | Area=${frameData.area}")
+                centerDataList.add(it)
+                if (centerDataList.size > Settings.Trace.lineLimit) {
+                    centerDataList.removeFirst()
+                }
+                // Delegate drawing to TraceRenderer
+                TraceRenderer.drawRawTrace(centerDataList, processedMat)
+                TraceRenderer.drawSplineCurve(centerDataList, processedMat)
             }
-
             return@withContext ImageUtils.matToBitmap(processedMat).also { processedMat.release() }
         } catch (e: Exception) {
             Log.e("VideoProcessor", "Error processing frame: ${e.message}")
@@ -118,36 +153,32 @@ class VideoProcessor(private val context: Context) {
             return@withContext null
         }
     }
-
+    /**
+     * Applies the Kalman filter to the detected point to reduce noise and store filtered data.
+     */
     private fun applyKalmanFilter(center: Point, area: Double?, frame: Int) {
         val measurement = Mat(2, 1, CvType.CV_32F).apply {
             put(0, 0, center.x)
             put(1, 0, center.y)
         }
-
         kalmanFilter.predict()
-
         val corrected = kalmanFilter.correct(measurement)
         val filteredX = corrected[0, 0][0]
         val filteredY = corrected[1, 0][0]
-
-        // Store filtered data in postFilter4Ddata
         val filteredFrameData = FrameData(filteredX, filteredY, area ?: 0.0, frame)
         postFilter4Ddata.add(filteredFrameData)
-        //logDebug("Filtered Data: | Frame(T)=${filteredFrameData.frameCount} | X=${filteredFrameData.x} | Y=${filteredFrameData.y} | Area=${filteredFrameData.area}")
     }
-
+    /**
+     * Detects the largest contour in the given image. Returns the center of that contour (if any) and the processed image.
+     */
     private fun detectContourBlob(image: Mat): Pair<Pair<Point?, Double?>, Mat> {
         val binaryImage = Mat()
         Imgproc.threshold(image, binaryImage, 200.0, 255.0, Imgproc.THRESH_BINARY)
-
         val contours = mutableListOf<MatOfPoint>()
         Imgproc.findContours(binaryImage, contours, Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
-
         val largestContour = contours.maxByOrNull { Imgproc.contourArea(it) }
         val outputImage = Mat()
         Imgproc.cvtColor(image, outputImage, Imgproc.COLOR_GRAY2BGR)
-
         val (centerPoint, area) = largestContour?.takeIf { Imgproc.contourArea(it) > Settings.Contour.threshold }
             ?.let {
                 Imgproc.drawContours(outputImage, listOf(it), -1, Scalar(255.0, 105.0, 180.0), Imgproc.FILLED)
@@ -155,11 +186,12 @@ class VideoProcessor(private val context: Context) {
                 val center = calculateCenter(it, outputImage).first
                 Pair(center, area)
             } ?: Pair(null, null)
-
         binaryImage.release()
         return Pair(Pair(centerPoint, area), outputImage)
     }
-
+    /**
+     * Calculates the center of a given contour using image moments.
+     */
     private fun calculateCenter(contour: MatOfPoint, image: Mat): Pair<Point?, Pair<Int, Int>?> {
         val moments = Imgproc.moments(contour)
         return if (moments.m00 != 0.0) {
@@ -168,30 +200,72 @@ class VideoProcessor(private val context: Context) {
             val centerPoint = Point(centerX.toDouble(), centerY.toDouble())
             Imgproc.circle(image, centerPoint, 10, Scalar(0.0, 255.0, 0.0), -1)
             Pair(centerPoint, Pair(centerX, centerY))
-        } else Pair(null, null)
+        } else {
+            Pair(null, null)
+        }
     }
+    /**
+     * Returns the raw frame data before filtering.
+     */
+    fun retrievePreFilter4Ddata(): List<FrameData> = preFilter4Ddata
+    /**
+     * Returns the filtered frame data after applying the Kalman filter.
+     */
+    fun retrievePostFilter4Ddata(): List<FrameData> = postFilter4Ddata
+    /**
+     * Displays a toast message if debugging is enabled.
+     */
+    private fun showToast(message: String) {
+        if (Settings.Debug.enableToasts) {
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+    /**
+     * Logs a debug message if debugging is enabled.
+     */
+    private fun logDebug(message: String) {
+        if (Settings.Debug.enableLogging) {
+            Log.d("VideoProcessor", message)
+        }
+    }
+}
+/**
+ * Object responsible for rendering operations such as drawing the raw trace and the spline curve.
+ */
+object TraceRenderer {
+    /**
+     * Draws the original (raw) detected points trace.
+     *
+     * @param data The list of points representing the raw trace.
+     * @param image The image on which to draw.
+     */
+    fun drawRawTrace(data: List<Point>, image: Mat) {
+        for (i in 1 until data.size) {
+            Imgproc.line(
+                image,
+                data[i - 1],
+                data[i],
+                Settings.Trace.originalLineColor,
+                Settings.Trace.lineThickness
+            )
+        }
+    }
+    /**
+     * Draws a spline curve based on the data points.
+     * Uses SplineHelper to generate spline functions.
+     *
+     * @param data The list of points from which to compute the spline.
+     * @param image The image on which to draw the spline curve.
+     */
+    fun drawSplineCurve(data: List<Point>, image: Mat) {
+        val splinePair = SplineHelper.applySplineInterpolation(data) ?: return
+        val (splineX, splineY) = splinePair
 
-    // Helper function for drawing the spline curve
-    private fun drawSplineCurve(data: List<Point>, image: Mat) {
-        // If there are fewer than 2 points, we cannot form a spline
-        if (data.size < 2) return
-
-        val interpolator = SplineInterpolator()
-        val xData = data.map { it.x }.toDoubleArray()
-        val yData = data.map { it.y }.toDoubleArray()
-        val tData = (0 until data.size).map { it.toDouble() }.toDoubleArray()
-
-        val splineX = interpolator.interpolate(tData, xData)
-        val splineY = interpolator.interpolate(tData, yData)
-
-        // Draw the spline curve by evaluating it at finely spaced intervals
         var prevPoint: Point? = null
         var t = 0.0
-        while (t <= (data.size - 1).toDouble()) {
-            val interpolatedX = splineX.value(t)
-            val interpolatedY = splineY.value(t)
-            val currentPoint = Point(interpolatedX, interpolatedY)
-
+        val maxT = (data.size - 1).toDouble()
+        while (t <= maxT) {
+            val currentPoint = Point(splineX.value(t), splineY.value(t))
             prevPoint?.let {
                 Imgproc.line(
                     image,
@@ -201,74 +275,78 @@ class VideoProcessor(private val context: Context) {
                     Settings.Trace.lineThickness
                 )
             }
-
             prevPoint = currentPoint
             t += Settings.Trace.splineStep
         }
     }
+}
+/**
+ * Helper object for spline interpolation logic.
+ */
+object SplineHelper {
+    /**
+     * Applies spline interpolation to generate spline functions for the given data points.
+     *
+     * @param data The list of points for which spline interpolation is computed.
+     * @return A pair of PolynomialSplineFunctions (splineX, splineY) if successful, otherwise null.
+     */
+    fun applySplineInterpolation(data: List<Point>): Pair<PolynomialSplineFunction, PolynomialSplineFunction>? {
+        if (data.size < 2) return null
 
-    // Updated function to handle the centerDataList trace and spline drawing
-    private fun updateCenterTrace(center: Point, image: Mat) {
-        // Add the current center to the centerDataList and enforce the line limit
-        centerDataList.add(center)
-        if (centerDataList.size > Settings.Trace.lineLimit) {
-            centerDataList.removeFirst()
-        }
+        val interpolator = SplineInterpolator()
+        val xData = data.map { it.x }.toDoubleArray()
+        val yData = data.map { it.y }.toDoubleArray()
+        val tData = (0 until data.size).map { it.toDouble() }.toDoubleArray()
 
-        // Draw the centerDataList as discrete points in red
-        for (i in 1 until centerDataList.size) {
-            Imgproc.line(
-                image,
-                centerDataList[i - 1],
-                centerDataList[i],
-                Settings.Trace.originalLineColor,
-                Settings.Trace.lineThickness
-            )
-        }
-
-        // Draw the spline curve for the current data
-        drawSplineCurve(centerDataList, image)
-    }
-
-    fun retrievePreFilter4Ddata(): List<FrameData> = preFilter4Ddata
-    fun retrievePostFilter4Ddata(): List<FrameData> = postFilter4Ddata
-
-    private fun showToast(message: String) {
-        if (Settings.Debug.enableToasts) Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-    }
-
-    private fun logDebug(message: String) {
-        if (Settings.Debug.enableLogging) Log.d("VideoProcessor", message)
+        val splineX = interpolator.interpolate(tData, xData)
+        val splineY = interpolator.interpolate(tData, yData)
+        return Pair(splineX, splineY)
     }
 }
-
 /**
- * Preprocessing utilities for image processing.
+ * A utility class that provides preprocessing functions for image frames.
  */
 class Preprocessing {
     companion object {
+        /**
+         * Converts a BGR image to grayscale.
+         */
         fun applyGrayscale(frame: Mat): Mat {
             val grayMat = Mat()
             Imgproc.cvtColor(frame, grayMat, Imgproc.COLOR_BGR2GRAY)
             return grayMat
         }
-
+        /**
+         * Enhances the brightness of an image by multiplying pixel values.
+         */
         fun enhanceBrightness(image: Mat): Mat = Mat().apply {
-            Core.multiply(image, Scalar(Settings.Brightness.factor), this)
+            Core.multiply(image, org.opencv.core.Scalar(Settings.Brightness.factor), this)
         }
-
+        /**
+         * Applies a conditional thresholding to highlight regions above a certain brightness threshold.
+         */
         fun conditionalThresholding(image: Mat): Mat {
             val thresholdMat = Mat()
-            Imgproc.threshold(image, thresholdMat, Settings.Brightness.threshold, 255.0, Imgproc.THRESH_TOZERO)
+            Imgproc.threshold(
+                image,
+                thresholdMat,
+                Settings.Brightness.threshold,
+                255.0,
+                Imgproc.THRESH_TOZERO
+            )
             return thresholdMat
         }
-
+        /**
+         * Applies a Gaussian blur to reduce noise.
+         */
         fun applyGaussianBlur(image: Mat): Mat {
             val blurredMat = Mat()
             Imgproc.GaussianBlur(image, blurredMat, Size(5.0, 5.0), 0.0)
             return blurredMat
         }
-
+        /**
+         * Applies a morphological closing operation to fill small holes in the binary image.
+         */
         fun applyMorphologicalClosing(image: Mat): Mat {
             val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
             val closedImage = Mat()
@@ -277,28 +355,28 @@ class Preprocessing {
         }
     }
 }
-
 /**
- * Utility class for image conversion between Bitmap and Mat.
+ * Utility class for image conversions between Bitmap and Mat.
  */
 class ImageUtils {
     companion object {
         /**
          * Converts a Bitmap to an OpenCV Mat.
+         *
          * @param bitmap The input Bitmap.
          * @return The corresponding Mat.
          */
         fun bitmapToMat(bitmap: Bitmap): Mat = Mat().also {
-            org.opencv.android.Utils.bitmapToMat(bitmap, it)
+            Utils.bitmapToMat(bitmap, it)
         }
-
         /**
          * Converts an OpenCV Mat to a Bitmap.
+         *
          * @param mat The input Mat.
          * @return The corresponding Bitmap.
          */
         fun matToBitmap(mat: Mat): Bitmap = Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888).apply {
-            org.opencv.android.Utils.matToBitmap(mat, this)
+            Utils.matToBitmap(mat, this)
         }
     }
 }
