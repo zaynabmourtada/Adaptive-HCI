@@ -1,4 +1,3 @@
-// File: VideoProcessor.kt
 package com.developer27.xamera
 
 import android.graphics.Bitmap
@@ -7,21 +6,21 @@ import android.util.Log
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
 import org.opencv.android.OpenCVLoader
 import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import org.opencv.video.KalmanFilter
 import java.util.*
-import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
 
 object Settings {
     object Contour {
         var threshold = 500
     }
     object Trace {
-        var lineLimit = Int.MAX_VALUE // Large limit so we don't remove old points
+        var lineLimit = Int.MAX_VALUE // We never remove old points, ensuring a continuous line
         var splineStep = 0.01
-        // Light Blue line (using cyan to represent a light blue shade in BGR): (B=255, G=255, R=0)
+        // Light Blue (Cyan) line for the spline: B=255, G=255, R=0 in BGR
         var splineLineColor = Scalar(255.0, 255.0, 0.0)
         var lineThickness = 2
     }
@@ -39,20 +38,19 @@ data class FrameData(val x: Double, val y: Double, val area: Double, val frameCo
 
 /**
  * VideoProcessor:
- * - Processes camera frames using OpenCV to detect contours and track a point (org.opencv.core.Point).
- * - Uses a Kalman filter to smooth jittery movements.
- * - Interpolates tracked points using a spline to create a smooth curve.
- * - Draws only the spline curve in a light blue (cyan) color on each processed frame.
- * - The center point is now drawn in red.
- * - Does not remove old points, so the line never disappears until "Stop Tracking" is pressed.
+ * - Detects contours and finds their center using OpenCV.
+ * - Applies a Kalman filter to smooth the detected center points, reducing jitter from tremors.
+ * - Uses spline interpolation on the filtered points to draw a smooth curve.
+ * - Draws only a light blue spline line and a red center dot. The line never disappears until "Stop Tracking" is pressed.
+ * - Employs no removal of old points, ensuring continuous accumulation of the gesture's history.
  *
- * TODO <Zaynab Mourtada>: Integrate PyTorch inference if needed, after smoothing lines.
+ * TODO <Zaynab Mourtada>: Integrate PyTorch inference if needed, possibly to classify gesture patterns.
  */
 class VideoProcessor(private val context: Context) {
 
     private lateinit var kalmanFilter: KalmanFilter
 
-    // Stores all detected points without clearing, ensuring the line never cleans
+    // Stores all filtered points without clearing, enabling a continuous, growing line
     private val centerDataList = LinkedList<Point>()
 
     private val preFilter4Ddata = mutableListOf<FrameData>()
@@ -69,7 +67,7 @@ class VideoProcessor(private val context: Context) {
             showToast("OpenCV loaded successfully")
             initializeKalmanFilter()
         } else {
-            // If OpenCV initialization fails, handle appropriately
+            // If OpenCV initialization fails, handle it if necessary
         }
     }
 
@@ -109,10 +107,13 @@ class VideoProcessor(private val context: Context) {
             center?.let {
                 val frameData = FrameData(it.x, it.y, area ?: 0.0, frameCount++)
                 preFilter4Ddata.add(frameData)
-                applyKalmanFilter(it, area, frameData.frameCount)
 
-                // Add the new point to the list and draw spline
-                updateCenterTrace(it, processedMat)
+                // Apply Kalman filter to get filtered coordinates
+                val (filteredX, filteredY) = applyKalmanFilter(it, area, frameData.frameCount)
+
+                // Use filtered coordinates for smoothing and line drawing
+                val filteredPoint = Point(filteredX, filteredY)
+                updateCenterTrace(filteredPoint, processedMat)
             }
 
             return@withContext ImageUtils.matToBitmap(processedMat).also { processedMat.release() }
@@ -123,7 +124,10 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
-    private fun applyKalmanFilter(center: Point, area: Double?, frame: Int) {
+    /**
+     * Applies the Kalman filter to reduce jitter and returns the filtered coordinates.
+     */
+    private fun applyKalmanFilter(center: Point, area: Double?, frame: Int): Pair<Double, Double> {
         val measurement = Mat(2,1,CvType.CV_32F).apply {
             put(0,0, center.x)
             put(1,0, center.y)
@@ -133,8 +137,11 @@ class VideoProcessor(private val context: Context) {
         val corrected = kalmanFilter.correct(measurement)
         val filteredX = corrected[0,0][0]
         val filteredY = corrected[1,0][0]
+
         val filteredFrameData = FrameData(filteredX, filteredY, area ?: 0.0, frame)
         postFilter4Ddata.add(filteredFrameData)
+
+        return Pair(filteredX, filteredY)
     }
 
     private fun detectContourBlob(image: Mat): Pair<Pair<Point?, Double?>, Mat> {
@@ -152,7 +159,7 @@ class VideoProcessor(private val context: Context) {
             ?.let {
                 Imgproc.drawContours(outputImage, listOf(it), -1, Scalar(255.0,105.0,180.0), Imgproc.FILLED)
                 val area = Imgproc.contourArea(it)
-                val center = calculateCenter(it, outputImage).first
+                val (center, _) = calculateCenter(it, outputImage)
                 Pair(center, area)
             } ?: Pair(null, null)
 
@@ -167,12 +174,15 @@ class VideoProcessor(private val context: Context) {
             val centerY = (moments.m01 / moments.m00).toInt()
             val centerPoint = Point(centerX.toDouble(), centerY.toDouble())
 
-            // Draw center as red: B=0, G=0, R=255
+            // Draw center in red: B=0,G=0,R=255
             Imgproc.circle(image, centerPoint, 10, Scalar(0.0,0.0,255.0), -1)
-            Pair(centerPoint, Pair(centerX,centerY))
+            Pair(centerPoint, Pair(centerX, centerY))
         } else Pair(null, null)
     }
 
+    /**
+     * Draws a spline curve through all filtered points in centerDataList.
+     */
     private fun drawSplineCurve(data: List<Point>, image: Mat) {
         if (data.size < 2) return
 
@@ -192,7 +202,7 @@ class VideoProcessor(private val context: Context) {
             val currentPoint = Point(interpolatedX, interpolatedY)
 
             prevPoint?.let {
-                // Draw only the light blue (cyan) spline line
+                // Draw the spline in light blue (cyan)
                 Imgproc.line(
                     image,
                     it,
@@ -207,12 +217,11 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
-    private fun updateCenterTrace(center: Point, image: Mat) {
-        // Add the new point to the centerDataList
-        centerDataList.add(center)
-        // No removal of old points, ensuring the line never disappears
-
-        // Draw only the spline curve in light blue
+    /**
+     * Updates the trace by adding the new filtered point and drawing the spline curve.
+     */
+    private fun updateCenterTrace(filteredPoint: Point, image: Mat) {
+        centerDataList.add(filteredPoint)
         drawSplineCurve(centerDataList, image)
     }
 
