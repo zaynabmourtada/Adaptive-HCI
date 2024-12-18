@@ -5,8 +5,8 @@
 // Single node: Index finger connected to D3 (PWM-capable pin)
 int indexFingerLED = 3;  // PWM-capable pin
 
-int pulseWidth = 1;     // Adjustable pulse width // Visually Represents the Width of each LIGHT Band
-int gapDuration = 100;     // Gap between pulses     // Visually Represents the Width of each DARK Band
+int pulseWidth = 250;     // Adjustable pulse width // Visually Represents the Width of each LIGHT Band
+int gapDuration = 250;     // Gap between pulses     // Visually Represents the Width of each DARK Band
 int delayUnit = 1;       // Base delay unit in microseconds // Scale both pulseWidth & gapDuration by a constant
 
 void setup() {
@@ -51,7 +51,7 @@ void generateOOKSignal() {
   emitGap();
 
   // Emit symbols as per OOK encoding:
-  emitSymbol("00001");  // F1: 1
+  emitSymbol("10");  // F1: 1
   //emitSymbol("00010");  // F2: 0
   //emitSymbol("00011");  // F3: 1
   //emitSymbol("00100");  // F4: 0
