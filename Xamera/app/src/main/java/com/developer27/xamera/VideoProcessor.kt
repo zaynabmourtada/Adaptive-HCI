@@ -3,20 +3,25 @@
 // Last Updated 12/13/2024
 package com.developer27.xamera
 
-import org.opencv.android.Utils
-import android.graphics.Bitmap
 import android.content.Context
+import android.graphics.Bitmap
 import android.util.Log
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
 import org.opencv.android.OpenCVLoader
-import org.opencv.core.*
+import org.opencv.android.Utils
+import org.opencv.core.Core
+import org.opencv.core.CvType
+import org.opencv.core.Mat
+import org.opencv.core.MatOfPoint
+import org.opencv.core.Point
+import org.opencv.core.Scalar
+import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import org.opencv.video.KalmanFilter
-import java.util.*
-import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
-import org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction
+import java.util.LinkedList
 
 /**
  * Global application settings.
@@ -157,6 +162,10 @@ class VideoProcessor(private val context: Context) {
                 // Apply Kalman filter to get filtered coordinates
                 val (filteredX, filteredY) = applyKalmanFilter(it, area, frameData.frameCount)
                 val filteredPoint = Point(filteredX, filteredY)
+
+                // ***** ADDED LOGGING FOR MACHINE LEARNING *****
+                // Logs the filtered coordinates to the console (e.g., Logcat)
+                logDebug("MLCoord: (X=$filteredX, Y=$filteredY)  Frame=${frameData.frameCount}")
 
                 // Add the filtered point without removing old ones
                 centerDataList.add(filteredPoint)
@@ -325,7 +334,7 @@ object SplineHelper {
      * @param data The list of points for which spline interpolation is computed.
      * @return A pair of PolynomialSplineFunctions (splineX, splineY) if successful, otherwise null.
      */
-    fun applySplineInterpolation(data: List<Point>): Pair<PolynomialSplineFunction, PolynomialSplineFunction>? {
+    fun applySplineInterpolation(data: List<Point>): Pair<org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction, org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction>? {
         if (data.size < 2) return null
         val interpolator = SplineInterpolator()
         val xData = data.map { it.x }.toDoubleArray()
