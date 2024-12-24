@@ -1,0 +1,3 @@
+CSV_Path,LabeledLetter,PredictedID,PredictedLetter,ModelFile
+/home/dacikbas/xamera_machine_learning/data/A_Handwriting.csv,A,0,A,handwriting_lstm_model.pth
+/home/dacikbas/xamera_machine_learning/data/O_HandWriting.csv,O,14,O,handwriting_lstm_model.pth
