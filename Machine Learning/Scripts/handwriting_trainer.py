@@ -1,171 +1,190 @@
 #!/usr/bin/env python3
+
 """
-Handwriting Trainer (LSTM) for A–Z
-----------------------------------
-- Prompts user for:
-    1) CSV path with columns [X, Y, Frame]
-    2) Single letter label (A–Z)
-- Loads or creates a classification LSTM model:
-    input_size=3, hidden_size=32, num_classes=26
-- Uses cross-entropy classification on a single-sequence "batch"
-  (toy approach).
-- Saves model to:
-    ~/xamera_machine_learning/models/handwriting_lstm_model.pth
-- Appends summary row to:
-    ~/xamera_machine_learning/results/trained_model_summary.csv
-  ^-- (Note the results folder change)
+handwriting_trainer.py
+
+Prompts user for:
+  - CSV file path containing columns [X, Y, Frame].
+  - Letter label (A–Z).
+Loads or creates a model in ~/xamera_machine_learning/models/handwriting_lstm_model.pth,
+trains it (toy example), then saves/updates the model.
+
+Appends training info to a summary CSV in:
+  ~/xamera_machine_learning/results/trained_model_summary.csv
 
 Usage:
-  python3 handwriting_trainer.py
+  $ python3 handwriting_trainer.py
 """
 
 import os
 import csv
+import string
+import pandas as pd
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import pandas as pd
 
-####################################################
-# 1) Dictionary for letters A–Z => numeric IDs 0..25
-####################################################
-LETTER_TO_ID = {chr(i): (i - ord('A')) for i in range(ord('A'), ord('Z') + 1)}
-ID_TO_LETTER = {v: k for k, v in LETTER_TO_ID.items()}
+# ---------------------------
+# A–Z letter dictionary
+# ---------------------------
+LETTER_TO_ID = {
+    letter: idx for idx, letter in enumerate(string.ascii_uppercase)
+    # This maps 'A' -> 0, 'B' -> 1, ..., 'Z' -> 25
+}
 
-####################################################
-# 2) LSTM Model (Classification)
-####################################################
-class LSTMModel(nn.Module):
-    def __init__(self, input_dim=3, hidden_dim=32, num_classes=26):
-        super().__init__()
-        self.lstm = nn.LSTM(
-            input_size=input_dim,
-            hidden_size=hidden_dim,
-            num_layers=1,
-            batch_first=True
+# ---------------------------
+# 1) Prompt user for CSV + letter
+# ---------------------------
+csv_path = input("Enter the path to your handwriting CSV (with columns X,Y,Frame): ").strip()
+letter_label = input("Which letter does this CSV represent? (A–Z): ").strip().upper()
+
+# Expand ~ if present
+csv_path = os.path.expanduser(csv_path)
+
+# Validate letter
+if letter_label not in LETTER_TO_ID:
+    print(f"[ERROR] Letter '{letter_label}' not in A–Z. Exiting.")
+    exit(1)
+
+# Convert letter to numeric ID
+label_id = LETTER_TO_ID[letter_label]
+
+# ---------------------------
+# 2) Load CSV data
+# ---------------------------
+# We'll skip any lines that contain error logs, 'Error processing frame', etc.
+# By default, we expect a header row: X,Y,Frame
+try:
+    # Attempt reading with a header row named 'X','Y','Frame'.
+    df = pd.read_csv(csv_path)
+except:
+    print(f"[ERROR] Could not read CSV at {csv_path}. Exiting.")
+    exit(1)
+
+# Basic check: ensure columns are [X, Y, Frame]
+if not set(['X', 'Y', 'Frame']).issubset(df.columns):
+    print(f"[ERROR] CSV must have columns X, Y, Frame. Found columns: {list(df.columns)}")
+    exit(1)
+
+# Drop any rows that contain strings like "Error" or "System.err"
+df = df[~df['X'].astype(str).str.contains("Error|System|D ")]
+df = df[~df['Y'].astype(str).str.contains("Error|System|D ")]
+df = df[~df['Frame'].astype(str).str.contains("Error|System|D ")]
+
+# Convert to float
+try:
+    coords_np = df[['X', 'Y', 'Frame']].astype(float).to_numpy()
+except:
+    print("[ERROR] Could not convert X,Y,Frame to float. Possibly invalid rows.")
+    exit(1)
+
+# coords_np shape => (num_points, 3)
+print(f"[INFO] Loaded {coords_np.shape[0]} coordinate rows from {csv_path}.")
+
+# ---------------------------
+# 3) Prepare Data + Label
+# ---------------------------
+# For a toy approach, treat the entire coordinate set as one "sample".
+# We'll make a single input vector by flattening or just do an average, etc.
+# Example: We'll just compute the mean of (X, Y, Frame). This is extremely naive.
+# A real approach might feed the sequence to an LSTM, or do more advanced feature extraction.
+mean_coords = coords_np.mean(axis=0)  # shape => (3,)
+mean_coords_torch = torch.tensor(mean_coords, dtype=torch.float32).unsqueeze(0)
+# We'll store the label as a single integer
+label_torch = torch.tensor([label_id], dtype=torch.long)
+
+# ---------------------------
+# 4) Simple Model Definition
+# ---------------------------
+class SimpleModel(nn.Module):
+    def __init__(self):
+        super(SimpleModel, self).__init__()
+        self.net = nn.Sequential(
+            nn.Linear(3, 16),
+            nn.ReLU(),
+            nn.Linear(16, 26)  # 26 letters
         )
-        self.fc = nn.Linear(hidden_dim, num_classes)  # 26-class output
-
     def forward(self, x):
-        """
-        x shape: (batch=1, seq_len, 3)
-        returns logits shape: (batch=1, 26)
-        """
-        lstm_out, (h_n, c_n) = self.lstm(x)
-        # get last LSTM output
-        last_step = lstm_out[:, -1, :]   # (1, hidden_dim)
-        logits = self.fc(last_step)      # (1, 26)
-        return logits
+        return self.net(x)
 
-####################################################
-# 3) Main training routine
-####################################################
-def main():
-    # Prompt user for CSV path & letter
-    csv_path = input("Enter the path to your CSV file (with header X,Y,Frame): ").strip()
-    letter_str = input("Which letter does this CSV represent? (A–Z): ").strip().upper()
+# ---------------------------
+# 5) Load or Create Model
+# ---------------------------
+model_dir = os.path.expanduser("~/xamera_machine_learning/models")
+os.makedirs(model_dir, exist_ok=True)
+model_path = os.path.join(model_dir, "handwriting_lstm_model.pth")
 
-    # Validate letter
-    if letter_str not in LETTER_TO_ID:
-        raise ValueError(f"Letter must be A–Z. Got: {letter_str}")
+model = SimpleModel()
+if os.path.isfile(model_path):
+    print(f"[INFO] Found existing model at: {model_path}. Loading...")
+    model.load_state_dict(torch.load(model_path))
+else:
+    print(f"[INFO] No existing model at: {model_path}. Creating a new one...")
 
-    label_id = LETTER_TO_ID[letter_str]
+# ---------------------------
+# 6) Training Setup
+# ---------------------------
+criterion = nn.CrossEntropyLoss()  # for classification among 26 letters
+optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
-    # Expand user path
-    csv_path = os.path.expanduser(csv_path)
-    if not os.path.isfile(csv_path):
-        raise FileNotFoundError(f"CSV file not found at: {csv_path}")
+# We'll do a small number of epochs for demonstration
+EPOCHS = 10
 
-    # Read CSV data
-    # We assume the header is X,Y,Frame in row0, numeric rows follow
-    df = pd.read_csv(csv_path, header=0)
-    # Convert to float32
-    coords_np = df[["X", "Y", "Frame"]].to_numpy(dtype="float32")
+print(f"\nStarting training on CSV: {csv_path}")
+print(f"Label: {letter_label}")
 
-    # shape => (seq_len, 3). Then unsqueeze => (1, seq_len, 3) for single "batch"
-    coords_tensor = torch.from_numpy(coords_np).unsqueeze(0)  # (1, seq_len, 3)
-    # Build label tensor => single integer class (e.g. 'O' => 14)
-    label_tensor = torch.tensor([label_id], dtype=torch.long)  # (1,)
+x_train = mean_coords_torch  # shape (1,3)
+y_train = label_torch         # shape (1,)
 
-    # Prepare directories
-    model_dir = os.path.expanduser("~/xamera_machine_learning/models")
-    os.makedirs(model_dir, exist_ok=True)
-
-    model_path = os.path.join(model_dir, "handwriting_lstm_model.pth")
-
-    # ---- CHANGE: summary CSV is now in a "results" folder ----
-    result_dir = os.path.expanduser("~/xamera_machine_learning/results")
-    os.makedirs(result_dir, exist_ok=True)
-    summary_csv = os.path.join(result_dir, "trained_model_summary.csv")
-
-    # Instantiate model
-    model = LSTMModel(input_dim=3, hidden_dim=32, num_classes=26)
-
-    # If existing model, load it
-    if os.path.isfile(model_path):
-        print(f"[INFO] Found existing model at: {model_path}. Loading weights...")
-        model.load_state_dict(torch.load(model_path))
-    else:
-        print(f"[INFO] No existing model at: {model_path}. Creating a new one...")
-
-    # Setup training
-    criterion = nn.CrossEntropyLoss()  # classification
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
-
-    EPOCHS = 10
-    print(f"\nStarting training on CSV: {csv_path}\nLabel: {letter_str}\n")
-
-    # Train loop
-    for epoch in range(EPOCHS):
-        model.train()
-        optimizer.zero_grad()
-
-        # forward pass
-        logits = model(coords_tensor)  # (1, 26)
-        loss = criterion(logits, label_tensor)  # label_tensor => (1,)
-
-        # backward
-        loss.backward()
-        optimizer.step()
-
+# ---------------------------
+# 7) Train
+# ---------------------------
+model.train()
+for epoch in range(EPOCHS):
+    optimizer.zero_grad()
+    out = model(x_train)         # shape => (1,26)
+    loss = criterion(out, y_train)
+    loss.backward()
+    optimizer.step()
+    if (epoch+1) % 1 == 0:  # print every epoch
         print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {loss.item():.6f}")
 
-    print("\nTraining complete.")
+print("\nTraining complete.")
 
-    # Save model
-    torch.save(model.state_dict(), model_path)
-    print(f"[INFO] Model saved to: {model_path}\n")
+# ---------------------------
+# 8) Save Model
+# ---------------------------
+torch.save(model.state_dict(), model_path)
+print(f"[INFO] Model saved to: {model_path}")
 
-    # Quick test inference to see "predicted" letter
-    model.eval()
-    with torch.no_grad():
-        test_logits = model(coords_tensor)   # (1, 26)
-        predicted_class = torch.argmax(test_logits, dim=1).item()
-        recognized_letter = ID_TO_LETTER.get(predicted_class, "?")
+# ---------------------------
+# 9) Evaluate Quick Prediction
+# ---------------------------
+model.eval()
+with torch.no_grad():
+    logits = model(x_train)     # shape (1,26)
+    predicted_id = int(logits.argmax(dim=1).item())
+    # Reverse map
+    id_to_letter = {v: k for k, v in LETTER_TO_ID.items()}
+    recognized_letter = id_to_letter.get(predicted_id, "?")
 
-    print(f"Predicted numeric ID: {predicted_class}")
-    print(f"Recognized letter: {recognized_letter}")
+print(f"\nPredicted numeric ID: {predicted_id}")
+print(f"Recognized letter: {recognized_letter}")
 
-    # Append or create summary CSV in results folder
-    file_exists = os.path.isfile(summary_csv)
-    with open(summary_csv, mode="a", newline="") as f:
-        writer = csv.writer(f)
-        if not file_exists:
-            writer.writerow([
-                "CSV_Path", "LabeledLetter", 
-                "PredictedID", "PredictedLetter", 
-                "ModelFile"
-            ])
-        writer.writerow([
-            csv_path,
-            letter_str,
-            predicted_class,
-            recognized_letter,
-            os.path.basename(model_path)
-        ])
+# ---------------------------
+# 10) Append summary
+# ---------------------------
+results_dir = os.path.expanduser("~/xamera_machine_learning/results")
+os.makedirs(results_dir, exist_ok=True)
+summary_csv = os.path.join(results_dir, "trained_model_summary.csv")
 
-    print(f"[INFO] Summary appended to: {summary_csv}")
-    print("[DONE]")
+file_exists = os.path.isfile(summary_csv)
+with open(summary_csv, mode="a", newline="") as f:
+    writer = csv.writer(f)
+    if not file_exists:
+        writer.writerow(["CSV_File", "LabelEntered", "PredictedID", "PredictedLetter"])
+    writer.writerow([csv_path, letter_label, predicted_id, recognized_letter])
 
-if __name__ == "__main__":
-    main()
+print(f"[INFO] Summary appended to: {summary_csv}")
+print("[DONE]")
