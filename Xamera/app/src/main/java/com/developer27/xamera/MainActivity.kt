@@ -1,6 +1,6 @@
 package com.developer27.xamera
 
-// TODO <Zaynab Mourtada>: Import PyTorch libraries if needed
+// TODO <Zaynab Mourtada>: Uncomment these once you have PyTorch Mobile in your build.gradle
 // import org.pytorch.IValue
 // import org.pytorch.Module
 // import org.pytorch.Tensor
@@ -38,6 +38,7 @@ import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresPermission
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -45,17 +46,28 @@ import com.developer27.xamera.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 
+/**
+ * MainActivity for the Xamera app.
+ *
+ * - Shows camera preview
+ * - Handles tracking start/stop, camera switching, zoom, etc.
+ * - Loads TWO .pt models at startup: handwriting_lstm_model.pt and digits_lstm_model.pt
+ *   (for demonstration, you can train digits via the digits_trainer.py script)
+ * - DOES NOT do “live” predictions while the user is drawing
+ *   Instead, it collects coordinates and does final predictions after user stops tracking.
+ */
 class MainActivity : AppCompatActivity() {
 
-    // View binding for easier access to UI elements
+    // ------------------------------------------------------------------------------------
+    // Fields and references
+    // ------------------------------------------------------------------------------------
     private lateinit var viewBinding: ActivityMainBinding
-
-    // SharedPreferences for user settings (e.g., shutter speed)
     private lateinit var sharedPreferences: SharedPreferences
-
-    // Camera-related fields
     private lateinit var cameraManager: CameraManager
+
     private var cameraDevice: CameraDevice? = null
     private lateinit var cameraId: String
     private var previewSize: Size? = null
@@ -63,75 +75,74 @@ class MainActivity : AppCompatActivity() {
     private var cameraCaptureSessions: CameraCaptureSession? = null
     private var captureRequestBuilder: CaptureRequest.Builder? = null
 
-    // Flag to track if we are in "tracking" mode
+    // Tracking states
     private var isTracking = false
+    private var isFrontCamera = false
+    private var isProcessingFrame = false
 
-    // Background thread and handler for camera operations
-    private var backgroundHandler: Handler? = null
+    // Background thread
     private var backgroundThread: HandlerThread? = null
+    private var backgroundHandler: Handler? = null
 
-    // Zoom-related fields
+    // Zoom
     private var zoomLevel = 1.0f
     private val maxZoom = 10.0f
     private var sensorArraySize: Rect? = null
 
-    // Permissions needed at runtime
+    // Required permissions
     private val REQUIRED_PERMISSIONS = arrayOf(
         Manifest.permission.CAMERA,
         Manifest.permission.RECORD_AUDIO
     )
-
-    // ActivityResultLauncher for handling runtime permissions
     private lateinit var requestPermissionLauncher: ActivityResultLauncher<Array<String>>
 
-    // TextureView for camera preview
+    // The TextureView for camera preview
     private lateinit var textureView: TextureView
 
-    // VideoProcessor for processing frames (drawing lines via OpenCV)
+    // For line-drawing, contour detection, etc.
     private lateinit var videoProcessor: VideoProcessor
 
-    // Flag to indicate which camera is currently active (front/back)
-    private var isFrontCamera = false
-
-    // Shutter speed control
-    private var shutterSpeed: Long = 1000000000L / 60
-
-    // Flag to prevent overlapping frame processing
-    private var isProcessingFrame = false
-
-    // TODO <Zaynab Mourtada>: Handle PyTorch model loading and inference
-    // private var pytorchModule: Module? = null
-
-    // TODO <Zaynab Mourtada>: Any PyTorch-related code should be implemented by Zaynab
-    // For now, PyTorch references are commented out and replaced by TODO comments.
-
-    // OpenGLTextureView for OpenGL rendering is turned off now; never made visible
+    // If using an OpenGLTextureView for advanced rendering
     private lateinit var glTextureView: OpenGLTextureView
 
-    // Listener for TextureView (camera preview lifecycle)
+    // Shutter speed
+    private var shutterSpeed: Long = 1000000000L / 60
+
+    // ------------------------------------------------------------------------------------
+    // (OPTIONAL) Two PyTorch models:
+    //   1) handwritingModule for letters
+    //   2) digitsModule for digits 0–9
+    // Uncomment the lines if using PyTorch in build.gradle
+    // ------------------------------------------------------------------------------------
+//    private var handwritingModule: Module? = null
+//    private var digitsModule: Module? = null
+
+    private val letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+    // ------------------------------------------------------------------------------------
+    // TextureView listener
+    // ------------------------------------------------------------------------------------
     private val textureListener = object : TextureView.SurfaceTextureListener {
         @SuppressLint("MissingPermission")
         override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-            // When TextureView is ready and permissions granted, open camera
             if (allPermissionsGranted()) {
                 openCamera()
             } else {
                 requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
             }
         }
-
         override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
         override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean { return false }
         override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
-            // Called for every new camera frame.
-            // If tracking is active, process the frame
+            // Called each new camera frame
             if (isTracking) {
+                // Process frame for drawing, but no final inference
                 processFrameWithVideoProcessor()
             }
         }
     }
 
-    // CameraDevice StateCallback to handle camera open/close/error
+    // Camera state callback
     private val stateCallback = object : CameraDevice.StateCallback() {
         override fun onOpened(camera: CameraDevice) {
             cameraDevice = camera
@@ -148,21 +159,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ------------------------------------------------------------------------------------
+    // onCreate
+    // ------------------------------------------------------------------------------------
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Inflate layout and bind UI
+        // Inflate
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
 
-        // Hide processed frame view until tracking starts
+        // Hide processed frame until tracking starts
         viewBinding.processedFrameView.visibility = View.GONE
 
-        // Initialize SharedPreferences
+        // SharedPreferences
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
-
-        // Listen for changes in SharedPreferences (e.g., shutter speed changes)
         sharedPreferences.registerOnSharedPreferenceChangeListener { prefs, key ->
             if (key == "shutter_speed") {
                 val shutterSpeedSetting = prefs.getString("shutter_speed", "60")?.toInt() ?: 60
@@ -170,99 +182,209 @@ class MainActivity : AppCompatActivity() {
                 updateShutterSpeed()
             }
         }
-
-        // Load initial shutter speed
         val shutterSpeedSetting = sharedPreferences.getString("shutter_speed", "60")?.toInt() ?: 60
         shutterSpeed = 1000000000L / shutterSpeedSetting
 
-        // Initialize CameraManager
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
 
-        // The TextureView that shows camera preview
+        // Initialize the views
         textureView = viewBinding.viewFinder
-
-        // Initialize the VideoProcessor
         videoProcessor = VideoProcessor(this)
-
-        // OpenGLTextureView is present but never made visible (OpenGL "off")
         glTextureView = viewBinding.glTextureView
 
-        // Initialize permission launcher for runtime permissions
+        // Permission launcher
         requestPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
         ) { permissions ->
-            val cameraPermissionGranted = permissions[Manifest.permission.CAMERA] ?: false
-            val audioPermissionGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
-
-            if (cameraPermissionGranted && audioPermissionGranted) {
-                if (textureView.isAvailable) {
-                    openCamera()
-                } else {
-                    textureView.surfaceTextureListener = textureListener
-                }
+            val camGranted = permissions[Manifest.permission.CAMERA] ?: false
+            val micGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
+            if (camGranted && micGranted) {
+                if (textureView.isAvailable) openCamera()
+                else textureView.surfaceTextureListener = textureListener
             } else {
-                Toast.makeText(this, "Camera and Audio permissions are required.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    "Camera and Audio permissions are required.",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
-
-        // If permissions already granted, open camera; else request
+        // Check permissions
         if (allPermissionsGranted()) {
-            if (textureView.isAvailable) {
-                openCamera()
-            } else {
-                textureView.surfaceTextureListener = textureListener
-            }
+            if (textureView.isAvailable) openCamera()
+            else textureView.surfaceTextureListener = textureListener
         } else {
             requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
         }
 
-        // Start/Stop Tracking button logic
+        // Buttons
         viewBinding.startTrackingButton.setOnClickListener {
-            if (isTracking) {
-                // If currently tracking, stop it and clear data
-                stopTracking()
-            } else {
-                // Start tracking: show processed frame
-                isTracking = true
-                viewBinding.startTrackingButton.text = "Stop Tracking"
-                viewBinding.startTrackingButton.backgroundTintList =
-                    ContextCompat.getColorStateList(this, R.color.red)
-                viewBinding.processedFrameView.visibility = View.VISIBLE
-
-                // Since OpenGL is off, we do not show glTextureView
-                videoProcessor.clearTrackingData()
-            }
+            if (isTracking) stopTracking() else startTracking()
         }
-
-        // Switch camera button
         viewBinding.switchCameraButton.setOnClickListener {
             switchCamera()
         }
-
-        // Setup zoom controls
         setupZoomControls()
-
-        // About button
         viewBinding.aboutButton.setOnClickListener {
             val intent = Intent(this, AboutXameraActivity::class.java)
             startActivity(intent)
         }
-
-        // Settings button
         viewBinding.settingsButton.setOnClickListener {
             val intent = Intent(this, SettingsActivity::class.java)
             startActivityForResult(intent, SETTINGS_REQUEST_CODE)
         }
 
-        // TODO <Zaynab Mourtada>: Load PyTorch model if needed
-        // loadPyTorchModel()
+        // Load both models at startup: "handwriting_lstm_model.pt" & "digits_lstm_model.pt"
+        // (We assume you have placed both in your "assets" folder)
+        loadAllModelsOnStartup(
+            handwritingModel = "handwriting_lstm_model.pt",
+            digitsModel = "digits_lstm_model.pt"
+        )
     }
 
-    // TODO <Zaynab Mourtada>: Implement this function to load the correct PyTorch model
-    // private fun loadPyTorchModel() {
-    //     // TODO <Zaynab Mourtada>: Load PyTorch model here
-    // }
+    /**
+     * Load BOTH models from the app’s assets, copy them to internal storage,
+     * and optionally load them into PyTorch Modules (uncomment if using PyTorch).
+     */
+    private fun loadAllModelsOnStartup(handwritingModel: String, digitsModel: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val handwritingLoaded = copyAssetModel(handwritingModel)
+            val digitsLoaded = copyAssetModel(digitsModel)
 
+            // If using PyTorch, load them, e.g.:
+            // if (handwritingLoaded.isNotEmpty()) {
+            //     handwritingModule = Module.load(handwritingLoaded)
+            // }
+            // if (digitsLoaded.isNotEmpty()) {
+            //     digitsModule = Module.load(digitsLoaded)
+            // }
+
+            withContext(Dispatchers.Main) {
+                if (handwritingLoaded.isEmpty() && digitsLoaded.isEmpty()) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Failed to load BOTH handwriting & digits models.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Models loaded (handwriting & digits).",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+    }
+
+    /**
+     * Copy a given model file from assets to internal storage.
+     * Returns the absolute path if successful, or "" if it fails.
+     */
+    private suspend fun copyAssetModel(assetName: String): String {
+        return withContext(Dispatchers.IO) {
+            try {
+                val outFile = File(filesDir, assetName)
+                if (outFile.exists() && outFile.length() > 0) {
+                    return@withContext outFile.absolutePath
+                }
+                assets.open(assetName).use { input ->
+                    FileOutputStream(outFile).use { output ->
+                        val buffer = ByteArray(4 * 1024)
+                        var bytesRead: Int
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                        }
+                        output.flush()
+                    }
+                }
+                outFile.absolutePath
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Error copying asset $assetName: ${e.message}")
+                ""
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------------------
+    // This is called each frame if isTracking == true. We do NOT do final inference here.
+    // ------------------------------------------------------------------------------------
+    private fun processFrameWithVideoProcessor() {
+        if (isProcessingFrame) return
+        val bitmap = viewBinding.viewFinder.bitmap ?: return
+        isProcessingFrame = true
+
+        lifecycleScope.launch(Dispatchers.Default) {
+            val processedBitmap = videoProcessor.processFrame(bitmap)
+            if (processedBitmap != null) {
+                withContext(Dispatchers.Main) {
+                    viewBinding.processedFrameView.setImageBitmap(processedBitmap)
+                }
+            }
+            isProcessingFrame = false
+        }
+    }
+
+    // ------------------------------------------------------------------------------------
+    // Start/Stop Tracking
+    // ------------------------------------------------------------------------------------
+    private fun startTracking() {
+        isTracking = true
+        viewBinding.startTrackingButton.text = "Stop Tracking"
+        viewBinding.startTrackingButton.backgroundTintList =
+            ContextCompat.getColorStateList(this, R.color.red)
+
+        viewBinding.processedFrameView.visibility = View.VISIBLE
+        videoProcessor.clearTrackingData()
+
+        Toast.makeText(this, "Tracking started. Data is being collected.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun stopTracking() {
+        isTracking = false
+        viewBinding.startTrackingButton.text = "Start Tracking"
+        viewBinding.startTrackingButton.backgroundTintList =
+            ContextCompat.getColorStateList(this, R.color.blue)
+
+        // Hide or clear the processed frame
+        viewBinding.processedFrameView.visibility = View.GONE
+        viewBinding.processedFrameView.setImageBitmap(null)
+
+        Toast.makeText(this, "Tracking stopped. Processing data...", Toast.LENGTH_SHORT).show()
+
+        // Add a short buffer time, then do final predictions
+        lifecycleScope.launch(Dispatchers.Main) {
+            kotlinx.coroutines.delay(500) // e.g. 500ms
+            val finalPrediction = withContext(Dispatchers.Default) {
+                videoProcessor.predictFromCollectedData()
+            }
+            if (finalPrediction != null) {
+                // In this example, finalPrediction is a string that might include
+                // both a letter and a digit (see below in VideoProcessor).
+                showFinalPrediction(finalPrediction)
+            } else {
+                val dialog = AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Prediction")
+                    .setMessage("Cannot predict from tracked data.")
+                    .setPositiveButton("OK") { d, _ -> d.dismiss() }
+                    .create()
+                dialog.show()
+            }
+        }
+    }
+
+    private fun showFinalPrediction(predictionText: String) {
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Final Prediction")
+            .setMessage(predictionText)
+            .setPositiveButton("OK") { d, _ -> d.dismiss() }
+            .create()
+        dialog.show()
+    }
+
+    // ------------------------------------------------------------------------------------
+    // onActivityResult
+    // ------------------------------------------------------------------------------------
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == SETTINGS_REQUEST_CODE && resultCode == RESULT_OK) {
@@ -273,10 +395,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ------------------------------------------------------------------------------------
+    // onResume / onPause
+    // ------------------------------------------------------------------------------------
     @SuppressLint("MissingPermission")
     override fun onResume() {
         super.onResume()
-        // Start background thread for camera operations
         startBackgroundThread()
         if (textureView.isAvailable) {
             if (allPermissionsGranted()) {
@@ -291,30 +415,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
-        // If tracking active, stop it when pausing
-        if (isTracking) {
-            stopTracking()
-        }
+        if (isTracking) stopTracking()
         closeCamera()
         stopBackgroundThread()
         super.onPause()
     }
 
-    private fun stopTracking() {
-        isTracking = false
-        viewBinding.startTrackingButton.text = "Start Tracking"
-        viewBinding.startTrackingButton.backgroundTintList =
-            ContextCompat.getColorStateList(this, R.color.blue)
-        viewBinding.processedFrameView.visibility = View.GONE
-        viewBinding.processedFrameView.setImageBitmap(null)
-
-        videoProcessor.clearTrackingData()
-    }
-
+    // ------------------------------------------------------------------------------------
+    // Check permissions
+    // ------------------------------------------------------------------------------------
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
     }
 
+    // ------------------------------------------------------------------------------------
+    // Camera logic
+    // ------------------------------------------------------------------------------------
     @RequiresPermission(Manifest.permission.CAMERA)
     private fun openCamera() {
         try {
@@ -324,6 +440,7 @@ class MainActivity : AppCompatActivity() {
             val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
             previewSize = chooseOptimalSize(map.getOutputSizes(SurfaceTexture::class.java))
             videoSize = chooseOptimalSize(map.getOutputSizes(MediaRecorder::class.java))
+
             cameraManager.openCamera(cameraId, stateCallback, backgroundHandler)
         } catch (e: CameraAccessException) {
             e.printStackTrace()
@@ -340,8 +457,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun getCameraId(): String {
         for (id in cameraManager.cameraIdList) {
-            val characteristics = cameraManager.getCameraCharacteristics(id)
-            val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
+            val facing = cameraManager.getCameraCharacteristics(id)
+                .get(CameraCharacteristics.LENS_FACING)
             if (facing == CameraCharacteristics.LENS_FACING_BACK && !isFrontCamera) {
                 return id
             } else if (facing == CameraCharacteristics.LENS_FACING_FRONT && isFrontCamera) {
@@ -351,17 +468,6 @@ class MainActivity : AppCompatActivity() {
         return cameraManager.cameraIdList[0]
     }
 
-    private fun switchCamera() {
-        // If tracking active, stop first
-        if (isTracking) stopTracking()
-        isFrontCamera = !isFrontCamera
-        closeCamera()
-        viewBinding.processedFrameView.visibility = View.GONE
-        viewBinding.processedFrameView.setImageBitmap(null)
-        reopenCamera()
-    }
-
-    @SuppressLint("MissingPermission")
     private fun reopenCamera() {
         if (textureView.isAvailable) {
             if (allPermissionsGranted()) {
@@ -374,15 +480,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun closeCamera() {
+        cameraCaptureSessions?.close()
+        cameraCaptureSessions = null
+        cameraDevice?.close()
+        cameraDevice = null
+    }
+
+    private fun switchCamera() {
+        if (isTracking) stopTracking()
+        isFrontCamera = !isFrontCamera
+        closeCamera()
+        viewBinding.processedFrameView.visibility = View.GONE
+        viewBinding.processedFrameView.setImageBitmap(null)
+        reopenCamera()
+    }
+
     private fun createCameraPreview() {
         try {
-            val texture = textureView.surfaceTexture!!
+            val texture = textureView.surfaceTexture ?: return
             texture.setDefaultBufferSize(previewSize!!.width, previewSize!!.height)
             val surface = Surface(texture)
-            captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-            captureRequestBuilder!!.addTarget(surface)
 
-            // Apply various camera settings
+            captureRequestBuilder = cameraDevice!!.createCaptureRequest(
+                CameraDevice.TEMPLATE_PREVIEW
+            ).apply { addTarget(surface) }
+
             applyRollingShutter()
             updateShutterSpeed()
             applyFlashIfEnabled()
@@ -397,9 +520,12 @@ class MainActivity : AppCompatActivity() {
                         cameraCaptureSessions = session
                         updatePreview()
                     }
-
                     override fun onConfigureFailed(session: CameraCaptureSession) {
-                        Toast.makeText(this@MainActivity, "Configuration change", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Configuration change",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 },
                 backgroundHandler
@@ -412,19 +538,30 @@ class MainActivity : AppCompatActivity() {
     private fun updatePreview() {
         if (cameraDevice == null) return
         try {
-            captureRequestBuilder?.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+            captureRequestBuilder?.set(
+                CaptureRequest.CONTROL_MODE,
+                CameraMetadata.CONTROL_MODE_AUTO
+            )
             applyRollingShutter()
             updateShutterSpeed()
             applyFlashIfEnabled()
             applyLightingMode()
-            cameraCaptureSessions?.setRepeatingRequest(captureRequestBuilder!!.build(), null, backgroundHandler)
+
+            cameraCaptureSessions?.setRepeatingRequest(
+                captureRequestBuilder!!.build(),
+                null,
+                backgroundHandler
+            )
         } catch (e: CameraAccessException) {
             e.printStackTrace()
         }
     }
 
+    // ------------------------------------------------------------------------------------
+    // Background thread
+    // ------------------------------------------------------------------------------------
     private fun startBackgroundThread() {
-        backgroundThread = HandlerThread("Camera Background").also { it.start() }
+        backgroundThread = HandlerThread("CameraBackgroundThread").also { it.start() }
         backgroundHandler = Handler(backgroundThread!!.looper)
     }
 
@@ -439,113 +576,28 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun closeCamera() {
-        cameraCaptureSessions?.close()
-        cameraCaptureSessions = null
-        cameraDevice?.close()
-        cameraDevice = null
-    }
-
+    // ------------------------------------------------------------------------------------
+    // Rolling shutter, flash, lighting, zoom
+    // ------------------------------------------------------------------------------------
     private fun applyRollingShutter() {
-        val shutterSpeedSetting = sharedPreferences.getString("shutter_speed", "15")?.toInt() ?: 15
-        val shutterSpeedValue = if (shutterSpeedSetting >= 5) 1000000000L / shutterSpeedSetting else 0L
+        val shutterSetting = sharedPreferences.getString("shutter_speed", "15")?.toInt() ?: 15
+        val shutterValue = if (shutterSetting >= 5) 1000000000L / shutterSetting else 0L
         captureRequestBuilder?.apply {
-            if (shutterSpeedValue > 0) {
+            if (shutterValue > 0) {
                 set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_OFF)
-                set(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterSpeedValue)
-                Toast.makeText(this@MainActivity, "Rolling shutter speed applied: $shutterSpeedSetting Hz", Toast.LENGTH_SHORT).show()
+                set(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterValue)
+                Toast.makeText(
+                    this@MainActivity,
+                    "Rolling shutter speed: $shutterSetting Hz",
+                    Toast.LENGTH_SHORT
+                ).show()
             } else {
                 set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
-                Toast.makeText(this@MainActivity, "Rolling shutter off", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun processFrameWithVideoProcessor() {
-        if (isProcessingFrame) return
-        viewBinding.viewFinder.bitmap?.let { bitmap ->
-            isProcessingFrame = true
-            lifecycleScope.launch(Dispatchers.Default) {
-                try {
-                    // Process the frame in the background thread; lines drawn by OpenCV inside VideoProcessor
-                    val processedBitmap = videoProcessor.processFrame(bitmap)
-                    processedBitmap?.let { processedFrame ->
-                        withContext(Dispatchers.Main) {
-                            viewBinding.processedFrameView.setImageBitmap(processedFrame)
-                        }
-
-                        // TODO <Zaynab Mourtada>: Integrate PyTorch inference here if needed
-                        // val inputTensor = bitmapToTensor(processedFrame)
-                        // val outputTensor = runInference(inputTensor)
-                        // processOutput(outputTensor, processedFrame.width, processedFrame.height)
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                } finally {
-                    isProcessingFrame = false
-                }
-            }
-        }
-    }
-
-    // TODO <Zaynab Mourtada>: Implement runInference logic with PyTorch if needed
-    // private fun runInference(inputTensor: Tensor): Tensor {
-    //     if (pytorchModule == null) {
-    //         // TODO <Zaynab Mourtada>: Load PyTorch model first
-    //     }
-    //     // TODO <Zaynab Mourtada>: Replace with actual inference code
-    //     return inputTensor
-    // }
-
-    // TODO <Zaynab Mourtada>: Implement bitmapToTensor logic for PyTorch model input
-    // private fun bitmapToTensor(bitmap: Bitmap): Tensor {
-    //     // TODO <Zaynab Mourtada>: Implement image preprocessing to tensor
-    //     return ...
-    // }
-
-    // TODO <Zaynab Mourtada>: Implement processOutput to handle PyTorch inference results
-    // private fun processOutput(outputTensor: Tensor, width: Int, height: Int): Bitmap {
-    //     // TODO <Zaynab Mourtada>: Process the output of the model and overlay results
-    //     return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    // }
-
-    private val INPUT_WIDTH = 224
-    private val INPUT_HEIGHT = 224
-    // TODO <Zaynab Mourtada>: Adjust normalization if needed
-    private val NO_MEAN_RGB = floatArrayOf(0.0f, 0.0f, 0.0f)
-    private val NO_STD_RGB = floatArrayOf(1.0f, 1.0f, 1.0f)
-
-    private fun updateShutterSpeed() {
-        val shutterSpeedSetting = sharedPreferences.getString("shutter_speed", "15")?.toInt() ?: 15
-        val shutterSpeedValue = 1000000000L / shutterSpeedSetting
-
-        captureRequestBuilder?.apply {
-            set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_OFF)
-            if (shutterSpeedSetting in 5..6000) {
-                set(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterSpeedValue)
-            } else {
-                set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
-            }
-
-            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-            val exposureRange = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
-
-            var exposureCompensation = 0
-            if (exposureRange != null && shutterSpeedSetting in 5..6000) {
-                val maxExposure = exposureRange.upper
-                val minExposure = exposureRange.lower
-                val normalizedShutterSpeed = (shutterSpeedSetting - 5).toFloat() / (6000 - 5)
-                exposureCompensation = (minExposure + normalizedShutterSpeed * (maxExposure - minExposure)).toInt()
-                set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, exposureCompensation)
-            }
-
-            try {
-                cameraCaptureSessions?.setRepeatingRequest(build(), null, backgroundHandler)
-                val shutterSpeedText = if (shutterSpeedSetting <= 6000) "1/$shutterSpeedSetting Hz" else "Auto"
-                Log.d("RollingShutterUpdate","Set shutter speed to $shutterSpeedText with exposure compensation: $exposureCompensation")
-                Toast.makeText(this@MainActivity,"Shutter speed set to $shutterSpeedText with exposure compensation: $exposureCompensation",Toast.LENGTH_SHORT).show()
-            } catch (e: CameraAccessException) {
-                e.printStackTrace()
+                Toast.makeText(
+                    this@MainActivity,
+                    "Rolling shutter off",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -554,21 +606,26 @@ class MainActivity : AppCompatActivity() {
         val isFlashEnabled = sharedPreferences.getBoolean("enable_flash", false)
         captureRequestBuilder?.set(
             CaptureRequest.FLASH_MODE,
-            if (isFlashEnabled) CaptureRequest.FLASH_MODE_TORCH else CaptureRequest.FLASH_MODE_OFF
+            if (isFlashEnabled) CaptureRequest.FLASH_MODE_TORCH
+            else CaptureRequest.FLASH_MODE_OFF
         )
     }
 
     private fun applyLightingMode() {
         val lightingMode = sharedPreferences.getString("lighting_mode", "normal")
-        val compensationRange = cameraManager.getCameraCharacteristics(cameraId)
-            .get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
-        val exposureCompensation = when (lightingMode) {
+        val compensationRange =
+            cameraManager.getCameraCharacteristics(cameraId)
+                .get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
+
+        val exposureComp = when (lightingMode) {
             "low_light" -> compensationRange?.lower ?: 0
             "high_light" -> compensationRange?.upper ?: 0
-            "normal" -> 0
             else -> 0
         }
-        captureRequestBuilder?.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, exposureCompensation)
+        captureRequestBuilder?.set(
+            CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION,
+            exposureComp
+        )
     }
 
     private fun setupZoomControls() {
@@ -643,15 +700,54 @@ class MainActivity : AppCompatActivity() {
             ((sensorArraySize!!.height() + croppedHeight) / 2).toInt()
         )
         captureRequestBuilder!!.set(CaptureRequest.SCALER_CROP_REGION, zoomRect)
-        cameraCaptureSessions?.setRepeatingRequest(captureRequestBuilder!!.build(), null, backgroundHandler)
+        cameraCaptureSessions?.setRepeatingRequest(
+            captureRequestBuilder!!.build(),
+            null,
+            backgroundHandler
+        )
+    }
+
+    private fun updateShutterSpeed() {
+        val shutterSetting = sharedPreferences.getString("shutter_speed", "15")?.toInt() ?: 15
+        val shutterValue = 1000000000L / shutterSetting
+
+        captureRequestBuilder?.apply {
+            set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_OFF)
+            if (shutterSetting in 5..6000) {
+                set(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterValue)
+            } else {
+                set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+            }
+
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            val exposureRange = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
+
+            var exposureComp = 0
+            if (exposureRange != null && shutterSetting in 5..6000) {
+                val (minExp, maxExp) = exposureRange.lower to exposureRange.upper
+                val normShutter = (shutterSetting - 5).toFloat() / (6000 - 5)
+                exposureComp = (minExp + normShutter * (maxExp - minExp)).toInt()
+                set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, exposureComp)
+            }
+
+            try {
+                cameraCaptureSessions?.setRepeatingRequest(build(), null, backgroundHandler)
+                val shutterText = if (shutterSetting <= 6000) "1/$shutterSetting Hz" else "Auto"
+                Toast.makeText(
+                    this@MainActivity,
+                    "Shutter speed: $shutterText with exposureComp=$exposureComp",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } catch (e: CameraAccessException) {
+                e.printStackTrace()
+            }
+        }
     }
 
     companion object {
         private const val SETTINGS_REQUEST_CODE = 1
         private val ORIENTATIONS = SparseIntArray()
-
         init {
-            // Orientation map for camera sensor vs device rotation
             ORIENTATIONS.append(Surface.ROTATION_0, 90)
             ORIENTATIONS.append(Surface.ROTATION_90, 0)
             ORIENTATIONS.append(Surface.ROTATION_180, 270)
