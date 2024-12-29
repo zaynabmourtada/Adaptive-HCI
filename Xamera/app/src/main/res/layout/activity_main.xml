@@ -1,4 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    activity_main.xml
+
+    This layout uses a FrameLayout as the root container:
+    - Camera preview (TextureView)
+    - Optional OpenGLTextureView
+    - Processed-frame ImageView
+    - Title bar with icon & text
+    - A single row containing:
+        [Show Digits Switch] [Settings Button] [About Button]
+    - Zoom controls on the right
+    - Start/Stop tracking & Switch camera at the bottom
+-->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/preview_frame"
@@ -7,13 +20,12 @@
     tools:context=".MainActivity">
 
     <!-- Camera Preview using TextureView -->
-    <!-- Camera Preview -->
     <TextureView
         android:id="@+id/viewFinder"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- OpenGL Simulation -->
+    <!-- Optional OpenGL Simulation -->
     <com.developer27.xamera.OpenGLTextureView
         android:id="@+id/glTextureView"
         android:layout_width="match_parent"
@@ -29,7 +41,7 @@
         android:scaleType="centerCrop"
         android:alpha="0.8" />
 
-    <!-- Title Text with Icon -->
+    <!-- Title Bar (Icon + Title) -->
     <LinearLayout
         android:id="@+id/title_container"
         android:layout_width="match_parent"
@@ -64,7 +76,13 @@
             android:paddingEnd="8dp" />
     </LinearLayout>
 
-    <!-- Settings and About Buttons Below the Ribbon, Centered -->
+    <!--
+        A single horizontal LinearLayout holding:
+          1) Switch for "Show Digits" (LEFT)
+          2) Settings Button (CENTER)
+          3) About Button (RIGHT)
+        Placed below the title bar (marginTop="90dp").
+    -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -73,31 +91,41 @@
         android:layout_gravity="center_horizontal|top"
         android:layout_marginTop="90dp">
 
-        <!-- Settings Button -->
+        <!-- Switch: "Show Digits" (left) -->
+        <Switch
+            android:id="@+id/switchDisplayMode"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Show Digits"
+            android:textColor="@android:color/white"
+            android:checked="false" />
+
+        <!-- Settings Button (next to the Switch) -->
         <Button
             android:id="@+id/settingsButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Settings"
             android:textSize="16sp"
+            android:layout_marginStart="16dp"
             android:backgroundTint="@color/orange"
             android:textColor="@android:color/white"
             android:elevation="2dp" />
 
-        <!-- About Button (Next to Settings Button) -->
+        <!-- About Button (next to Settings Button) -->
         <Button
             android:id="@+id/aboutButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="About"
             android:textSize="16sp"
+            android:layout_marginStart="16dp"
             android:backgroundTint="@color/green"
             android:textColor="@color/white"
-            android:elevation="2dp"
-            android:layout_marginStart="16dp" />
+            android:elevation="2dp" />
     </LinearLayout>
 
-    <!-- Zoom Buttons -->
+    <!-- Zoom Buttons (Right side) -->
     <LinearLayout
         android:id="@+id/zoom_button_container"
         android:layout_width="wrap_content"
@@ -131,7 +159,7 @@
             android:textColor="@android:color/black" />
     </LinearLayout>
 
-    <!-- Buttons Container (Bottom) -->
+    <!-- Bottom Buttons (Start Tracking & Switch Camera) -->
     <LinearLayout
         android:id="@+id/button_container"
         android:layout_width="wrap_content"
@@ -162,6 +190,6 @@
             android:textSize="16sp"
             android:backgroundTint="@color/white"
             android:elevation="2dp" />
-
     </LinearLayout>
+
 </FrameLayout>

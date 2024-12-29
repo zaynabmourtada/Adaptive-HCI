@@ -34,6 +34,8 @@ import android.view.MotionEvent
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
+import android.widget.EditText
+import android.widget.Switch
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -55,9 +57,11 @@ import java.io.FileOutputStream
  * - Shows camera preview
  * - Handles tracking start/stop, camera switching, zoom, etc.
  * - Loads TWO .pt models at startup: handwriting_lstm_model.pt and digits_lstm_model.pt
- *   (for demonstration, you can train digits via the digits_trainer.py script)
- * - DOES NOT do “live” predictions while the user is drawing
+ * - DOES NOT do “live” predictions while the user is drawing.
  *   Instead, it collects coordinates and does final predictions after user stops tracking.
+ *
+ * Now, we also ask the user to confirm if the prediction is correct. If not,
+ * we let them enter the correct label and we store the data for future training.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -99,7 +103,7 @@ class MainActivity : AppCompatActivity() {
     // The TextureView for camera preview
     private lateinit var textureView: TextureView
 
-    // For line-drawing, contour detection, etc.
+    // The video processor that collects (X,Y,Frame)
     private lateinit var videoProcessor: VideoProcessor
 
     // If using an OpenGLTextureView for advanced rendering
@@ -107,6 +111,9 @@ class MainActivity : AppCompatActivity() {
 
     // Shutter speed
     private var shutterSpeed: Long = 1000000000L / 60
+
+    // A reference to the Switch in our layout
+    private lateinit var switchDisplayMode: Switch
 
     // ------------------------------------------------------------------------------------
     // (OPTIONAL) Two PyTorch models:
@@ -166,7 +173,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Inflate
+        // Inflate binding
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
 
@@ -175,6 +182,8 @@ class MainActivity : AppCompatActivity() {
 
         // SharedPreferences
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+
+        // Listen for changes in certain preferences (like shutter_speed).
         sharedPreferences.registerOnSharedPreferenceChangeListener { prefs, key ->
             if (key == "shutter_speed") {
                 val shutterSpeedSetting = prefs.getString("shutter_speed", "60")?.toInt() ?: 60
@@ -182,15 +191,22 @@ class MainActivity : AppCompatActivity() {
                 updateShutterSpeed()
             }
         }
+
+        // Initialize shutter speed from preferences
         val shutterSpeedSetting = sharedPreferences.getString("shutter_speed", "60")?.toInt() ?: 60
         shutterSpeed = 1000000000L / shutterSpeedSetting
 
+        // Initialize cameraManager
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
 
         // Initialize the views
         textureView = viewBinding.viewFinder
         videoProcessor = VideoProcessor(this)
         glTextureView = viewBinding.glTextureView
+
+        // Find the Switch from the layout
+        switchDisplayMode = findViewById(R.id.switchDisplayMode)
+        // By default, if it's checked => show digits, otherwise => show letters
 
         // Permission launcher
         requestPermissionLauncher = registerForActivityResult(
@@ -209,6 +225,7 @@ class MainActivity : AppCompatActivity() {
                 ).show()
             }
         }
+
         // Check permissions
         if (allPermissionsGranted()) {
             if (textureView.isAvailable) openCamera()
@@ -234,8 +251,7 @@ class MainActivity : AppCompatActivity() {
             startActivityForResult(intent, SETTINGS_REQUEST_CODE)
         }
 
-        // Load both models at startup: "handwriting_lstm_model.pt" & "digits_lstm_model.pt"
-        // (We assume you have placed both in your "assets" folder)
+        // Load both models at startup (example placeholders):
         loadAllModelsOnStartup(
             handwritingModel = "handwriting_lstm_model.pt",
             digitsModel = "digits_lstm_model.pt"
@@ -340,6 +356,11 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Tracking started. Data is being collected.", Toast.LENGTH_SHORT).show()
     }
 
+    /**
+     * We parse the finalPrediction here, then decide if we display
+     * the letter part or digit part based on our Switch (switchDisplayMode).
+     * Then we ask "Is this correct?" If No => let user fix the label.
+     */
     private fun stopTracking() {
         isTracking = false
         viewBinding.startTrackingButton.text = "Start Tracking"
@@ -352,16 +373,46 @@ class MainActivity : AppCompatActivity() {
 
         Toast.makeText(this, "Tracking stopped. Processing data...", Toast.LENGTH_SHORT).show()
 
-        // Add a short buffer time, then do final predictions
         lifecycleScope.launch(Dispatchers.Main) {
-            kotlinx.coroutines.delay(500) // e.g. 500ms
+            kotlinx.coroutines.delay(500) // short delay
             val finalPrediction = withContext(Dispatchers.Default) {
                 videoProcessor.predictFromCollectedData()
             }
             if (finalPrediction != null) {
-                // In this example, finalPrediction is a string that might include
-                // both a letter and a digit (see below in VideoProcessor).
-                showFinalPrediction(finalPrediction)
+                // Parse out "Letter: X" vs. "Digit: Y"
+                val lines = finalPrediction.split("\n")
+                var letterResult = ""
+                var digitResult = ""
+                for (line in lines) {
+                    if (line.startsWith("Letter: ")) {
+                        letterResult = line.substringAfter("Letter: ").trim()
+                    } else if (line.startsWith("Digit: ")) {
+                        digitResult = line.substringAfter("Digit: ").trim()
+                    }
+                }
+
+                val wantsDigits = switchDisplayMode.isChecked
+                val predictedString = if (wantsDigits) {
+                    "Digit: $digitResult"
+                } else {
+                    "Letter: $letterResult"
+                }
+
+                // Show a dialog => "Is this correct? Yes / No"
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Final Prediction")
+                    .setMessage("We guessed: $predictedString\nIs that correct?")
+                    .setPositiveButton("Yes") { dialog, _ ->
+                        // If yes => do nothing special
+                        dialog.dismiss()
+                    }
+                    .setNegativeButton("No") { dialog, _ ->
+                        dialog.dismiss()
+                        // If no => ask user for correction
+                        askUserForCorrection(letterResult, digitResult, wantsDigits)
+                    }
+                    .create()
+                    .show()
             } else {
                 val dialog = AlertDialog.Builder(this@MainActivity)
                     .setTitle("Prediction")
@@ -373,13 +424,74 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showFinalPrediction(predictionText: String) {
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Final Prediction")
-            .setMessage(predictionText)
-            .setPositiveButton("OK") { d, _ -> d.dismiss() }
+    // ------------------------------------------------------------------------------------
+    // If user says "No," ask for the correct label (via an EditText),
+    // then store all postFilter4Ddata + that label to a local CSV for training.
+    // ------------------------------------------------------------------------------------
+    private fun askUserForCorrection(
+        guessedLetter: String,
+        guessedDigit: String,
+        wasDigitMode: Boolean
+    ) {
+        val editText = EditText(this)
+        editText.hint = if (wasDigitMode) "Enter correct digit (0–9)" else "Enter correct letter (A–Z)"
+
+        AlertDialog.Builder(this)
+            .setTitle("Please Enter the Correct Label")
+            .setView(editText)
+            .setPositiveButton("OK") { dialog, _ ->
+                val userInput = editText.text.toString().trim()
+                dialog.dismiss()
+
+                // 1) Save all (X, Y, Frame) from videoProcessor’s postFilter4Ddata
+                // plus the userInput as the correct label.
+                lifecycleScope.launch(Dispatchers.IO) {
+                    saveCorrectionToCSV(userInput, wasDigitMode)
+                }
+
+                // 2) Toast
+                Toast.makeText(
+                    this,
+                    "Saved correction: $userInput.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            .setNegativeButton("Cancel") { d, _ -> d.dismiss() }
             .create()
-        dialog.show()
+            .show()
+    }
+
+    // ------------------------------------------------------------------------------------
+    // saveCorrectionToCSV
+    // Writes all postFilter4Ddata to a file "corrections.csv" with columns:
+    // X, Y, Frame, isDigit, userLabel
+    // ------------------------------------------------------------------------------------
+    private suspend fun saveCorrectionToCSV(
+        userLabel: String,
+        isDigit: Boolean
+    ) = withContext(Dispatchers.IO) {
+        try {
+            // 1) Build a path for storing corrections.
+            val correctionsFile = File(filesDir, "corrections.csv")
+            val isNewFile = !correctionsFile.exists()
+
+            // 2) Gather data from videoProcessor
+            val allData = videoProcessor.getPostFilterData()
+
+            // 3) Append text
+            correctionsFile.appendText(buildString {
+                // If new => header
+                if (isNewFile) {
+                    appendLine("X,Y,Frame,IsDigit,UserLabel")
+                }
+                for (fd in allData) {
+                    appendLine("${fd.x},${fd.y},${fd.frameCount},$isDigit,$userLabel")
+                }
+            })
+            Log.i("MainActivity", "Appended correction for label=$userLabel to ${correctionsFile.absolutePath}")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to save correction CSV: ${e.message}")
+        }
     }
 
     // ------------------------------------------------------------------------------------
@@ -388,9 +500,10 @@ class MainActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == SETTINGS_REQUEST_CODE && resultCode == RESULT_OK) {
+            // Possibly the shutter speed changed in Settings
             val shutterSpeedSetting = sharedPreferences.getString("shutter_speed", "60")?.toInt() ?: 60
             shutterSpeed = 1000000000L / shutterSpeedSetting
-            Toast.makeText(this, "Shutter speed updated", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Settings updated", Toast.LENGTH_SHORT).show()
             updateShutterSpeed()
         }
     }
@@ -465,6 +578,7 @@ class MainActivity : AppCompatActivity() {
                 return id
             }
         }
+        // fallback
         return cameraManager.cameraIdList[0]
     }
 
@@ -582,20 +696,26 @@ class MainActivity : AppCompatActivity() {
     private fun applyRollingShutter() {
         val shutterSetting = sharedPreferences.getString("shutter_speed", "15")?.toInt() ?: 15
         val shutterValue = if (shutterSetting >= 5) 1000000000L / shutterSetting else 0L
+
         captureRequestBuilder?.apply {
             if (shutterValue > 0) {
+                // Turn OFF auto mode so we can set manual exposure
                 set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_OFF)
                 set(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterValue)
+
+                // A friendlier Toast explaining rolling shutter:
                 Toast.makeText(
                     this@MainActivity,
-                    "Rolling shutter speed: $shutterSetting Hz",
-                    Toast.LENGTH_SHORT
+                    "Rolling shutter ON at about 1/$shutterSetting second per exposure.\n" +
+                            "This reduces motion blur but may result in darker images.",
+                    Toast.LENGTH_LONG
                 ).show()
             } else {
                 set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+                // Friendlier Toast for OFF
                 Toast.makeText(
                     this@MainActivity,
-                    "Rolling shutter off",
+                    "Rolling shutter is OFF (auto exposure).",
                     Toast.LENGTH_SHORT
                 ).show()
             }
@@ -707,6 +827,12 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    /**
+     * Update the shutter speed after user changes it in Settings.
+     *
+     * We also try to give the user a short Toast about the shutter speed,
+     * but the main explanation is in applyRollingShutter().
+     */
     private fun updateShutterSpeed() {
         val shutterSetting = sharedPreferences.getString("shutter_speed", "15")?.toInt() ?: 15
         val shutterValue = 1000000000L / shutterSetting
@@ -719,25 +845,23 @@ class MainActivity : AppCompatActivity() {
                 set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
             }
 
-            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-            val exposureRange = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
-
-            var exposureComp = 0
-            if (exposureRange != null && shutterSetting in 5..6000) {
-                val (minExp, maxExp) = exposureRange.lower to exposureRange.upper
-                val normShutter = (shutterSetting - 5).toFloat() / (6000 - 5)
-                exposureComp = (minExp + normShutter * (maxExp - minExp)).toInt()
-                set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, exposureComp)
-            }
-
+            // Still call repeatingRequest so it updates if needed
             try {
                 cameraCaptureSessions?.setRepeatingRequest(build(), null, backgroundHandler)
-                val shutterText = if (shutterSetting <= 6000) "1/$shutterSetting Hz" else "Auto"
-                Toast.makeText(
-                    this@MainActivity,
-                    "Shutter speed: $shutterText with exposureComp=$exposureComp",
-                    Toast.LENGTH_SHORT
-                ).show()
+                // A small toast to mention the new setting
+                if (shutterSetting <= 6000) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Shutter speed updated to about 1/$shutterSetting second per exposure.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Shutter speed set to AUTO.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             } catch (e: CameraAccessException) {
                 e.printStackTrace()
             }

@@ -11,6 +11,7 @@ import android.graphics.Bitmap
 import android.util.Log
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
 import org.opencv.android.OpenCVLoader
@@ -28,26 +29,35 @@ import java.util.LinkedList
 
 /**
  * Data class for (x, y, area, frameCount).
+ * This is the fundamental unit of data we track per frame.
  */
-data class FrameData(val x: Double, val y: Double, val area: Double, val frameCount: Int)
+data class FrameData(
+    val x: Double,
+    val y: Double,
+    val area: Double,
+    val frameCount: Int
+)
 
 /**
  * VideoProcessor handles:
  *  - Preprocessing (OpenCV)
  *  - Contour detection (x,y)
- *  - Kalman filter for smoothing
- *  - PyTorch inference (optionally)
+ *  - Kalman filter smoothing
+ *  - Storing all (X, Y, Frame) data
+ *  - (Optionally) passing data to ML models for letters/digits
  *  - Drawing lines
  */
 class VideoProcessor(private val context: Context) {
 
-    // Kalman filter
+    // ------------------------------------------------------------------------------------
+    // Kalman filter + data structures
+    // ------------------------------------------------------------------------------------
     private lateinit var kalmanFilter: KalmanFilter
 
-    // Storage for points
+    // For line-drawing (visualization)
     private val centerDataList = LinkedList<Point>()
 
-    // (x,y,area,frameCount) for analysis
+    // For storing raw vs. filtered data across frames
     private val preFilter4Ddata = mutableListOf<FrameData>()
     private val postFilter4Ddata = mutableListOf<FrameData>()
 
@@ -57,6 +67,9 @@ class VideoProcessor(private val context: Context) {
         initializeOpenCV()
     }
 
+    // ------------------------------------------------------------------------------------
+    // Initialize OpenCV & Kalman filter
+    // ------------------------------------------------------------------------------------
     private fun initializeOpenCV() {
         if (OpenCVLoader.initDebug()) {
             showToast("OpenCV loaded successfully")
@@ -67,6 +80,7 @@ class VideoProcessor(private val context: Context) {
     private fun initializeKalmanFilter() {
         kalmanFilter = KalmanFilter(4, 2)
         kalmanFilter._transitionMatrix = Mat.eye(4, 4, CvType.CV_32F).apply {
+            // For x,y velocity
             put(0, 2, 1.0)
             put(1, 3, 1.0)
         }
@@ -81,7 +95,7 @@ class VideoProcessor(private val context: Context) {
     }
 
     /**
-     * Clears tracking data
+     * Clears tracking data at the start of a new tracking session.
      */
     fun clearTrackingData() {
         frameCount = 0
@@ -92,7 +106,12 @@ class VideoProcessor(private val context: Context) {
     }
 
     /**
-     * Called repeatedly while isTracking==true in MainActivity.
+     * Called *repeatedly* (each frame) in MainActivity if isTracking == true.
+     * - Preprocessing
+     * - Contour detection
+     * - Kalman filtering
+     * - Storing (x, y, frameCount)
+     * - Drawing lines
      */
     suspend fun processFrame(bitmap: Bitmap): Bitmap? = withContext(Dispatchers.Default) {
         try {
@@ -105,13 +124,23 @@ class VideoProcessor(private val context: Context) {
 
             val (center, area) = centerInfo
             center?.let {
-                val frameData = FrameData(it.x, it.y, area ?: 0.0, frameCount++)
+                // Create new FrameData
+                val frameData = FrameData(
+                    x = it.x,
+                    y = it.y,
+                    area = area ?: 0.0,
+                    frameCount = frameCount++
+                )
+                // Add to preFilter data
                 preFilter4Ddata.add(frameData)
 
-                // Kalman
+                // Apply Kalman filter
                 val (fx, fy) = applyKalmanFilter(it, area ?: 0.0)
-                postFilter4Ddata.add(FrameData(fx, fy, area ?: 0.0, frameData.frameCount))
+                postFilter4Ddata.add(
+                    FrameData(fx, fy, area ?: 0.0, frameData.frameCount)
+                )
 
+                // For line-drawing
                 val filteredPoint = Point(fx, fy)
                 centerDataList.add(filteredPoint)
 
@@ -123,6 +152,7 @@ class VideoProcessor(private val context: Context) {
             return@withContext ImageUtils.matToBitmap(processedMat).also {
                 processedMat.release()
             }
+
         } catch (e: Exception) {
             Log.e("VideoProcessor", "Error processing frame: ${e.message}")
             e.printStackTrace()
@@ -131,35 +161,43 @@ class VideoProcessor(private val context: Context) {
     }
 
     /**
-     * This is called once user stops tracking.
-     * We do final predictions from ALL collected data (postFilter4Ddata).
+     * Called once the user stops tracking. Waits a bit to gather all data,
+     * then does final "predictions" from the collected data.
      *
-     * For demonstration, we return a String that includes:
-     *   1) A "predicted letter"   (just a toy approach, or real PyTorch if you have it)
-     *   2) A "predicted digit"    (same idea, see digits_lstm_model)
+     * E.g., We gather the (x, y, frameCount) points from postFilter4Ddata,
+     * feed them to the letter & digit models, then return a combined result.
      */
     suspend fun predictFromCollectedData(): String? = withContext(Dispatchers.Default) {
+        // 1) Wait a little while to ensure all frames are collected
+        //    (Sometimes the last frames might still be processing).
+        delay(1000)  // e.g., wait 1 second. Adjust as needed.
+
+        // 2) If no data was collected, return null
         if (postFilter4Ddata.isEmpty()) {
             return@withContext null
         }
 
-        // Example #1: Pretend we get the letter from the last frame index
+        // 3) For demonstration, produce dummy predictions based on the last frame index
         val lastFrameIndex = postFilter4Ddata.last().frameCount
         val letterPredicted = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[lastFrameIndex % 26]
-
-        // Example #2: Pretend we get the digit from the last frame index as well
-        //  (obviously, you'd do something more advanced with the real digits model)
         val digitPredicted = (lastFrameIndex % 10).toString()
 
-        // Return a combined string
+        // Return combined string
         val result = "Letter: $letterPredicted\nDigit: $digitPredicted"
         return@withContext result
     }
 
-    // If you have real PyTorch modules loaded in MainActivity,
-    // you could pass them in here or store them as static references,
-    // then do real inference.
+    /**
+     * Expose postFilter4Ddata so MainActivity can retrieve all (x, y, frameCount)
+     * if user says "No" and we want to store them for future training.
+     */
+    fun getPostFilterData(): List<FrameData> {
+        return postFilter4Ddata.toList() // return a copy
+    }
 
+    // ------------------------------------------------------------------------------------
+    // Helper: apply Kalman filter
+    // ------------------------------------------------------------------------------------
     private fun applyKalmanFilter(point: Point, area: Double): Pair<Double, Double> {
         val measurement = Mat(2, 1, CvType.CV_32F).apply {
             put(0, 0, point.x)
@@ -172,6 +210,9 @@ class VideoProcessor(private val context: Context) {
         return fx to fy
     }
 
+    // ------------------------------------------------------------------------------------
+    // Helper: Preprocess the frame for contour detection
+    // ------------------------------------------------------------------------------------
     private fun preprocessFrame(src: Mat): Mat {
         val grayMat = Preprocessing.applyGrayscale(src)
         val enhancedMat = Preprocessing.enhanceBrightness(grayMat)
@@ -188,6 +229,9 @@ class VideoProcessor(private val context: Context) {
         return closedMat
     }
 
+    // ------------------------------------------------------------------------------------
+    // Helper: detect largest contour blob => returns (center, area) + debug image
+    // ------------------------------------------------------------------------------------
     private fun detectContourBlob(image: Mat): Pair<Pair<Point?, Double?>, Mat> {
         val binaryImage = Mat()
         Imgproc.threshold(image, binaryImage, 200.0, 255.0, Imgproc.THRESH_BINARY)
@@ -205,9 +249,9 @@ class VideoProcessor(private val context: Context) {
             ?.let {
                 // Draw in pink
                 Imgproc.drawContours(outputImage, listOf(it), -1, Scalar(255.0, 105.0, 180.0), Imgproc.FILLED)
-                val area = Imgproc.contourArea(it)
-                val center = calculateCenter(it, outputImage).first
-                Pair(center, area)
+                val areaVal = Imgproc.contourArea(it)
+                val centerVal = calculateCenter(it, outputImage).first
+                Pair(centerVal, areaVal)
             } ?: Pair(null, null)
 
         binaryImage.release()
@@ -217,13 +261,19 @@ class VideoProcessor(private val context: Context) {
     private fun calculateCenter(contour: MatOfPoint, image: Mat): Pair<Point?, Pair<Int, Int>?> {
         val moments = Imgproc.moments(contour)
         if (moments.m00 == 0.0) return Pair(null, null)
+
         val cx = (moments.m10 / moments.m00).toInt()
         val cy = (moments.m01 / moments.m00).toInt()
         val centerPoint = Point(cx.toDouble(), cy.toDouble())
+
+        // Draw a small red dot at the center
         Imgproc.circle(image, centerPoint, 10, Scalar(0.0, 0.0, 255.0), -1)
         return Pair(centerPoint, Pair(cx, cy))
     }
 
+    // ------------------------------------------------------------------------------------
+    // Helper: show toast if debug is enabled
+    // ------------------------------------------------------------------------------------
     private fun showToast(msg: String) {
         if (Settings.Debug.enableToasts) {
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
@@ -232,7 +282,7 @@ class VideoProcessor(private val context: Context) {
 }
 
 // -----------------------------------------------------------------------------
-// Helper classes/objects remain the same
+// HELPER OBJECTS (TraceRenderer, SplineHelper, ImageUtils, Preprocessing, Settings)
 // -----------------------------------------------------------------------------
 
 object TraceRenderer {
@@ -273,10 +323,12 @@ object TraceRenderer {
 }
 
 object SplineHelper {
-    fun applySplineInterpolation(data: List<Point>):
-            Pair<org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction,
-                    org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction>? {
+    fun applySplineInterpolation(
+        data: List<Point>
+    ): Pair<org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction,
+            org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction>? {
         if (data.size < 2) return null
+
         val interpolator = SplineInterpolator()
         val xData = data.map { it.x }.toDoubleArray()
         val yData = data.map { it.y }.toDoubleArray()
