@@ -55,15 +55,6 @@ object Settings {
     }
 }
 
-/**
- * VideoProcessor handles:
- *  - Preprocessing (OpenCV)
- *  - Contour detection (x,y)
- *  - Kalman filter smoothing
- *  - Storing all (X, Y, Frame) data
- *  - (Optionally) passing data to ML models for letters/digits
- *  - Drawing lines
- */
 class VideoProcessor(private val context: Context) {
     private lateinit var kalmanFilter: KalmanFilter
 
@@ -126,42 +117,47 @@ class VideoProcessor(private val context: Context) {
     suspend fun processFrame(bitmap: Bitmap): Bitmap? = withContext(Dispatchers.Default) {
         try {
             val mat = ImageUtils.bitmapToMat(bitmap)
-            val cleanedMat = preprocessFrame(mat)
-            mat.release()
 
-            val (centerInfo, processedMat) = detectContourBlob(cleanedMat)
-            cleanedMat.release()
-
-            val (center, area) = centerInfo
-            center?.let {
-                // Create new FrameData
-                val frameData = FrameData(
-                    x = it.x,
-                    y = it.y,
-                    area = area ?: 0.0,
-                    frameCount = frameCount++
-                )
-                // Add to preFilter data
-                preFilter4Ddata.add(frameData)
-
-                // Apply Kalman filter
-                val (fx, fy) = applyKalmanFilter(it, area ?: 0.0)
-                postFilter4Ddata.add(
-                    FrameData(fx, fy, area ?: 0.0, frameData.frameCount)
-                )
-
-                // For line-drawing
-                val filteredPoint = Point(fx, fy)
-                centerDataList.add(filteredPoint)
-
-                // Draw lines
-                TraceRenderer.drawRawTrace(centerDataList, processedMat)
-                TraceRenderer.drawSplineCurve(centerDataList, processedMat)
+            return@withContext ImageUtils.matToBitmap(mat).also {
+                mat.release()
             }
 
-            return@withContext ImageUtils.matToBitmap(processedMat).also {
-                processedMat.release()
-            }
+            //val cleanedMat = preprocessFrame(mat)
+            //mat.release()
+
+//            val (centerInfo, processedMat) = detectContourBlob(cleanedMat)
+//            cleanedMat.release()
+//
+//            val (center, area) = centerInfo
+//            center?.let {
+//                // Create new FrameData
+//                val frameData = FrameData(
+//                    x = it.x,
+//                    y = it.y,
+//                    area = area ?: 0.0,
+//                    frameCount = frameCount++
+//                )
+//                // Add to preFilter data
+//                preFilter4Ddata.add(frameData)
+//
+//                // Apply Kalman filter
+//                val (fx, fy) = applyKalmanFilter(it, area ?: 0.0)
+//                postFilter4Ddata.add(
+//                    FrameData(fx, fy, area ?: 0.0, frameData.frameCount)
+//                )
+//
+//                // For line-drawing
+//                val filteredPoint = Point(fx, fy)
+//                centerDataList.add(filteredPoint)
+//
+//                // Draw lines
+//                TraceRenderer.drawRawTrace(centerDataList, processedMat)
+//                TraceRenderer.drawSplineCurve(centerDataList, processedMat)
+//            }
+//
+//            return@withContext ImageUtils.matToBitmap(processedMat).also {
+//                processedMat.release()
+//            }
 
         } catch (e: Exception) {
             Log.e("VideoProcessor", "Error processing frame: ${e.message}")
