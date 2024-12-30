@@ -127,12 +127,16 @@ class VideoProcessor(private val context: Context) {
 
             val (center, area) = centerInfo
             center?.let {
+                val frameData = FrameData(it.x, it.y, area = area ?: 0.0, frameCount = frameCount++)
+
                 rawDataList.add(it) //add raw data to rawDataList
+                preFilter4Ddata.add(frameData)
 
                 // Apply Kalman filter
                 val (fx, fy) = applyKalmanFilter(it, area ?: 0.0)
                 val smoothPoint = Point(fx, fy)
                 smoothDataList.add(smoothPoint) //add smoothed data to smoothDataList
+                postFilter4Ddata.add(FrameData(smoothPoint.x, smoothPoint.y, frameData.area, frameData.frameCount))
 
                 listOf(rawDataList, smoothDataList).forEach { dataList ->
                     if (dataList.size > Settings.Trace.lineLimit) {
