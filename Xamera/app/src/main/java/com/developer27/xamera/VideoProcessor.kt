@@ -39,7 +39,7 @@ object Settings {
         var threshold = 500
     }
     object Trace {
-        var lineLimit = Int.MAX_VALUE
+        var lineLimit = 50
         var splineStep = 0.01
         var originalLineColor = Scalar(255.0, 0.0, 0.0) // Red
         var splineLineColor = Scalar(0.0, 0.0, 255.0)  // Blue
@@ -59,7 +59,8 @@ class VideoProcessor(private val context: Context) {
     private lateinit var kalmanFilter: KalmanFilter
 
     // For line-drawing (visualization)
-    private val centerDataList = LinkedList<Point>()
+    private val rawDataList = LinkedList<Point>()
+    private val smoothDataList = LinkedList<Point>()
 
     // For storing raw vs. filtered data across frames
     private val preFilter4Ddata = mutableListOf<FrameData>()
@@ -102,7 +103,8 @@ class VideoProcessor(private val context: Context) {
         frameCount = 0
         preFilter4Ddata.clear()
         postFilter4Ddata.clear()
-        centerDataList.clear()
+        rawDataList.clear()
+        smoothDataList.clear()
         showToast("Tracking started: data reset.")
     }
 
@@ -125,29 +127,22 @@ class VideoProcessor(private val context: Context) {
 
             val (center, area) = centerInfo
             center?.let {
-                // Create new FrameData
-                val frameData = FrameData(
-                    x = it.x,
-                    y = it.y,
-                    area = area ?: 0.0,
-                    frameCount = frameCount++
-                )
-                // Add to preFilter data
-                preFilter4Ddata.add(frameData)
+                rawDataList.add(it) //add raw data to rawDataList
 
                 // Apply Kalman filter
                 val (fx, fy) = applyKalmanFilter(it, area ?: 0.0)
-                postFilter4Ddata.add(
-                    FrameData(fx, fy, area ?: 0.0, frameData.frameCount)
-                )
+                val smoothPoint = Point(fx, fy)
+                smoothDataList.add(smoothPoint) //add smoothed data to smoothDataList
 
-                // For line-drawing
-                val filteredPoint = Point(fx, fy)
-                centerDataList.add(filteredPoint)
+                listOf(rawDataList, smoothDataList).forEach { dataList ->
+                    if (dataList.size > Settings.Trace.lineLimit) {
+                        dataList.pollFirst() // Remove the first (oldest) point
+                    }
+                }
 
                 // Draw lines
-                TraceRenderer.drawRawTrace(centerDataList, processedMat)
-                TraceRenderer.drawSplineCurve(centerDataList, processedMat)
+                TraceRenderer.drawRawTrace(rawDataList, processedMat)
+                TraceRenderer.drawSplineCurve(smoothDataList, processedMat)
             }
 
             return@withContext ImageUtils.matToBitmap(processedMat).also {
@@ -194,6 +189,10 @@ class VideoProcessor(private val context: Context) {
      */
     fun getPostFilterData(): List<FrameData> {
         return postFilter4Ddata.toList() // return a copy
+    }
+
+    fun getPreFilterData(): List<FrameData> {
+        return preFilter4Ddata.toList() // return a copy
     }
 
     private fun applyKalmanFilter(point: Point, area: Double): Pair<Double, Double> {
@@ -266,6 +265,12 @@ class VideoProcessor(private val context: Context) {
     private fun showToast(msg: String) {
         if (Settings.Debug.enableToasts) {
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun logDebug(tag: String = "MyAppDebug", msg: String) {
+        if (Settings.Debug.enableLogging) {
+            Log.d(tag, msg)
         }
     }
 }
