@@ -1,16 +1,26 @@
 // 2022/11/24
 // Written by Soham Naik - 11/08/2024
+// Modified by Zaynab Mourtada - 12/29/2024
 // Glove 1 - Single Light Source for OOK (On-Off Keying) Signal
-
 // Single node: Index finger connected to D3 (PWM-capable pin)
 int indexFingerLED = 3;  // PWM-capable pin
 
-int pulseWidth = 250;     // Adjustable pulse width // Visually Represents the Width of each LIGHT Band
-int gapDuration = 250;     // Gap between pulses     // Visually Represents the Width of each DARK Band
+float shutterRate = 1000; // Default shutter rate in Hz
+float shutterPeriod; // Shutter rate in microseconds
+int pulseWidth;    // Adjustable pulse width // Visually Represents the Width of each LIGHT Band
+int gapDuration;    // Gap between pulses     // Visually Represents the Width of each DARK Band
 int delayUnit = 1;       // Base delay unit in microseconds // Scale both pulseWidth & gapDuration by a constant
+
+// Splits the shutter period into ON time and OFF time
+void calculateTiming() {
+  shutterPeriod = (1 / shutterRate) * 1e6; // Converting shutter rate to microseconds
+  pulseWidth = shutterPeriod * 0.5; // 50% ON
+  gapDuration = shutterPeriod * 0.5; // 50% OFF
+}
 
 void setup() {
   pinMode(indexFingerLED, OUTPUT);
+  calculateTiming();
 }
 
 // Function to emit a pilot pulse at maximum brightness
@@ -27,7 +37,7 @@ void emitPilotPulse() {
 void emitGap() {
   for (int i = 0; i < gapDuration; i++) {
     digitalWrite(indexFingerLED, LOW);    // Ensure LED is OFF during gap
-    delayMicroseconds(delayUnit);
+    delayMicroseconds(1);
   }
 }
 
@@ -36,13 +46,13 @@ void emitSymbol(String binaryPattern) {
   for (char bit : binaryPattern) {
     if (bit == '1') {
       digitalWrite(indexFingerLED, HIGH);   // LED ON for "1" bit
-      delayMicroseconds(3);                 // "1" bit on-time
+      delayMicroseconds(pulseWidth * 0.1);                 // 10% of pulseWidth for '1'
     } else {
       digitalWrite(indexFingerLED, LOW);    // LED OFF for "0" bit
-      delayMicroseconds(9);                // "0" bit duration
-    }
+      delayMicroseconds(gapDuration * 0.9);                // 90% of gapDuration for '0'
   }
   emitGap();                                // Add gap after each symbol
+}
 }
 
 void generateOOKSignal() {
