@@ -173,12 +173,12 @@ class VideoProcessor(private val context: Context) {
         delay(1000)  // e.g., wait 1 second. Adjust as needed.
 
         // 2) If no data was collected, return null
-        if (postFilter4Ddata.isEmpty()) {
+        if (preFilter4Ddata.isEmpty()) {
             return@withContext null
         }
 
         // 3) For demonstration, produce dummy predictions based on the last frame index
-        val lastFrameIndex = postFilter4Ddata.last().frameCount
+        val lastFrameIndex = preFilter4Ddata.last().frameCount
         val letterPredicted = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[lastFrameIndex % 26]
         val digitPredicted = (lastFrameIndex % 10).toString()
 
