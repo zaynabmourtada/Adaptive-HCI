@@ -27,16 +27,33 @@ import org.opencv.imgproc.Imgproc
 import org.opencv.video.KalmanFilter
 import java.util.LinkedList
 
-/**
- * Data class for (x, y, area, frameCount).
- * This is the fundamental unit of data we track per frame.
- */
 data class FrameData(
     val x: Double,
     val y: Double,
     val area: Double,
     val frameCount: Int
 )
+
+object Settings {
+    object Contour {
+        var threshold = 500
+    }
+    object Trace {
+        var lineLimit = Int.MAX_VALUE
+        var splineStep = 0.01
+        var originalLineColor = Scalar(255.0, 0.0, 0.0) // Red
+        var splineLineColor = Scalar(0.0, 0.0, 255.0)  // Blue
+        var lineThickness = 4
+    }
+    object Brightness {
+        var factor = 2.0
+        var threshold = 150.0
+    }
+    object Debug {
+        var enableToasts = true
+        var enableLogging = true
+    }
+}
 
 /**
  * VideoProcessor handles:
@@ -48,10 +65,6 @@ data class FrameData(
  *  - Drawing lines
  */
 class VideoProcessor(private val context: Context) {
-
-    // ------------------------------------------------------------------------------------
-    // Kalman filter + data structures
-    // ------------------------------------------------------------------------------------
     private lateinit var kalmanFilter: KalmanFilter
 
     // For line-drawing (visualization)
@@ -67,9 +80,6 @@ class VideoProcessor(private val context: Context) {
         initializeOpenCV()
     }
 
-    // ------------------------------------------------------------------------------------
-    // Initialize OpenCV & Kalman filter
-    // ------------------------------------------------------------------------------------
     private fun initializeOpenCV() {
         if (OpenCVLoader.initDebug()) {
             showToast("OpenCV loaded successfully")
@@ -195,9 +205,6 @@ class VideoProcessor(private val context: Context) {
         return postFilter4Ddata.toList() // return a copy
     }
 
-    // ------------------------------------------------------------------------------------
-    // Helper: apply Kalman filter
-    // ------------------------------------------------------------------------------------
     private fun applyKalmanFilter(point: Point, area: Double): Pair<Double, Double> {
         val measurement = Mat(2, 1, CvType.CV_32F).apply {
             put(0, 0, point.x)
@@ -210,9 +217,6 @@ class VideoProcessor(private val context: Context) {
         return fx to fy
     }
 
-    // ------------------------------------------------------------------------------------
-    // Helper: Preprocess the frame for contour detection
-    // ------------------------------------------------------------------------------------
     private fun preprocessFrame(src: Mat): Mat {
         val grayMat = Preprocessing.applyGrayscale(src)
         val enhancedMat = Preprocessing.enhanceBrightness(grayMat)
@@ -229,9 +233,6 @@ class VideoProcessor(private val context: Context) {
         return closedMat
     }
 
-    // ------------------------------------------------------------------------------------
-    // Helper: detect largest contour blob => returns (center, area) + debug image
-    // ------------------------------------------------------------------------------------
     private fun detectContourBlob(image: Mat): Pair<Pair<Point?, Double?>, Mat> {
         val binaryImage = Mat()
         Imgproc.threshold(image, binaryImage, 200.0, 255.0, Imgproc.THRESH_BINARY)
@@ -271,19 +272,12 @@ class VideoProcessor(private val context: Context) {
         return Pair(centerPoint, Pair(cx, cy))
     }
 
-    // ------------------------------------------------------------------------------------
-    // Helper: show toast if debug is enabled
-    // ------------------------------------------------------------------------------------
     private fun showToast(msg: String) {
         if (Settings.Debug.enableToasts) {
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
 }
-
-// -----------------------------------------------------------------------------
-// HELPER OBJECTS (TraceRenderer, SplineHelper, ImageUtils, Preprocessing, Settings)
-// -----------------------------------------------------------------------------
 
 object TraceRenderer {
     fun drawRawTrace(data: List<Point>, image: Mat) {
@@ -385,26 +379,5 @@ class Preprocessing {
             Imgproc.morphologyEx(image, closedImage, Imgproc.MORPH_CLOSE, kernel)
             return closedImage
         }
-    }
-}
-
-object Settings {
-    object Contour {
-        var threshold = 500
-    }
-    object Trace {
-        var lineLimit = Int.MAX_VALUE
-        var splineStep = 0.01
-        var originalLineColor = Scalar(255.0, 0.0, 0.0) // Red
-        var splineLineColor = Scalar(0.0, 0.0, 255.0)  // Blue
-        var lineThickness = 4
-    }
-    object Brightness {
-        var factor = 2.0
-        var threshold = 150.0
-    }
-    object Debug {
-        var enableToasts = true
-        var enableLogging = true
     }
 }
