@@ -27,10 +27,6 @@ import org.opencv.imgproc.Imgproc
 import org.opencv.video.KalmanFilter
 import java.util.LinkedList
 
-/**
- * Data class for (x, y, area, frameCount).
- * This is the fundamental unit of data we track per frame.
- */
 data class FrameData(
     val x: Double,
     val y: Double,
@@ -38,24 +34,33 @@ data class FrameData(
     val frameCount: Int
 )
 
-/**
- * VideoProcessor handles:
- *  - Preprocessing (OpenCV)
- *  - Contour detection (x,y)
- *  - Kalman filter smoothing
- *  - Storing all (X, Y, Frame) data
- *  - (Optionally) passing data to ML models for letters/digits
- *  - Drawing lines
- */
-class VideoProcessor(private val context: Context) {
+object Settings {
+    object Contour {
+        var threshold = 500
+    }
+    object Trace {
+        var lineLimit = 50
+        var splineStep = 0.01
+        var originalLineColor = Scalar(255.0, 0.0, 0.0) // Red
+        var splineLineColor = Scalar(0.0, 0.0, 255.0)  // Blue
+        var lineThickness = 4
+    }
+    object Brightness {
+        var factor = 2.0
+        var threshold = 150.0
+    }
+    object Debug {
+        var enableToasts = true
+        var enableLogging = true
+    }
+}
 
-    // ------------------------------------------------------------------------------------
-    // Kalman filter + data structures
-    // ------------------------------------------------------------------------------------
+class VideoProcessor(private val context: Context) {
     private lateinit var kalmanFilter: KalmanFilter
 
     // For line-drawing (visualization)
-    private val centerDataList = LinkedList<Point>()
+    private val rawDataList = LinkedList<Point>()
+    private val smoothDataList = LinkedList<Point>()
 
     // For storing raw vs. filtered data across frames
     private val preFilter4Ddata = mutableListOf<FrameData>()
@@ -67,9 +72,6 @@ class VideoProcessor(private val context: Context) {
         initializeOpenCV()
     }
 
-    // ------------------------------------------------------------------------------------
-    // Initialize OpenCV & Kalman filter
-    // ------------------------------------------------------------------------------------
     private fun initializeOpenCV() {
         if (OpenCVLoader.initDebug()) {
             showToast("OpenCV loaded successfully")
@@ -101,7 +103,8 @@ class VideoProcessor(private val context: Context) {
         frameCount = 0
         preFilter4Ddata.clear()
         postFilter4Ddata.clear()
-        centerDataList.clear()
+        rawDataList.clear()
+        smoothDataList.clear()
         showToast("Tracking started: data reset.")
     }
 
@@ -124,29 +127,26 @@ class VideoProcessor(private val context: Context) {
 
             val (center, area) = centerInfo
             center?.let {
-                // Create new FrameData
-                val frameData = FrameData(
-                    x = it.x,
-                    y = it.y,
-                    area = area ?: 0.0,
-                    frameCount = frameCount++
-                )
-                // Add to preFilter data
+                val frameData = FrameData(it.x, it.y, area = area ?: 0.0, frameCount = frameCount++)
+
+                rawDataList.add(it) //add raw data to rawDataList
                 preFilter4Ddata.add(frameData)
 
                 // Apply Kalman filter
                 val (fx, fy) = applyKalmanFilter(it, area ?: 0.0)
-                postFilter4Ddata.add(
-                    FrameData(fx, fy, area ?: 0.0, frameData.frameCount)
-                )
+                val smoothPoint = Point(fx, fy)
+                smoothDataList.add(smoothPoint) //add smoothed data to smoothDataList
+                postFilter4Ddata.add(FrameData(smoothPoint.x, smoothPoint.y, frameData.area, frameData.frameCount))
 
-                // For line-drawing
-                val filteredPoint = Point(fx, fy)
-                centerDataList.add(filteredPoint)
+                listOf(rawDataList, smoothDataList).forEach { dataList ->
+                    if (dataList.size > Settings.Trace.lineLimit) {
+                        dataList.pollFirst() // Remove the first (oldest) point
+                    }
+                }
 
                 // Draw lines
-                TraceRenderer.drawRawTrace(centerDataList, processedMat)
-                TraceRenderer.drawSplineCurve(centerDataList, processedMat)
+                TraceRenderer.drawRawTrace(rawDataList, processedMat)
+                TraceRenderer.drawSplineCurve(smoothDataList, processedMat)
             }
 
             return@withContext ImageUtils.matToBitmap(processedMat).also {
@@ -173,12 +173,12 @@ class VideoProcessor(private val context: Context) {
         delay(1000)  // e.g., wait 1 second. Adjust as needed.
 
         // 2) If no data was collected, return null
-        if (postFilter4Ddata.isEmpty()) {
+        if (preFilter4Ddata.isEmpty()) {
             return@withContext null
         }
 
         // 3) For demonstration, produce dummy predictions based on the last frame index
-        val lastFrameIndex = postFilter4Ddata.last().frameCount
+        val lastFrameIndex = preFilter4Ddata.last().frameCount
         val letterPredicted = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[lastFrameIndex % 26]
         val digitPredicted = (lastFrameIndex % 10).toString()
 
@@ -195,9 +195,10 @@ class VideoProcessor(private val context: Context) {
         return postFilter4Ddata.toList() // return a copy
     }
 
-    // ------------------------------------------------------------------------------------
-    // Helper: apply Kalman filter
-    // ------------------------------------------------------------------------------------
+    fun getPreFilterData(): List<FrameData> {
+        return preFilter4Ddata.toList() // return a copy
+    }
+
     private fun applyKalmanFilter(point: Point, area: Double): Pair<Double, Double> {
         val measurement = Mat(2, 1, CvType.CV_32F).apply {
             put(0, 0, point.x)
@@ -210,9 +211,6 @@ class VideoProcessor(private val context: Context) {
         return fx to fy
     }
 
-    // ------------------------------------------------------------------------------------
-    // Helper: Preprocess the frame for contour detection
-    // ------------------------------------------------------------------------------------
     private fun preprocessFrame(src: Mat): Mat {
         val grayMat = Preprocessing.applyGrayscale(src)
         val enhancedMat = Preprocessing.enhanceBrightness(grayMat)
@@ -229,9 +227,6 @@ class VideoProcessor(private val context: Context) {
         return closedMat
     }
 
-    // ------------------------------------------------------------------------------------
-    // Helper: detect largest contour blob => returns (center, area) + debug image
-    // ------------------------------------------------------------------------------------
     private fun detectContourBlob(image: Mat): Pair<Pair<Point?, Double?>, Mat> {
         val binaryImage = Mat()
         Imgproc.threshold(image, binaryImage, 200.0, 255.0, Imgproc.THRESH_BINARY)
@@ -271,19 +266,18 @@ class VideoProcessor(private val context: Context) {
         return Pair(centerPoint, Pair(cx, cy))
     }
 
-    // ------------------------------------------------------------------------------------
-    // Helper: show toast if debug is enabled
-    // ------------------------------------------------------------------------------------
     private fun showToast(msg: String) {
         if (Settings.Debug.enableToasts) {
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
-}
 
-// -----------------------------------------------------------------------------
-// HELPER OBJECTS (TraceRenderer, SplineHelper, ImageUtils, Preprocessing, Settings)
-// -----------------------------------------------------------------------------
+    private fun logDebug(tag: String = "MyAppDebug", msg: String) {
+        if (Settings.Debug.enableLogging) {
+            Log.d(tag, msg)
+        }
+    }
+}
 
 object TraceRenderer {
     fun drawRawTrace(data: List<Point>, image: Mat) {
@@ -385,26 +379,5 @@ class Preprocessing {
             Imgproc.morphologyEx(image, closedImage, Imgproc.MORPH_CLOSE, kernel)
             return closedImage
         }
-    }
-}
-
-object Settings {
-    object Contour {
-        var threshold = 500
-    }
-    object Trace {
-        var lineLimit = Int.MAX_VALUE
-        var splineStep = 0.01
-        var originalLineColor = Scalar(255.0, 0.0, 0.0) // Red
-        var splineLineColor = Scalar(0.0, 0.0, 255.0)  // Blue
-        var lineThickness = 4
-    }
-    object Brightness {
-        var factor = 2.0
-        var threshold = 150.0
-    }
-    object Debug {
-        var enableToasts = true
-        var enableLogging = true
     }
 }

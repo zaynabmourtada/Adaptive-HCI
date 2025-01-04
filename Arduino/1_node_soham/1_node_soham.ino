@@ -5,30 +5,18 @@
 // Single node: Index finger connected to D3 (PWM-capable pin)
 int indexFingerLED = 3;  // PWM-capable pin
 
-int pulseWidth = 250;     // Adjustable pulse width // Visually Represents the Width of each LIGHT Band
-int gapDuration = 250;     // Gap between pulses     // Visually Represents the Width of each DARK Band
-int delayUnit = 1;       // Base delay unit in microseconds // Scale both pulseWidth & gapDuration by a constant
+int HIGHwidth = 500;      // HIGH Width of each 1 within the OOK Signal
+int LOWwidth = 500;     //  LOW Width of each 0 within the OOK Signal
+int OOKgapWidth = 1000;    // Base Delay Between OOK Signals
 
 void setup() {
   pinMode(indexFingerLED, OUTPUT);
 }
 
-// Function to emit a pilot pulse at maximum brightness
-void emitPilotPulse() {
-  for (int i = 0; i < pulseWidth; i++) {
-    digitalWrite(indexFingerLED, HIGH);   // Turn LED ON (full brightness)
-    delayMicroseconds(12);                // Pilot pulse duration
-    digitalWrite(indexFingerLED, LOW);    // Turn LED OFF
-    delayMicroseconds(0);                 // Minimal delay before next pulse
-  }
-}
-
 // Function to create a gap between pulses
 void emitGap() {
-  for (int i = 0; i < gapDuration; i++) {
-    digitalWrite(indexFingerLED, LOW);    // Ensure LED is OFF during gap
-    delayMicroseconds(delayUnit);
-  }
+  digitalWrite(indexFingerLED, LOW);    // Ensure LED is OFF during gap
+  delayMicroseconds(OOKgapWidth);
 }
 
 // Function to emit a symbol with a specified pattern
@@ -36,26 +24,18 @@ void emitSymbol(String binaryPattern) {
   for (char bit : binaryPattern) {
     if (bit == '1') {
       digitalWrite(indexFingerLED, HIGH);   // LED ON for "1" bit
-      delayMicroseconds(3);                 // "1" bit on-time
+      delayMicroseconds(HIGHwidth);                 // "1" bit on-time
     } else {
       digitalWrite(indexFingerLED, LOW);    // LED OFF for "0" bit
-      delayMicroseconds(9);                // "0" bit duration
+      delayMicroseconds(LOWwidth);                // "0" bit duration
     }
   }
-  emitGap();                                // Add gap after each symbol
 }
 
 void generateOOKSignal() {
-  // Emit pilot pulse
-  emitPilotPulse();
-  emitGap();
-
   // Emit symbols as per OOK encoding:
   emitSymbol("10");  // F1: 1
-  //emitSymbol("00010");  // F2: 0
-  //emitSymbol("00011");  // F3: 1
-  //emitSymbol("00100");  // F4: 0
-  //emitSymbol("00101");  // F5: 1
+  emitGap();
 }
 
 void loop() {
