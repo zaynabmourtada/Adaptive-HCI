@@ -1,0 +1,26 @@
+<annotation>
+	<folder>val</folder>
+	<filename>my_video_frame_0084.jpg</filename>
+	<path>C:\Users\deniz\AndroidStudioProjects\Adaptive-HCI\Machine Learning - New\images\val\my_video_frame_0084.jpg</path>
+	<source>
+		<database>Unknown</database>
+	</source>
+	<size>
+		<width>1280</width>
+		<height>720</height>
+		<depth>3</depth>
+	</size>
+	<segmented>0</segmented>
+	<object>
+		<name>user_01</name>
+		<pose>Unspecified</pose>
+		<truncated>0</truncated>
+		<difficult>0</difficult>
+		<bndbox>
+			<xmin>863</xmin>
+			<ymin>314</ymin>
+			<xmax>1043</xmax>
+			<ymax>517</ymax>
+		</bndbox>
+	</object>
+</annotation>
