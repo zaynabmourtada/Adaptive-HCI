@@ -7,10 +7,10 @@ int indexFingerLED = 3;  // PWM-capable pin
 
 float shutterRate = 1000; // Default shutter rate in Hz
 float shutterPeriod;      // Shutter rate in microseconds
-int pilotGap;             // Delay between OOK signals
-int pulseWidth;           // Adjustable pulse width // Visually Represents the Width of each LIGHT Band
-int gapWidth;             // Adjustable gap   width // Visually Represents the Width of each DARK Band
-int signalGap;            // Adjustable signal gap  // A space between each OOK bit
+int pilotGap;             // Delay between each OOK signal
+int signalGap;            // Delay between each OOK bit
+int pulseWidth;           // Width of each OOK bit LIGHT band
+int gapWidth;             // Width of each OOK bit DARK band
 
 // Splits the shutter period into ON time and OFF time
 void calculateTiming() {
