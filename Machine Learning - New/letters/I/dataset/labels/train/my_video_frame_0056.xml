@@ -1,7 +1,7 @@
 <annotation>
 	<folder>train</folder>
 	<filename>my_video_frame_0056.jpg</filename>
-	<path>C:\Users\deniz\AndroidStudioProjects\Adaptive-HCI\Machine Learning - New\images\train\my_video_frame_0056.jpg</path>
+	<path>C:\Users\deniz\AndroidStudioProjects\Adaptive-HCI\Machine Learning - New\letters\I\dataset\images\train\my_video_frame_0056.jpg</path>
 	<source>
 		<database>Unknown</database>
 	</source>
@@ -12,15 +12,15 @@
 	</size>
 	<segmented>0</segmented>
 	<object>
-		<name>user_01</name>
+		<name>User_2</name>
 		<pose>Unspecified</pose>
 		<truncated>0</truncated>
 		<difficult>0</difficult>
 		<bndbox>
-			<xmin>690</xmin>
-			<ymin>331</ymin>
-			<xmax>869</xmax>
-			<ymax>510</ymax>
+			<xmin>659</xmin>
+			<ymin>279</ymin>
+			<xmax>879</xmax>
+			<ymax>502</ymax>
 		</bndbox>
 	</object>
 </annotation>
