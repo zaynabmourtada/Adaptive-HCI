@@ -6,16 +6,19 @@
 int indexFingerLED = 3;  // PWM-capable pin
 
 float shutterRate = 1000; // Default shutter rate in Hz
-float shutterPeriod; // Shutter rate in microseconds
-int pulseWidth;    // Adjustable pulse width // Visually Represents the Width of each LIGHT Band
-int gapDuration;    // Gap between pulses     // Visually Represents the Width of each DARK Band
-int delayUnit = 1;       // Base delay unit in microseconds // Scale both pulseWidth & gapDuration by a constant
+float shutterPeriod;      // Shutter rate in microseconds
+int pilotGap;             // Delay between each OOK signal
+int signalGap;            // Delay between each OOK bit
+int pulseWidth;           // Width of each OOK bit LIGHT band
+int gapWidth;             // Width of each OOK bit DARK band
 
 // Splits the shutter period into ON time and OFF time
 void calculateTiming() {
   shutterPeriod = (1 / shutterRate) * 1e6; // Converting shutter rate to microseconds
   pulseWidth = shutterPeriod * 0.5; // 50% ON
-  gapDuration = shutterPeriod * 0.5; // 50% OFF
+  gapWidth = shutterPeriod * 0.5; // 50% OFF
+  pilotGap = shutterPeriod * 10;
+  signalGap = shutterPeriod * 1;
 }
 
 void setup() {
@@ -23,21 +26,17 @@ void setup() {
   calculateTiming();
 }
 
-// Function to emit a pilot pulse at maximum brightness
-void emitPilotPulse() {
-  for (int i = 0; i < pulseWidth; i++) {
-    digitalWrite(indexFingerLED, HIGH);   // Turn LED ON (full brightness)
-    delayMicroseconds(12);                // Pilot pulse duration
-    digitalWrite(indexFingerLED, LOW);    // Turn LED OFF
-    delayMicroseconds(0);                 // Minimal delay before next pulse
-  }
+// Function to emit a Gap between OOK signals
+void emitPilotGap() {
+  digitalWrite(indexFingerLED, LOW);    // Turn LED OFF
+  delayMicroseconds(pilotGap);
 }
 
 // Function to create a gap between pulses
 void emitGap() {
-  for (int i = 0; i < gapDuration; i++) {
+  for (int i = 0; i < gapWidth; i++) {
     digitalWrite(indexFingerLED, LOW);    // Ensure LED is OFF during gap
-    delayMicroseconds(1);
+    delayMicroseconds(signalGap);
   }
 }
 
@@ -49,23 +48,20 @@ void emitSymbol(String binaryPattern) {
       delayMicroseconds(pulseWidth * 0.1);                 // 10% of pulseWidth for '1'
     } else {
       digitalWrite(indexFingerLED, LOW);    // LED OFF for "0" bit
-      delayMicroseconds(gapDuration * 0.9);                // 90% of gapDuration for '0'
+      delayMicroseconds(gapWidth * 0.9);                // 90% of gapDuration for '0'
   }
   emitGap();                                // Add gap after each symbol
-}
+ }
 }
 
 void generateOOKSignal() {
-  // Emit pilot pulse
-  emitPilotPulse();
-  emitGap();
-
+  // Emit pilot Gap
+  emitPilotGap();
   // Emit symbols as per OOK encoding:
-  emitSymbol("10");  // F1: 1
-  //emitSymbol("00010");  // F2: 0
-  //emitSymbol("00011");  // F3: 1
-  //emitSymbol("00100");  // F4: 0
-  //emitSymbol("00101");  // F5: 1
+  emitSymbol("10001000");  // User_1 // Soham
+  //emitSymbol("11001100");  // User_2 // Deniz
+  //emitSymbol("10101010");  // User_3 // Zaynab
+  //emitSymbol("11110000");  // User_4 // Alan
 }
 
 void loop() {
