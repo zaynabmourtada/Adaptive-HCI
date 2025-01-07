@@ -34,7 +34,8 @@ void emitSymbol(String binaryPattern) {
 
 void generateOOKSignal() {
   // Emit symbols as per OOK encoding:
-  emitSymbol("10");  // F1: 1
+  //emitSymbol("10");  // F1: 1
+  emitSymbol("11001100"); //Deniz K. Acikbas - 1/5/2025
   emitGap();
 }
 
