@@ -37,7 +37,6 @@ void emitSymbol(const char* binaryPattern) {
       delayMicroseconds(gapWidth);
     }
   }
-  emitPilotGap();                          // Add gap after each symbol
 }
 
 // Function to generate the OOK signal
