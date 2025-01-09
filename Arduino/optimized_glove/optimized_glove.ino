@@ -44,8 +44,8 @@ void generateOOKSignal() {
   emitPilotGap();                     // Emit pilot gap
   //emitSymbol("10001000");             // Emit OOK pattern
   // Uncomment for additional users:
-  // emitSymbol("11001100");          // User_2 // Deniz
-   emitSymbol("10101010");          // User_3 // Zaynab
+  emitSymbol("11001100");          // User_2 // Deniz
+  //emitSymbol("10101010");          // User_3 // Zaynab
   // emitSymbol("11110000");          // User_4 // Alan
 }
 
