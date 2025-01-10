@@ -15,8 +15,8 @@ int gapWidth;               // Width of each OOK bit DARK band
 // Splits the shutter period into ON time and OFF time
 void calculateTiming() {
   shutterPeriod = (1.0 / shutterRate) * 1e6; // Converting shutter rate to microseconds
-  pulseWidth = shutterPeriod * (1.0/8.0);         // 50% ON
-  gapWidth = shutterPeriod * (1.0/8.0);           // 50% OFF
+  pulseWidth = shutterPeriod * 1.0;         // 50% ON
+  gapWidth = shutterPeriod * 1.0;           // 50% OFF
   pilotGap = shutterPeriod * 7;
 }
 
@@ -42,12 +42,8 @@ void emitSymbol(const char* binaryPattern) {
 // Function to generate the OOK signal
 void generateOOKSignal() {
   //emitPilotGap();                     // Emit pilot gap
-  //emitSymbol("10001000");             // Emit OOK pattern
-  // Uncomment for additional users:
-  emitSymbol("10101010");          // User_2 // Deniz
-  //emitSymbol("10101010");          // User_3 // Zaynab
-  // emitSymbol("11110000");          // User_4 // Alan
-}
+  //emitSymbol("11110000");        // User_1
+  emitSymbol("10101010");          // User_2
 
 void setup() {
   pinMode(indexFingerLED, OUTPUT);
