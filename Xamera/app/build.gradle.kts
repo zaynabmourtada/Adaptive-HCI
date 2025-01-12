@@ -54,6 +54,7 @@ android {
 
     aaptOptions {
         noCompress("pt")
+        noCompress("torchscript")
     }
 }
 
