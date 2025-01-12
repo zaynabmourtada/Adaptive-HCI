@@ -261,7 +261,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // If we wanted to load PyTorch models at startup
-        loadBestModelOnStartupThreaded("best.pt")
+        loadBestModelOnStartupThreaded("best.torchscript")
     }
 
     private fun loadBestModelOnStartupThreaded(bestModel: String) {
@@ -277,7 +277,7 @@ class MainActivity : AppCompatActivity() {
                         bestModule = Module.load(bestLoadedPath)
                         Toast.makeText(
                             this@MainActivity,
-                            "YOLO Model loaded from Thread: $bestModel",
+                            "YOLO Model loaded: $bestModel",
                             Toast.LENGTH_SHORT
                         ).show()
                     } catch (e: Exception) {
