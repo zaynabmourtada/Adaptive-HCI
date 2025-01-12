@@ -27,6 +27,11 @@ import org.opencv.imgproc.Imgproc
 import org.opencv.video.KalmanFilter
 import java.util.LinkedList
 
+/**
+ * This is your advanced VideoProcessor, using OpenCV + Kalman filter.
+ * Right now, it might be commented out in MainActivity, but eventually
+ * you'll remove the "TempRecorderHelper" and rely on this.
+ */
 data class FrameData(
     val x: Double,
     val y: Double,
@@ -62,7 +67,6 @@ class VideoProcessor(private val context: Context) {
     private val rawDataList = LinkedList<Point>()
     private val smoothDataList = LinkedList<Point>()
 
-    // For storing raw vs. filtered data across frames
     private val preFilter4Ddata = mutableListOf<FrameData>()
     private val postFilter4Ddata = mutableListOf<FrameData>()
 
@@ -76,13 +80,14 @@ class VideoProcessor(private val context: Context) {
         if (OpenCVLoader.initDebug()) {
             showToast("OpenCV loaded successfully")
             initializeKalmanFilter()
+        } else {
+            Log.e("VideoProcessor", "OpenCV failed to load.")
         }
     }
 
     private fun initializeKalmanFilter() {
         kalmanFilter = KalmanFilter(4, 2)
         kalmanFilter._transitionMatrix = Mat.eye(4, 4, CvType.CV_32F).apply {
-            // For x,y velocity
             put(0, 2, 1.0)
             put(1, 3, 1.0)
         }
@@ -96,9 +101,6 @@ class VideoProcessor(private val context: Context) {
         kalmanFilter._errorCovPost = Mat.eye(4, 4, CvType.CV_32F)
     }
 
-    /**
-     * Clears tracking data at the start of a new tracking session.
-     */
     fun clearTrackingData() {
         frameCount = 0
         preFilter4Ddata.clear()
@@ -108,14 +110,6 @@ class VideoProcessor(private val context: Context) {
         showToast("Tracking started: data reset.")
     }
 
-    /**
-     * Called *repeatedly* (each frame) in MainActivity if isTracking == true.
-     * - Preprocessing
-     * - Contour detection
-     * - Kalman filtering
-     * - Storing (x, y, frameCount)
-     * - Drawing lines
-     */
     suspend fun processFrame(bitmap: Bitmap): Bitmap? = withContext(Dispatchers.Default) {
         try {
             val mat = ImageUtils.bitmapToMat(bitmap)
@@ -127,20 +121,20 @@ class VideoProcessor(private val context: Context) {
 
             val (center, area) = centerInfo
             center?.let {
-                val frameData = FrameData(it.x, it.y, area = area ?: 0.0, frameCount = frameCount++)
-
-                rawDataList.add(it) //add raw data to rawDataList
+                val frameData = FrameData(it.x, it.y, area ?: 0.0, frameCount++)
+                rawDataList.add(it)
                 preFilter4Ddata.add(frameData)
 
                 // Apply Kalman filter
                 val (fx, fy) = applyKalmanFilter(it, area ?: 0.0)
                 val smoothPoint = Point(fx, fy)
-                smoothDataList.add(smoothPoint) //add smoothed data to smoothDataList
+                smoothDataList.add(smoothPoint)
                 postFilter4Ddata.add(FrameData(smoothPoint.x, smoothPoint.y, frameData.area, frameData.frameCount))
 
+                // Limit line length
                 listOf(rawDataList, smoothDataList).forEach { dataList ->
                     if (dataList.size > Settings.Trace.lineLimit) {
-                        dataList.pollFirst() // Remove the first (oldest) point
+                        dataList.pollFirst()
                     }
                 }
 
@@ -154,50 +148,25 @@ class VideoProcessor(private val context: Context) {
             }
 
         } catch (e: Exception) {
-            Log.e("VideoProcessor", "Error processing frame: ${e.message}")
-            e.printStackTrace()
+            Log.e("VideoProcessor", "Error processing frame: ${e.message}", e)
             return@withContext null
         }
     }
 
-    /**
-     * Called once the user stops tracking. Waits a bit to gather all data,
-     * then does final "predictions" from the collected data.
-     *
-     * E.g., We gather the (x, y, frameCount) points from postFilter4Ddata,
-     * feed them to the letter & digit models, then return a combined result.
-     */
     suspend fun predictFromCollectedData(): String? = withContext(Dispatchers.Default) {
-        // 1) Wait a little while to ensure all frames are collected
-        //    (Sometimes the last frames might still be processing).
-        delay(1000)  // e.g., wait 1 second. Adjust as needed.
-
-        // 2) If no data was collected, return null
+        delay(1000)
         if (preFilter4Ddata.isEmpty()) {
             return@withContext null
         }
 
-        // 3) For demonstration, produce dummy predictions based on the last frame index
+        // For demonstration, produce dummy results
         val lastFrameIndex = preFilter4Ddata.last().frameCount
         val letterPredicted = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[lastFrameIndex % 26]
         val digitPredicted = (lastFrameIndex % 10).toString()
-
-        // Return combined string
-        val result = "Letter: $letterPredicted\nDigit: $digitPredicted"
-        return@withContext result
+        return@withContext "Letter: $letterPredicted\nDigit: $digitPredicted"
     }
 
-    /**
-     * Expose postFilter4Ddata so MainActivity can retrieve all (x, y, frameCount)
-     * if user says "No" and we want to store them for future training.
-     */
-    fun getPostFilterData(): List<FrameData> {
-        return postFilter4Ddata.toList() // return a copy
-    }
-
-    fun getPreFilterData(): List<FrameData> {
-        return preFilter4Ddata.toList() // return a copy
-    }
+    fun getPostFilterData(): List<FrameData> = postFilter4Ddata.toList()
 
     private fun applyKalmanFilter(point: Point, area: Double): Pair<Double, Double> {
         val measurement = Mat(2, 1, CvType.CV_32F).apply {
@@ -242,39 +211,30 @@ class VideoProcessor(private val context: Context) {
         val (centerPoint, area) = largestContour
             ?.takeIf { Imgproc.contourArea(it) > areaThreshold }
             ?.let {
-                // Draw in pink
                 Imgproc.drawContours(outputImage, listOf(it), -1, Scalar(255.0, 105.0, 180.0), Imgproc.FILLED)
                 val areaVal = Imgproc.contourArea(it)
                 val centerVal = calculateCenter(it, outputImage).first
-                Pair(centerVal, areaVal)
-            } ?: Pair(null, null)
+                centerVal to areaVal
+            } ?: (null to null)
 
         binaryImage.release()
-        return Pair(Pair(centerPoint, area), outputImage)
+        return (centerPoint to area) to outputImage
     }
 
     private fun calculateCenter(contour: MatOfPoint, image: Mat): Pair<Point?, Pair<Int, Int>?> {
         val moments = Imgproc.moments(contour)
-        if (moments.m00 == 0.0) return Pair(null, null)
+        if (moments.m00 == 0.0) return null to null
 
         val cx = (moments.m10 / moments.m00).toInt()
         val cy = (moments.m01 / moments.m00).toInt()
         val centerPoint = Point(cx.toDouble(), cy.toDouble())
-
-        // Draw a small red dot at the center
         Imgproc.circle(image, centerPoint, 10, Scalar(0.0, 0.0, 255.0), -1)
-        return Pair(centerPoint, Pair(cx, cy))
+        return centerPoint to (cx to cy)
     }
 
     private fun showToast(msg: String) {
         if (Settings.Debug.enableToasts) {
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun logDebug(tag: String = "MyAppDebug", msg: String) {
-        if (Settings.Debug.enableLogging) {
-            Log.d(tag, msg)
         }
     }
 }
@@ -317,12 +277,10 @@ object TraceRenderer {
 }
 
 object SplineHelper {
-    fun applySplineInterpolation(
-        data: List<Point>
-    ): Pair<org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction,
-            org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction>? {
+    fun applySplineInterpolation(data: List<Point>):
+            Pair<org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction,
+                    org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction>? {
         if (data.size < 2) return null
-
         val interpolator = SplineInterpolator()
         val xData = data.map { it.x }.toDoubleArray()
         val yData = data.map { it.y }.toDoubleArray()
@@ -330,54 +288,49 @@ object SplineHelper {
 
         val splineX = interpolator.interpolate(tData, xData)
         val splineY = interpolator.interpolate(tData, yData)
-        return Pair(splineX, splineY)
+        return splineX to splineY
     }
 }
 
-class ImageUtils {
-    companion object {
-        fun bitmapToMat(bitmap: Bitmap): Mat = Mat().also {
-            Utils.bitmapToMat(bitmap, it)
-        }
-        fun matToBitmap(mat: Mat): Bitmap = Bitmap.createBitmap(
-            mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888
-        ).apply {
-            Utils.matToBitmap(mat, this)
-        }
+object Preprocessing {
+    fun applyGrayscale(frame: Mat): Mat {
+        val grayMat = Mat()
+        Imgproc.cvtColor(frame, grayMat, Imgproc.COLOR_BGR2GRAY)
+        return grayMat
+    }
+    fun enhanceBrightness(image: Mat): Mat = Mat().apply {
+        Core.multiply(image, Scalar(Settings.Brightness.factor), this)
+    }
+    fun conditionalThresholding(image: Mat): Mat {
+        val thresholdMat = Mat()
+        Imgproc.threshold(
+            image, thresholdMat,
+            Settings.Brightness.threshold,
+            255.0,
+            Imgproc.THRESH_TOZERO
+        )
+        return thresholdMat
+    }
+    fun applyGaussianBlur(image: Mat): Mat {
+        val blurredMat = Mat()
+        Imgproc.GaussianBlur(image, blurredMat, Size(5.0, 5.0), 0.0)
+        return blurredMat
+    }
+    fun applyMorphologicalClosing(image: Mat): Mat {
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+        val closedImage = Mat()
+        Imgproc.morphologyEx(image, closedImage, Imgproc.MORPH_CLOSE, kernel)
+        return closedImage
     }
 }
 
-class Preprocessing {
-    companion object {
-        fun applyGrayscale(frame: Mat): Mat {
-            val grayMat = Mat()
-            Imgproc.cvtColor(frame, grayMat, Imgproc.COLOR_BGR2GRAY)
-            return grayMat
-        }
-        fun enhanceBrightness(image: Mat): Mat = Mat().apply {
-            Core.multiply(image, Scalar(Settings.Brightness.factor), this)
-        }
-        fun conditionalThresholding(image: Mat): Mat {
-            val thresholdMat = Mat()
-            Imgproc.threshold(
-                image,
-                thresholdMat,
-                Settings.Brightness.threshold,
-                255.0,
-                Imgproc.THRESH_TOZERO
-            )
-            return thresholdMat
-        }
-        fun applyGaussianBlur(image: Mat): Mat {
-            val blurredMat = Mat()
-            Imgproc.GaussianBlur(image, blurredMat, Size(5.0, 5.0), 0.0)
-            return blurredMat
-        }
-        fun applyMorphologicalClosing(image: Mat): Mat {
-            val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
-            val closedImage = Mat()
-            Imgproc.morphologyEx(image, closedImage, Imgproc.MORPH_CLOSE, kernel)
-            return closedImage
-        }
+object ImageUtils {
+    fun bitmapToMat(bitmap: Bitmap): Mat = Mat().also {
+        Utils.bitmapToMat(bitmap, it)
+    }
+    fun matToBitmap(mat: Mat): Bitmap = Bitmap.createBitmap(
+        mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888
+    ).apply {
+        Utils.matToBitmap(mat, this)
     }
 }
