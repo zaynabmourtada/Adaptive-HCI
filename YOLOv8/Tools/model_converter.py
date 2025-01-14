@@ -19,7 +19,7 @@ def process_files(input_dir):
                     model.export(
                         format="torchscript",
                         device="cpu",
-                        imgsz=640,  # Adjust input size if needed
+                        imgsz=960,  # Adjust input size if needed
                         save_dir=export_dir  # Save TorchScript model in the same directory
                     )
                     
