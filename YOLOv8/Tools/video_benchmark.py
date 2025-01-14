@@ -10,7 +10,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
 
 # Paths to model, input video, and output video
-model_path = "F:\\GitHub\\Adaptive-HCI\\YOLOv8\\Models\\yolo_v1\\weights\\best.pt"  # Path to your YOLO model
+model_path = "F:\\GitHub\\Adaptive-HCI\\YOLOv8\\Models\\yolo_v2\\weights\\best.pt"  # Path to your YOLO model
 input_video_path = "F:\\GitHub\\Adaptive-HCI\\YOLOv8\\Tools\\0_video\\padded_video.mp4"  # Input video path
 output_video_path = "F:\\GitHub\\Adaptive-HCI\\YOLOv8\\Tools\\0_video\\proc_video.mp4"  # Output video path
 
