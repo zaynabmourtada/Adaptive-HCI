@@ -10,7 +10,7 @@
     - A single row containing:
         [Show Digits Switch] [Settings Button] [About Button]
     - Zoom controls on the right
-    - Start/Stop tracking & Switch camera at the bottom
+    - Start/Stop Processing & Switch camera at the bottom
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
@@ -159,7 +159,7 @@
             android:textColor="@android:color/black" />
     </LinearLayout>
 
-    <!-- Bottom Buttons (Start Tracking & Switch Camera) -->
+    <!-- Bottom Buttons (Start/Stop Processing & Switch Camera) -->
     <LinearLayout
         android:id="@+id/button_container"
         android:layout_width="wrap_content"
@@ -169,9 +169,9 @@
         android:layout_gravity="center_horizontal|bottom"
         android:layout_marginBottom="50dp">
 
-        <!-- Start Tracking Button -->
+        <!-- Start/Stop Processing Button -->
         <Button
-            android:id="@+id/startTrackingButton"
+            android:id="@+id/startProcessingButton"
             android:layout_width="110dp"
             android:layout_height="110dp"
             android:backgroundTint="@color/blue"
