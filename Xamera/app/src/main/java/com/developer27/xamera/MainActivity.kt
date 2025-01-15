@@ -261,7 +261,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // If we wanted to load PyTorch models at startup
-        loadBestModelOnStartupThreaded("best_optimized.torchscript")
+        loadBestModelOnStartupThreaded("YOLOv2-Mobile.torchscript")
     }
 
     private fun loadBestModelOnStartupThreaded(bestModel: String) {
