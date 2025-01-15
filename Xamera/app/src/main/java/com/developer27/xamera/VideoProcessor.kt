@@ -1,18 +1,13 @@
 package com.developer27.xamera
-
 // TODO <Zaynab Mourtada>: Uncomment these once you have PyTorch Mobile in your build.gradle
 import org.pytorch.IValue
 import org.pytorch.Module
 import org.pytorch.Tensor
 import org.pytorch.torchvision.TensorImageUtils
-
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import android.widget.Toast
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
@@ -28,9 +23,8 @@ import org.opencv.video.KalmanFilter
 import java.util.LinkedList
 
 /**
- * This is your advanced VideoProcessor, using OpenCV + Kalman filter.
- * Right now, it might be commented out in MainActivity, but eventually
- * you'll remove the "TempRecorderHelper" and rely on this.
+ * Example advanced VideoProcessor using OpenCV + Kalman filter.
+ * Called in real-time from MainActivity for demonstration/tracking overlay.
  */
 data class FrameData(
     val x: Double,
@@ -63,6 +57,7 @@ object Settings {
 class VideoProcessor(private val context: Context) {
     private lateinit var kalmanFilter: KalmanFilter
 
+    // Visualization lines
     private var module: Module? = null
 
     // For line-drawing (visualization)
@@ -113,11 +108,11 @@ class VideoProcessor(private val context: Context) {
         postFilter4Ddata.clear()
         rawDataList.clear()
         smoothDataList.clear()
-        showToast("Tracking started: data reset.")
+        showToast("Tracking data reset.")
     }
 
-    suspend fun processFrame(bitmap: Bitmap): Bitmap? = withContext(Dispatchers.Default) {
-        try {
+    fun processFrame(bitmap: Bitmap): Bitmap? {
+        return try {
             val mat = ImageUtils.bitmapToMat(bitmap)
             val cleanedMat = preprocessFrame(mat)
             mat.release()
@@ -126,22 +121,25 @@ class VideoProcessor(private val context: Context) {
             cleanedMat.release()
 
             val (center, area) = centerInfo
-            center?.let {
-                val frameData = FrameData(it.x, it.y, area ?: 0.0, frameCount++)
-                rawDataList.add(it)
+            if (center != null) {
+                val frameData = FrameData(center.x, center.y, area ?: 0.0, frameCount++)
+                rawDataList.add(center)
                 preFilter4Ddata.add(frameData)
 
-                // Apply Kalman filter
-                val (fx, fy) = applyKalmanFilter(it, area ?: 0.0)
+                // Kalman filter
+                val (fx, fy) = applyKalmanFilter(center)
                 val smoothPoint = Point(fx, fy)
                 smoothDataList.add(smoothPoint)
-                postFilter4Ddata.add(FrameData(smoothPoint.x, smoothPoint.y, frameData.area, frameData.frameCount))
+                postFilter4Ddata.add(
+                    FrameData(smoothPoint.x, smoothPoint.y, frameData.area, frameData.frameCount)
+                )
 
-                // Limit line length
-                listOf(rawDataList, smoothDataList).forEach { dataList ->
-                    if (dataList.size > Settings.Trace.lineLimit) {
-                        dataList.pollFirst()
-                    }
+                // Keep the trace lines limited
+                if (rawDataList.size > Settings.Trace.lineLimit) {
+                    rawDataList.pollFirst()
+                }
+                if (smoothDataList.size > Settings.Trace.lineLimit) {
+                    smoothDataList.pollFirst()
                 }
 
                 // Draw lines
@@ -149,32 +147,18 @@ class VideoProcessor(private val context: Context) {
                 TraceRenderer.drawSplineCurve(smoothDataList, processedMat)
             }
 
-            return@withContext ImageUtils.matToBitmap(processedMat).also {
-                processedMat.release()
-            }
-
+            val outputBitmap = ImageUtils.matToBitmap(processedMat)
+            processedMat.release()
+            outputBitmap
         } catch (e: Exception) {
             Log.e("VideoProcessor", "Error processing frame: ${e.message}", e)
-            return@withContext null
+            null
         }
-    }
-
-    suspend fun predictFromCollectedData(): String? = withContext(Dispatchers.Default) {
-        delay(1000)
-        if (preFilter4Ddata.isEmpty()) {
-            return@withContext null
-        }
-
-        // For demonstration, produce dummy results
-        val lastFrameIndex = preFilter4Ddata.last().frameCount
-        val letterPredicted = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[lastFrameIndex % 26]
-        val digitPredicted = (lastFrameIndex % 10).toString()
-        return@withContext "Letter: $letterPredicted\nDigit: $digitPredicted"
     }
 
     fun getPostFilterData(): List<FrameData> = postFilter4Ddata.toList()
 
-    private fun applyKalmanFilter(point: Point, area: Double): Pair<Double, Double> {
+    private fun applyKalmanFilter(point: Point): Pair<Double, Double> {
         val measurement = Mat(2, 1, CvType.CV_32F).apply {
             put(0, 0, point.x)
             put(1, 0, point.y)
@@ -230,7 +214,6 @@ class VideoProcessor(private val context: Context) {
     private fun calculateCenter(contour: MatOfPoint, image: Mat): Pair<Point?, Pair<Int, Int>?> {
         val moments = Imgproc.moments(contour)
         if (moments.m00 == 0.0) return null to null
-
         val cx = (moments.m10 / moments.m00).toInt()
         val cy = (moments.m01 / moments.m00).toInt()
         val centerPoint = Point(cx.toDouble(), cy.toDouble())

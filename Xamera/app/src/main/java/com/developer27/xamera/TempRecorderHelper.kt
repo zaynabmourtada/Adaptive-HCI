@@ -13,8 +13,8 @@ import com.developer27.xamera.databinding.ActivityMainBinding
 import java.io.File
 
 /**
- * TempRecorderHelper is a *temporary* class for MediaRecorder logic.
- * In the future, you'll replace this with your actual "VideoProcessor".
+ * TempRecorderHelper handles raw video recording via MediaRecorder
+ * while real-time processing is done in VideoProcessor.
  */
 class TempRecorderHelper(
     private val mainActivity: MainActivity,
@@ -26,7 +26,7 @@ class TempRecorderHelper(
     private var outputFile: File? = null
 
     /**
-     * Start recording video using rolling shutter if the camera is ready.
+     * Start recording raw video if the camera is ready.
      */
     fun startRecordingVideo() {
         if (cameraHelper.cameraDevice == null) {
@@ -38,7 +38,7 @@ class TempRecorderHelper(
             return
         }
 
-        // Release old recorder if needed
+        // If an old recorder was left open, clean up
         if (mediaRecorder != null) {
             try { mediaRecorder?.stop() } catch (_: Exception) {}
             mediaRecorder?.reset()
@@ -65,10 +65,11 @@ class TempRecorderHelper(
                 return
             }
 
+            // e.g., "Xamera_1673783432219.mp4"
             outputFile = File(moviesDir, "Xamera_${System.currentTimeMillis()}.mp4")
             mediaRecorder?.setOutputFile(outputFile!!.absolutePath)
 
-            // For example, 1280x720:
+            // Example size: 1280x720
             val recordSize = cameraHelper.videoSize ?: Size(1280, 720)
             mediaRecorder?.apply {
                 setVideoEncoder(MediaRecorder.VideoEncoder.H264)
@@ -85,6 +86,7 @@ class TempRecorderHelper(
             val previewSurface = Surface(texture)
             val recorderSurface = mediaRecorder!!.surface
 
+            // Build the capture request for recording
             cameraHelper.captureRequestBuilder =
                 cameraHelper.cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
 
@@ -94,6 +96,7 @@ class TempRecorderHelper(
             // Rolling shutter for RECORD
             applyRollingShutterForRecording(cameraHelper.captureRequestBuilder)
 
+            // Create capture session with both surfaces
             cameraHelper.cameraDevice?.createCaptureSession(
                 listOf(previewSurface, recorderSurface),
                 object : android.hardware.camera2.CameraCaptureSession.StateCallback() {
@@ -145,7 +148,7 @@ class TempRecorderHelper(
     }
 
     /**
-     * Apply rolling shutter specifically for the RECORD request.
+     * Apply rolling shutter for RECORD
      */
     private fun applyRollingShutterForRecording(builder: CaptureRequest.Builder?) {
         if (builder == null) return
@@ -161,7 +164,7 @@ class TempRecorderHelper(
     }
 
     /**
-     * Stop recording video and restore camera preview.
+     * Stop recording and finalize the file
      */
     fun stopRecordingVideo() {
         if (mediaRecorder == null) return
@@ -174,14 +177,15 @@ class TempRecorderHelper(
         mediaRecorder?.release()
         mediaRecorder = null
 
-        // Return to normal preview
+        // Restore normal camera preview
         cameraHelper.createCameraPreview()
 
+        // Show the path of saved file if it exists
         outputFile?.let { file ->
             if (file.exists()) {
                 Toast.makeText(
                     mainActivity,
-                    "Video saved:\n${file.absolutePath}",
+                    "Raw video saved:\n${file.absolutePath}",
                     Toast.LENGTH_LONG
                 ).show()
             } else {
