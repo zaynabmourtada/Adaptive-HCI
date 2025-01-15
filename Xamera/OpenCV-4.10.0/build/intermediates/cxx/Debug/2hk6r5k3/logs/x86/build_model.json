@@ -8,9 +8,11 @@
     "triple": "i686-linux-android",
     "llvmTriple": "i686-none-linux-android"
   },
+
   "cxxBuildFolder": "C:\\Users\\dacikbas\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\.cxx\\Debug\\2hk6r5k3\\x86",
   "soFolder": "C:\\Users\\dacikbas\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\cxx\\Debug\\2hk6r5k3\\obj\\x86",
   "soRepublishFolder": "C:\\Users\\dacikbas\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\cmake\\debug\\obj\\x86",
+  
   "abiPlatformVersion": 21,
   "cmake": {
     "effectiveConfiguration": {
@@ -40,6 +42,7 @@
     ],
     "cmakeSettingsConfiguration": "android-gradle-plugin-predetermined-name",
     "module": {
+      
       "cxxFolder": "C:\\Users\\dacikbas\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\.cxx",
       "intermediatesBaseFolder": "C:\\Users\\dacikbas\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates",
       "intermediatesFolder": "C:\\Users\\dacikbas\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\cxx",
@@ -50,6 +53,7 @@
       "buildSystem": "CMAKE",
       "ndkFolder": "C:\\Users\\dacikbas\\AppData\\Local\\Android\\Sdk\\ndk\\27.0.12077973",
       "ndkFolderBeforeSymLinking": "C:\\Users\\dacikbas\\AppData\\Local\\Android\\Sdk\\ndk\\27.0.12077973",
+
       "ndkVersion": "27.0.12077973",
       "ndkSupportedAbiList": [
         "armeabi-v7a",
@@ -158,6 +162,7 @@
       "project": {
         "rootBuildGradleFolder": "C:\\Users\\dacikbas\\AndroidStudioProjects\\Adaptive-HCI\\Xamera",
         "sdkFolder": "C:\\Users\\dacikbas\\AppData\\Local\\Android\\Sdk",
+
         "isBuildOnlyTargetAbiEnabled": true,
         "isCmakeBuildCohabitationEnabled": false,
         "isPrefabEnabled": false
@@ -200,4 +205,5 @@
   ],
   "stlLibraryFile": "C:\\Users\\dacikbas\\AppData\\Local\\Android\\Sdk\\ndk\\27.0.12077973\\toolchains\\llvm\\prebuilt\\windows-x86_64\\sysroot\\usr\\lib\\i686-linux-android\\libc++_shared.so",
   "intermediatesParentFolder": "C:\\Users\\dacikbas\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\cxx\\Debug\\2hk6r5k3"
+
 }

@@ -1,0 +1,1 @@
+ffmpeg -i "F:\GitHub\Adaptive-HCI\YOLOv8\Tools\video\video.mp4" -vf "pad=960:960:(ow-iw)/2:(oh-ih)/2:black" "F:\GitHub\Adaptive-HCI\YOLOv8\Tools\video\padded_video.mp4"

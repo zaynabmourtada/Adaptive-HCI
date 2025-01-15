@@ -1,5 +1,9 @@
 package com.developer27.xamera
-
+// TODO <Zaynab Mourtada>: Uncomment these once you have PyTorch Mobile in your build.gradle
+import org.pytorch.IValue
+import org.pytorch.Module
+import org.pytorch.Tensor
+import org.pytorch.torchvision.TensorImageUtils
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
@@ -46,7 +50,7 @@ object Settings {
     }
     object Debug {
         var enableToasts = true
-        var enableLogging = true
+        var enableLogging = false
     }
 }
 
@@ -54,6 +58,9 @@ class VideoProcessor(private val context: Context) {
     private lateinit var kalmanFilter: KalmanFilter
 
     // Visualization lines
+    private var module: Module? = null
+
+    // For line-drawing (visualization)
     private val rawDataList = LinkedList<Point>()
     private val smoothDataList = LinkedList<Point>()
 
@@ -63,19 +70,19 @@ class VideoProcessor(private val context: Context) {
     private var frameCount = 0
 
     init {
-        initializeOpenCV()
+        initOpenCV()
+        initKalmanFilter()
     }
 
-    private fun initializeOpenCV() {
+    private fun initOpenCV() {
         if (OpenCVLoader.initDebug()) {
             showToast("OpenCV loaded successfully")
-            initializeKalmanFilter()
         } else {
             Log.e("VideoProcessor", "OpenCV failed to load.")
         }
     }
 
-    private fun initializeKalmanFilter() {
+    private fun initKalmanFilter() {
         kalmanFilter = KalmanFilter(4, 2)
         kalmanFilter._transitionMatrix = Mat.eye(4, 4, CvType.CV_32F).apply {
             put(0, 2, 1.0)
@@ -89,6 +96,10 @@ class VideoProcessor(private val context: Context) {
             setTo(Scalar(1e-2))
         }
         kalmanFilter._errorCovPost = Mat.eye(4, 4, CvType.CV_32F)
+    }
+
+    fun setModel(module: Module) {
+        this.module = module
     }
 
     fun clearTrackingData() {

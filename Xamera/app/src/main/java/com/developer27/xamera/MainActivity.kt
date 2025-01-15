@@ -182,8 +182,8 @@ class MainActivity : AppCompatActivity() {
             startActivityForResult(Intent(this, SettingsActivity::class.java), SETTINGS_REQUEST_CODE)
         }
 
-        // Optionally load a PyTorch model in background
-        loadBestModelOnStartupThreaded("best_optimized.torchscript")
+        // If we wanted to load PyTorch models at startup
+        loadBestModelOnStartupThreaded("YOLOv2-Mobile.torchscript")
     }
 
     // ------------------------------------------------------------------------------------
