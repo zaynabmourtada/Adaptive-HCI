@@ -26,14 +26,10 @@ import java.io.FileOutputStream
 
 /**
  * MainActivity for the Xamera app:
- * - Starts and stops real-time processing (VideoProcessor) AND
- *   simultaneously records raw video (TempRecorderHelper).
- *
- * Flow:
- *   [Start Processing] => (1) Start raw video recording
- *                        (2) Start real-time processing overlay
- *   [Stop Processing]  => (1) Stop raw video recording & save file
- *                        (2) Stop real-time processing overlay
+ * - Shows real-time processed frames (not saved) while recording raw video.
+ * - Only raw video is saved when you stop tracking.
+ * - Once you stop tracking, the screen (processed overlay) is cleared,
+ *   but is shown again whenever you start tracking the next time.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -43,15 +39,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var viewBinding: ActivityMainBinding
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var cameraManager: CameraManager
+    private lateinit var tempRecorderHelper: TempRecorderHelper
     private lateinit var cameraHelper: CameraHelper
 
-    private lateinit var tempRecorderHelper: TempRecorderHelper
-    private var bestModule: Module? = null
-
-    // Real-time processing state
-    private var isProcessing = false
-    private var videoProcessor: VideoProcessor? = null
+    // Real-time video processing
+    private lateinit var videoProcessor: VideoProcessor
     private var isProcessingFrame = false
+
+    private var isTracking = false // "tracking" state = recording + processing
+    private var isFrontCamera = false
+
+    // Optional PyTorch module
+    private var bestModule: Module? = null
 
     // Required permissions
     private val REQUIRED_PERMISSIONS = arrayOf(
@@ -72,7 +71,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // TextureView callback: open camera when surface is ready
+    // TextureView callback
     private val textureListener = object : TextureView.SurfaceTextureListener {
         @SuppressLint("MissingPermission")
         override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
@@ -85,9 +84,9 @@ class MainActivity : AppCompatActivity() {
         override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
         override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean = false
 
-        // Called every time there’s a new preview frame
         override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
-            if (isProcessing) {
+            // If user toggled on "tracking," do real-time processing each frame
+            if (isTracking) {
                 processFrameWithVideoProcessor()
             }
         }
@@ -99,13 +98,12 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         // Inflate layout
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
 
-        // Hide processedFrameView if not needed
-        viewBinding.processedFrameView.visibility = View.GONE
+        // Initially show the processedFrameView (we can hide it after stopTracking)
+        viewBinding.processedFrameView.visibility = View.VISIBLE
 
         // SharedPreferences
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
@@ -114,14 +112,19 @@ class MainActivity : AppCompatActivity() {
         cameraHelper = CameraHelper(this, viewBinding, sharedPreferences)
         tempRecorderHelper = TempRecorderHelper(this, cameraHelper, sharedPreferences, viewBinding)
 
-        // If the user changes shutter_speed in Settings
+        // VideoProcessor
+        videoProcessor = VideoProcessor(this)
+        // If you have a PyTorch model, you can load it:
+        // videoProcessor.setModel(someModule)
+
+        // Listen for preference changes (if you have advanced settings)
         sharedPreferences.registerOnSharedPreferenceChangeListener { _, key ->
             if (key == "shutter_speed") {
                 cameraHelper.updateShutterSpeed()
             }
         }
 
-        // Permission launcher
+        // Permissions
         requestPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
         ) { permissions ->
@@ -142,7 +145,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // If permissions are already granted
+        // Check permissions at startup
         if (allPermissionsGranted()) {
             if (viewBinding.viewFinder.isAvailable) {
                 cameraHelper.openCamera()
@@ -153,17 +156,11 @@ class MainActivity : AppCompatActivity() {
             requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
         }
 
-        // Initialize the advanced VideoProcessor if desired
-        videoProcessor = VideoProcessor(this)
-
         // Buttons
-        // 1) Start or Stop Processing & Recording
-        viewBinding.startProcessingButton.setOnClickListener {
-            if (isProcessing) {
-                stopProcessingAndRecording()
-            } else {
-                startProcessingAndRecording()
-            }
+        // 1) Start/Stop Tracking
+        viewBinding.startTrackingButton.text = "Start Tracking"
+        viewBinding.startTrackingButton.setOnClickListener {
+            if (isTracking) stopTracking() else startTracking()
         }
 
         // 2) Switch camera
@@ -171,10 +168,15 @@ class MainActivity : AppCompatActivity() {
             switchCamera()
         }
 
-        // Zoom controls
+        // 3) Zoom controls
         cameraHelper.setupZoomControls()
 
-        // About / Settings
+        // 4) AR Button (if you have ARActivity)
+        viewBinding.arButton.setOnClickListener {
+            startActivity(Intent(this, ARActivity::class.java))
+        }
+
+        // 5) About & Settings
         viewBinding.aboutButton.setOnClickListener {
             startActivity(Intent(this, AboutXameraActivity::class.java))
         }
@@ -182,77 +184,67 @@ class MainActivity : AppCompatActivity() {
             startActivityForResult(Intent(this, SettingsActivity::class.java), SETTINGS_REQUEST_CODE)
         }
 
-        // If we wanted to load PyTorch models at startup
-        loadBestModelOnStartupThreaded("YOLOv2-Mobile.torchscript")
+        // If you want to load a PyTorch model at startup
+        loadBestModelOnStartupThreaded("best_optimized.torchscript")
     }
 
     // ------------------------------------------------------------------------------------
-    // Start Processing & Recording
-    // ------------------------------------------------------------------------------------
-    private fun startProcessingAndRecording() {
-        isProcessing = true
-
-        // Change button appearance
-        viewBinding.startProcessingButton.text = "Stop Tracking"
-        viewBinding.startProcessingButton.backgroundTintList =
-            ContextCompat.getColorStateList(this, R.color.red)
-
-        // Show processed-frame overlay
-        viewBinding.processedFrameView.visibility = View.VISIBLE
-
-        // Clear old data in VideoProcessor
-        videoProcessor?.clearTrackingData()
-
-        // Start the raw video recorder => saving unprocessed video file
-        tempRecorderHelper.startRecordingVideo()
-
-        Toast.makeText(this, "Processing + Recording started.", Toast.LENGTH_SHORT).show()
-    }
-
-    // ------------------------------------------------------------------------------------
-    // Stop Processing & Recording
-    // ------------------------------------------------------------------------------------
-    private fun stopProcessingAndRecording() {
-        isProcessing = false
-
-        // Change button appearance
-        viewBinding.startProcessingButton.text = "Start Tracking"
-        viewBinding.startProcessingButton.backgroundTintList =
-            ContextCompat.getColorStateList(this, R.color.blue)
-
-        // Hide the processed-frame overlay
-        viewBinding.processedFrameView.visibility = View.GONE
-        viewBinding.processedFrameView.setImageBitmap(null)
-
-        // Stop the raw video recorder => finalize/save video file
-        tempRecorderHelper.stopRecordingVideo()
-
-        Toast.makeText(this, "Processing + Recording stopped.", Toast.LENGTH_SHORT).show()
-    }
-
-    // ------------------------------------------------------------------------------------
-    // Real-time frame processing
+    // Real-Time Processing
     // ------------------------------------------------------------------------------------
     private fun processFrameWithVideoProcessor() {
-        // Avoid re-entrancy
+        // Avoid overlapping frames
         if (isProcessingFrame) return
-        val bitmap = viewBinding.viewFinder.bitmap ?: return
-        isProcessingFrame = true
+        val currentBitmap = viewBinding.viewFinder.bitmap ?: return
 
-        // Run on a background thread
-        Thread {
-            val processedBitmap = videoProcessor?.processFrame(bitmap)
-            runOnUiThread {
-                if (processedBitmap != null && isProcessing) {
-                    viewBinding.processedFrameView.setImageBitmap(processedBitmap)
-                }
-                isProcessingFrame = false
-            }
-        }.start()
+        isProcessingFrame = true
+        // Potentially do this on a background thread
+        val processedBitmap = videoProcessor.processFrame(currentBitmap)
+        if (processedBitmap != null) {
+            // Show the processed frame
+            viewBinding.processedFrameView.setImageBitmap(processedBitmap)
+        }
+        isProcessingFrame = false
     }
 
     // ------------------------------------------------------------------------------------
-    // Model Loading (optional)
+    // Start/Stop Tracking
+    // ------------------------------------------------------------------------------------
+    private fun startTracking() {
+        isTracking = true
+        viewBinding.startTrackingButton.text = "Stop Tracking"
+        viewBinding.startTrackingButton.backgroundTintList =
+            ContextCompat.getColorStateList(this, R.color.red)
+
+        // If we previously hid the processedFrameView, show it again
+        viewBinding.processedFrameView.visibility = View.VISIBLE
+
+        // Clear old data in the processor
+        videoProcessor.clearTrackingData()
+
+        // Begin recording the raw video (will be saved when stopped)
+        tempRecorderHelper.startRecordingVideo()
+
+        Toast.makeText(this, "Tracking started (raw + processed).", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun stopTracking() {
+        isTracking = false
+        viewBinding.startTrackingButton.text = "Start Tracking"
+        viewBinding.startTrackingButton.backgroundTintList =
+            ContextCompat.getColorStateList(this, R.color.blue)
+
+        // Stop recording => raw video is saved
+        tempRecorderHelper.stopRecordingVideo()
+
+        // Clear the processed frame and hide it
+        viewBinding.processedFrameView.setImageBitmap(null)
+        viewBinding.processedFrameView.visibility = View.GONE
+
+        Toast.makeText(this, "Tracking stopped. Raw video saved. Overlay cleared.", Toast.LENGTH_SHORT).show()
+    }
+
+    // ------------------------------------------------------------------------------------
+    // Optional: Load PyTorch model on startup
     // ------------------------------------------------------------------------------------
     private fun loadBestModelOnStartupThreaded(bestModel: String) {
         Thread {
@@ -285,9 +277,7 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    /**
-     * Copy model asset to internal storage (blocking call)
-     */
+    /** Copies a TorchScript model asset to internal storage, returning the file path. */
     private fun copyAssetModelBlocking(assetName: String): String {
         return try {
             val outFile = File(filesDir, assetName)
@@ -341,17 +331,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
-        // If currently processing, stop
-        if (isProcessing) {
-            stopProcessingAndRecording()
-        }
+        if (isTracking) stopTracking()
         cameraHelper.closeCamera()
         cameraHelper.stopBackgroundThread()
         super.onPause()
     }
 
     // ------------------------------------------------------------------------------------
-    // Permissions
+    // Check permissions
     // ------------------------------------------------------------------------------------
     private fun allPermissionsGranted(): Boolean {
         return REQUIRED_PERMISSIONS.all {
@@ -362,12 +349,8 @@ class MainActivity : AppCompatActivity() {
     // ------------------------------------------------------------------------------------
     // Switch camera
     // ------------------------------------------------------------------------------------
-    private var isFrontCamera = false
     private fun switchCamera() {
-        // If we’re processing, stop first
-        if (isProcessing) {
-            stopProcessingAndRecording()
-        }
+        if (isTracking) stopTracking()
         isFrontCamera = !isFrontCamera
         cameraHelper.isFrontCamera = isFrontCamera
         cameraHelper.closeCamera()

@@ -10,6 +10,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // ARCore plugin repository (sometimes needed):
+        maven {
+            url = uri("https://android.arcore.google.com")
+        }
     }
 }
 
