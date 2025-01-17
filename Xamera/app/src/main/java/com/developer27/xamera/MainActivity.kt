@@ -253,6 +253,10 @@ class MainActivity : AppCompatActivity() {
 
         cameraHelper.setupZoomControls()
 
+        viewBinding.arButton.setOnClickListener {
+            startActivity(Intent(this, ARActivity::class.java))
+        }
+
         viewBinding.aboutButton.setOnClickListener {
             startActivity(Intent(this, AboutXameraActivity::class.java))
         }
