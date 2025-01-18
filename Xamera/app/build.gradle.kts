@@ -1,8 +1,5 @@
 plugins {
-    // Plugin for Android application
     id("com.android.application")
-
-    // Plugin for Kotlin Android integration
     id("org.jetbrains.kotlin.android")
 }
 
@@ -39,12 +36,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
-    buildFeatures {
-        viewBinding = true
-    }
-
     kotlinOptions {
         jvmTarget = "1.8"
+    }
+
+    buildFeatures {
+        viewBinding = true
     }
 
     packagingOptions {
@@ -59,39 +56,46 @@ android {
 }
 
 dependencies {
-    implementation("androidx.preference:preference-ktx:1.2.1")
+    // OpenCV
     implementation(project(":OpenCV-4.10.0"))
-    implementation(project(":OpenCV-4.10.0"))
+
+    // ML Kit, etc.
     implementation("com.google.mlkit:vision-common:17.3.0")
 
-    // CameraX dependencies for camera functionality
-    var camerax_version = "1.2.2"
-    implementation("androidx.camera:camera-core:$camerax_version")
-    implementation("androidx.camera:camera-camera2:$camerax_version")
-    implementation("androidx.camera:camera-lifecycle:$camerax_version")
-    implementation("androidx.camera:camera-video:$camerax_version")
-    implementation("androidx.camera:camera-view:$camerax_version")
-    implementation("androidx.camera:camera-extensions:$camerax_version")
+    // CameraX
+    val cameraxVersion = "1.2.2"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-video:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+    implementation("androidx.camera:camera-extensions:$cameraxVersion")
 
-    // Camera2 dependencies (comes with the Android SDK but can add if needed)
-    implementation("androidx.camera:camera-camera2:${camerax_version}")
-
-    // Add PyTorch dependencies
+    // PyTorch
     implementation("org.pytorch:pytorch_android:1.13.1")
     implementation("org.pytorch:pytorch_android_torchvision:1.13.1")
 
-    // Android and Kotlin core libraries
+    // ARCore (pick a recent version)
+    implementation("com.google.ar:core:1.36.0")
+
+    // Sceneform Community Fork (core + ux)
+    implementation("com.gorisse.thomas.sceneform:sceneform:1.19.6")
+
+    // Kotlin & Android core libs
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
-    // Unit testing dependencies
+    // Preferences
+    implementation("androidx.preference:preference-ktx:1.2.1")
+
+    // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 
-    //Apache Commons Math
+    // Apache Commons Math
     implementation("org.apache.commons:commons-math3:3.6.1")
 
     //Unity3D
