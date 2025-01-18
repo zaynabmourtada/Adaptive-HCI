@@ -1,4 +1,4 @@
-package com.developer27.xamera
+package com.developer27.xamera.openGL2D
 
 import android.app.Activity
 import android.app.AlertDialog

@@ -1,4 +1,4 @@
-package com.developer27.xamera
+package com.developer27.xamera.camera
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -21,6 +21,7 @@ import android.view.MotionEvent
 import android.view.Surface
 import android.widget.Toast
 import androidx.annotation.RequiresPermission
+import com.developer27.xamera.MainActivity
 import com.developer27.xamera.databinding.ActivityMainBinding
 
 /**

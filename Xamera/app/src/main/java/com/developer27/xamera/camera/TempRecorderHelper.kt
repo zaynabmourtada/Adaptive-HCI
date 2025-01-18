@@ -1,4 +1,4 @@
-package com.developer27.xamera
+package com.developer27.xamera.camera
 
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraMetadata
@@ -9,6 +9,7 @@ import android.util.Log
 import android.util.Size
 import android.view.Surface
 import android.widget.Toast
+import com.developer27.xamera.MainActivity
 import com.developer27.xamera.databinding.ActivityMainBinding
 import java.io.File
 

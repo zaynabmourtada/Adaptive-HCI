@@ -19,7 +19,11 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.developer27.xamera.camera.CameraHelper
+import com.developer27.xamera.camera.TempRecorderHelper
 import com.developer27.xamera.databinding.ActivityMainBinding
+import com.developer27.xamera.openGL2D.OpenGL2DActivity
+import com.developer27.xamera.videoprocessing.VideoProcessor
 import org.pytorch.Module
 import java.io.File
 import java.io.FileOutputStream
@@ -184,7 +188,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, AboutXameraActivity::class.java))
         }
 
-        //Launch 3D feature when clicked
+        //Settings when clicked
         viewBinding.settingsButton.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
@@ -193,10 +197,10 @@ class MainActivity : AppCompatActivity() {
         loadBestModelOnStartupThreaded("YOLOv2-Mobile.torchscript")
     }
 
-    // launch3DOnlyFeature is responsible for creating the 2D Environment
+    // launch2DOnlyFeature is responsible for creating the 2D Environment
     private fun launch2DOnlyFeature() {
         try {
-            // Start UnityPlayerGameActivity or any Unity-based activity
+            // Start OpenGL2DActivity utilizing OpenGL ES
             val intent = Intent(this, OpenGL2DActivity::class.java)
             startActivity(intent)
         } catch (e: Exception) {

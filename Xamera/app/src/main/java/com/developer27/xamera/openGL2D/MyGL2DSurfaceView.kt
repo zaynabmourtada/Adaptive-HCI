@@ -1,4 +1,4 @@
-package com.developer27.xamera
+package com.developer27.xamera.openGL2D
 
 import android.content.Context
 import android.opengl.GLSurfaceView

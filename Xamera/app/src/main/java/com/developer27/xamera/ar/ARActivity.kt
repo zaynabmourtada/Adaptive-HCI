@@ -1,7 +1,8 @@
-package com.developer27.xamera
+package com.developer27.xamera.ar
 
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import com.developer27.xamera.R
 import com.developer27.xamera.databinding.ActivityArBinding
 import com.google.ar.sceneform.ux.ArFragment
 

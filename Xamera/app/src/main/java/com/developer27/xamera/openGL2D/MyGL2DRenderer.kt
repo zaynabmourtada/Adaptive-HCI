@@ -1,4 +1,4 @@
-package com.developer27.xamera
+package com.developer27.xamera.openGL2D
 
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView

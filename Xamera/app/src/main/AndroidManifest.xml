@@ -44,7 +44,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".OpenGL2DActivity" />
+        <activity android:name=".openGL2D.OpenGL2DActivity" />
         <activity android:name=".AboutXameraActivity" />
         <activity android:name=".SettingsActivity" />
     </application>
