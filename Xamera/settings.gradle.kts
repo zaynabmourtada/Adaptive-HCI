@@ -10,13 +10,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // ARCore plugin repository (sometimes needed):
-        maven {
-            url = uri("https://android.arcore.google.com")
-        }
     }
 }
 
 rootProject.name = "Xamera"
 include(":app")
 include(":OpenCV-4.10.0")
+include(":unityLibrary")
+project(":unityLibrary").projectDir = file("unityLibrary")

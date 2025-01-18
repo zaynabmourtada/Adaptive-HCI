@@ -18,13 +18,10 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
-    <uses-feature android:glEsVersion="0x00020000" android:required="true" />
-
-    <!-- ARCore camera feature -->
+    <!-- To use ARCore-->
     <uses-feature
         android:name="android.hardware.camera.ar"
         android:required="false" />
-    <uses-feature android:name="android.hardware.camera" />
 
     <application
         android:allowBackup="true"
@@ -45,14 +42,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- If AR is required, use android:value="required";
-     if optional, use "optional" -->
-        <meta-data
-            android:name="com.google.ar.core"
-            android:value="required" />
-
-        <!-- Register ARActivity -->
-        <activity android:name=".ARActivity" />
+        <activity android:name=".ARCoreActivity"
+            android:exported="true" />
         <activity android:name=".AboutXameraActivity" />
         <activity android:name=".SettingsActivity" />
     </application>

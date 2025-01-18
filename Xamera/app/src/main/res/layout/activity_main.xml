@@ -1,16 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    activity_main.xml
-
-    This layout uses a FrameLayout as the root container:
-    - Camera preview (TextureView)
-    - Optional OpenGLTextureView
-    - Processed-frame ImageView
-    - Title bar with icon & text
-    - A single row containing:
-        [Show Digits Switch] [Settings Button] [About Button]
-    - Zoom controls on the right, with an "ar" button under "Zoom Out"
-    - Start/Stop tracking & Switch camera at the bottom
+    Updated activity_main.xml
+    Removed OpenGL elements and kept "3D Only" button.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
@@ -24,13 +15,6 @@
         android:id="@+id/viewFinder"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
-
-    <!-- Optional OpenGL Simulation -->
-    <com.developer27.xamera.OpenGLTextureView
-        android:id="@+id/glTextureView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone" />
 
     <!-- ImageView for displaying processed frames -->
     <ImageView
@@ -76,14 +60,7 @@
             android:paddingEnd="8dp" />
     </LinearLayout>
 
-    <!--
-        A single horizontal LinearLayout holding:
-         1) Switch: "Show Digits"
-         2) Settings Button
-         3) About Button
-        Placed below the title bar (marginTop="90dp").
-        (Removed old AR Screen button here)
-    -->
+    <!-- Top Controls -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -126,7 +103,7 @@
             android:elevation="2dp" />
     </LinearLayout>
 
-    <!-- Zoom Buttons (Right side, vertical) -->
+    <!-- Zoom Buttons -->
     <LinearLayout
         android:id="@+id/zoom_button_container"
         android:layout_width="wrap_content"
@@ -136,7 +113,7 @@
         android:layout_gravity="end|center_vertical"
         android:layout_marginEnd="16dp">
 
-        <!-- Zoom In Button -->
+        <!-- Zoom In -->
         <Button
             android:id="@+id/zoomInButton"
             android:layout_width="60dp"
@@ -148,7 +125,7 @@
             android:textColor="@android:color/black"
             android:layout_marginBottom="16dp" />
 
-        <!-- Zoom Out (Minimize) Button -->
+        <!-- Zoom Out -->
         <Button
             android:id="@+id/zoomOutButton"
             android:layout_width="60dp"
@@ -157,23 +134,22 @@
             android:backgroundTint="@color/white"
             android:elevation="2dp"
             android:textSize="24sp"
-            android:textColor="@android:color/black" />
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="16dp" />
 
-        <!-- AR Button (below Zoom Out) -->
+        <!-- 3D Only Button -->
         <Button
-            android:id="@+id/arButton"
+            android:id="@+id/threeDOnlyButton"
             android:layout_width="60dp"
             android:layout_height="60dp"
-            android:text="AR"
+            android:text="3D"
             android:backgroundTint="@color/white"
             android:elevation="2dp"
             android:textSize="9sp"
-            android:textColor="@android:color/black"
-            android:layout_marginTop="16dp" />
-
+            android:textColor="@android:color/black" />
     </LinearLayout>
 
-    <!-- Bottom Buttons (Start Tracking & Switch Camera) -->
+    <!-- Bottom Controls -->
     <LinearLayout
         android:id="@+id/button_container"
         android:layout_width="wrap_content"
@@ -185,7 +161,7 @@
 
         <!-- Start Tracking Button -->
         <Button
-            android:id="@+id/startTrackingButton"
+            android:id="@+id/startProcessingButton"
             android:layout_width="110dp"
             android:layout_height="110dp"
             android:backgroundTint="@color/blue"
@@ -199,7 +175,7 @@
             android:id="@+id/switchCameraButton"
             android:layout_width="110dp"
             android:layout_height="110dp"
-            android:text="@string/switch_camera"
+            android:text="Switch Camera"
             android:textColor="@android:color/black"
             android:textSize="16sp"
             android:backgroundTint="@color/white"

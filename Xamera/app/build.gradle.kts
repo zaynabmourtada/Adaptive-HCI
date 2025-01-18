@@ -97,4 +97,10 @@ dependencies {
 
     // Apache Commons Math
     implementation("org.apache.commons:commons-math3:3.6.1")
+
+    //Unity3D
+    implementation(project(":unityLibrary"))
+
+    // ARCore library
+    implementation("com.google.ar:core:1.36.0")
 }
