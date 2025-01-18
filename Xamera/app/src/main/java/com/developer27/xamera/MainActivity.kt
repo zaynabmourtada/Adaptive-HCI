@@ -175,6 +175,7 @@ class MainActivity : AppCompatActivity() {
         // Zoom controls
         cameraHelper.setupZoomControls()
 
+        // TODO <Soham Naik - Figure out the ways we can use Unity Library or AR Core combined
         // Listener for the "3D Only" button
         viewBinding.threeDOnlyButton.setOnClickListener {
             // Launch ARCore-based activity instead of Unity
