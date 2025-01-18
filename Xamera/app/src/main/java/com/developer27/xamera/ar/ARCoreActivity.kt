@@ -1,4 +1,4 @@
-package com.developer27.xamera
+package com.developer27.xamera.ar
 
 import android.Manifest
 import android.content.pm.PackageManager
