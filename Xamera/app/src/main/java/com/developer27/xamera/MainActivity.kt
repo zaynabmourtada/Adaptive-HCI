@@ -20,6 +20,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.developer27.xamera.databinding.ActivityMainBinding
+import com.unity3d.player.UnityPlayerGameActivity
 import org.pytorch.Module
 import java.io.File
 import java.io.FileOutputStream
@@ -174,6 +175,13 @@ class MainActivity : AppCompatActivity() {
         // Zoom controls
         cameraHelper.setupZoomControls()
 
+        // Listener for the "3D Only" button
+        viewBinding.threeDOnlyButton.setOnClickListener {
+            // Launch ARCore-based activity instead of Unity
+            val intent = Intent(this, ARCoreActivity::class.java)
+            startActivity(intent)
+        }
+
         // About / Settings
         viewBinding.aboutButton.setOnClickListener {
             startActivity(Intent(this, AboutXameraActivity::class.java))
@@ -184,6 +192,17 @@ class MainActivity : AppCompatActivity() {
 
         // If we wanted to load PyTorch models at startup
         loadBestModelOnStartupThreaded("YOLOv2-Mobile.torchscript")
+    }
+
+    // launch3DOnlyFeature is responsible for creating the 3D Environment
+    private fun launch3DOnlyFeature() {
+        try {
+            // Start UnityPlayerGameActivity or any Unity-based activity
+            val intent = Intent(this, UnityPlayerGameActivity::class.java)
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error launching 3D feature: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // ------------------------------------------------------------------------------------
