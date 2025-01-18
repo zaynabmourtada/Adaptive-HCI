@@ -20,7 +20,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.developer27.xamera.databinding.ActivityMainBinding
-import com.unity3d.player.UnityPlayerGameActivity
 import org.pytorch.Module
 import java.io.File
 import java.io.FileOutputStream
@@ -175,31 +174,30 @@ class MainActivity : AppCompatActivity() {
         // Zoom controls
         cameraHelper.setupZoomControls()
 
-        // TODO <Soham Naik - Figure out the ways we can use Unity Library or AR Core combined
-        // Listener for the "3D Only" button
+        // Listener for the "2D Only" button
         viewBinding.threeDOnlyButton.setOnClickListener {
-            // Launch ARCore-based activity instead of Unity
-            val intent = Intent(this, ARCoreActivity::class.java)
-            startActivity(intent)
+            launch2DOnlyFeature()
         }
 
         // About / Settings
         viewBinding.aboutButton.setOnClickListener {
             startActivity(Intent(this, AboutXameraActivity::class.java))
         }
+
+        //Launch 3D feature when clicked
         viewBinding.settingsButton.setOnClickListener {
-            startActivityForResult(Intent(this, SettingsActivity::class.java), SETTINGS_REQUEST_CODE)
+            startActivity(Intent(this, SettingsActivity::class.java))
         }
 
         // If we wanted to load PyTorch models at startup
         loadBestModelOnStartupThreaded("YOLOv2-Mobile.torchscript")
     }
 
-    // launch3DOnlyFeature is responsible for creating the 3D Environment
-    private fun launch3DOnlyFeature() {
+    // launch3DOnlyFeature is responsible for creating the 2D Environment
+    private fun launch2DOnlyFeature() {
         try {
             // Start UnityPlayerGameActivity or any Unity-based activity
-            val intent = Intent(this, UnityPlayerGameActivity::class.java)
+            val intent = Intent(this, OpenGL2DActivity::class.java)
             startActivity(intent)
         } catch (e: Exception) {
             Toast.makeText(this, "Error launching 3D feature: ${e.message}", Toast.LENGTH_SHORT).show()

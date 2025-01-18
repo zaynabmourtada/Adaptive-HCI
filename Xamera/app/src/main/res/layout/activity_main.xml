@@ -69,15 +69,6 @@
         android:layout_gravity="center_horizontal|top"
         android:layout_marginTop="90dp">
 
-        <!-- Switch: "Show Digits" -->
-        <Switch
-            android:id="@+id/switchDisplayMode"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Show Digits"
-            android:textColor="@android:color/white"
-            android:checked="false" />
-
         <!-- Settings Button -->
         <Button
             android:id="@+id/settingsButton"
@@ -137,12 +128,12 @@
             android:textColor="@android:color/black"
             android:layout_marginBottom="16dp" />
 
-        <!-- 3D Only Button -->
+        <!-- 2D Only Button -->
         <Button
             android:id="@+id/threeDOnlyButton"
             android:layout_width="60dp"
             android:layout_height="60dp"
-            android:text="3D"
+            android:text="2D"
             android:backgroundTint="@color/white"
             android:elevation="2dp"
             android:textSize="9sp"
