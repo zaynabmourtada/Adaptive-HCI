@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Session
 
+// TODO <All Developers> - Figure out whether you will integrate ARCore into Xamera or not.
 class ARCoreActivity : AppCompatActivity() {
     private var arCoreSession: Session? = null
 

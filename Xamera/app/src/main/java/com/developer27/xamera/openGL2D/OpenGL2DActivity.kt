@@ -23,6 +23,7 @@ class OpenGL2DActivity : Activity() {
         showCharacterInputDialog()
     }
 
+    // TODO <All Developers>: Inference class must be called here to recieve the input from YOLO (AI) model and be processed for 2D Letters by OpenGL ES.
     /**
      * Displays an AlertDialog with a single EditText.
      * The user can type a character (letter or digit), and we'll draw it.

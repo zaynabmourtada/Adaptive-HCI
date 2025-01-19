@@ -49,7 +49,7 @@ android:textColor="@android:color/white"
 android:id="@+id/textViewReleaseDate"
 android:layout_width="wrap_content"
 android:layout_height="wrap_content"
-android:text="Release Date: December 18th, 2024"
+android:text="Expected Release Date: February 21st, 2025"
 android:textColor="@android:color/white"
     app:layout_constraintTop_toBottomOf="@id/phaseNumber"
     app:layout_constraintStart_toStartOf="parent"
@@ -66,17 +66,6 @@ android:textColor="@android:color/white"
     app:layout_constraintStart_toStartOf="parent"
     android:layout_marginTop="8dp" />
 
-    <!-- Researchers -->
-    <TextView
-        android:id="@+id/textViewResearchers"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Researchers: Sourabh S Harapanahalli, Nishaant SM"
-        android:textColor="@android:color/white"
-        app:layout_constraintTop_toBottomOf="@id/textViewDevelopers"
-        app:layout_constraintStart_toStartOf="parent"
-        android:layout_marginTop="8dp" />
-
     <!-- Professor -->
 <TextView
 android:id="@+id/textViewProfessor"
@@ -84,7 +73,7 @@ android:layout_width="wrap_content"
 android:layout_height="wrap_content"
 android:text="Professor: Xiao Zhang"
 android:textColor="@android:color/white"
-    app:layout_constraintTop_toBottomOf="@id/textViewResearchers"
+    app:layout_constraintTop_toBottomOf="@id/textViewDevelopers"
     app:layout_constraintStart_toStartOf="parent"
     android:layout_marginTop="8dp" />
 

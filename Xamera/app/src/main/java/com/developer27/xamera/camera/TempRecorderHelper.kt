@@ -13,6 +13,7 @@ import com.developer27.xamera.MainActivity
 import com.developer27.xamera.databinding.ActivityMainBinding
 import java.io.File
 
+// TODO <Soham Naik> - Remove the recording function once done with YOLO training and integration.
 /**
  * TempRecorderHelper handles raw video recording via MediaRecorder
  * while real-time processing is done in VideoProcessor.
