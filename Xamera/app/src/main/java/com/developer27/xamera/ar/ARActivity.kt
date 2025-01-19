@@ -6,6 +6,7 @@ import com.developer27.xamera.R
 import com.developer27.xamera.databinding.ActivityArBinding
 import com.google.ar.sceneform.ux.ArFragment
 
+// TODO <All Developers> - Figure out whether you will integrate ARCore into Xamera or not.
 class ARActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityArBinding
