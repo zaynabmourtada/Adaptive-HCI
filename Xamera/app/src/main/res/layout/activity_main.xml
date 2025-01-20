@@ -130,10 +130,22 @@
 
         <!-- 2D Only Button -->
         <Button
-            android:id="@+id/threeDOnlyButton"
+            android:id="@+id/twoDOnlyButton"
             android:layout_width="60dp"
             android:layout_height="60dp"
             android:text="2D"
+            android:backgroundTint="@color/white"
+            android:elevation="2dp"
+            android:textSize="9sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="16dp"/>
+
+        <!-- 3D Only Button -->
+        <Button
+            android:id="@+id/threeDOnlyButton"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:text="3D"
             android:backgroundTint="@color/white"
             android:elevation="2dp"
             android:textSize="9sp"
