@@ -171,11 +171,7 @@ class MainActivity : AppCompatActivity() {
 
         // 3D => pass finalLineCoords as float array
         viewBinding.threeDOnlyButton.setOnClickListener {
-            val intent = Intent(this, OpenGL3DActivity::class.java)
-
-            val flatArray = finalLineCoords.flatten().toFloatArray()
-            intent.putExtra("3D_POINTS", flatArray)
-            startActivity(intent)
+            launch3DOnlyFeature()
         }
 
         // About/Settings
@@ -190,12 +186,26 @@ class MainActivity : AppCompatActivity() {
         loadBestModelOnStartupThreaded("YOLOv2-Mobile.torchscript")
     }
 
+    // This function triggers 2D OpenGL feature
     private fun launch2DOnlyFeature() {
         try {
             val intent = Intent(this, OpenGL2DActivity::class.java)
             startActivity(intent)
         } catch (e: Exception) {
             Toast.makeText(this, "Error launching 2D feature: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // This function triggers 3D OpenGL feature
+    private fun launch3DOnlyFeature() {
+        try {
+            val intent = Intent(this, OpenGL3DActivity::class.java)
+
+            val flatArray = finalLineCoords.flatten().toFloatArray()
+            intent.putExtra("3D_POINTS", flatArray)
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error launching 3D feature: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -226,6 +236,13 @@ class MainActivity : AppCompatActivity() {
         // Retrieve final line coords from VideoProcessor => finalLineCoords
         finalLineCoords.clear()
 
+        //Retrieves X, Y and Z coordinates from VideoProcessor.kt
+        recieveXYZfromVideoProcessor()
+
+        Toast.makeText(this, "Processing + Recording stopped. Coords saved.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun recieveXYZfromVideoProcessor(){
         // TODO <Soham Naik> X, Y and Z coordinates must be transmitted from YOLO model.
         val postFilterData = videoProcessor?.getPostFilterData()
         if (postFilterData != null) {
@@ -244,8 +261,6 @@ class MainActivity : AppCompatActivity() {
                 finalLineCoords.add(listOf(ndcX, ndcY, z))
             }
         }
-
-        Toast.makeText(this, "Processing + Recording stopped. Coords saved.", Toast.LENGTH_SHORT).show()
     }
 
     private fun processFrameWithVideoProcessor() {
