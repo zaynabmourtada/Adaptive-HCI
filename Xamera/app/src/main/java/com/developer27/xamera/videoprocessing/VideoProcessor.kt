@@ -1,5 +1,5 @@
 package com.developer27.xamera.videoprocessing
-import org.pytorch.Module
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
@@ -16,7 +16,9 @@ import org.opencv.core.Scalar
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import org.opencv.video.KalmanFilter
+import org.pytorch.Module
 import java.util.LinkedList
+import kotlin.math.roundToInt
 
 /**
  * Example advanced VideoProcessor using OpenCV + Kalman filter.
@@ -52,14 +54,13 @@ object Settings {
 
 class VideoProcessor(private val context: Context) {
     private lateinit var kalmanFilter: KalmanFilter
-
-    // Visualization lines
     private var module: Module? = null
 
     // For line-drawing (visualization)
     private val rawDataList = LinkedList<Point>()
     private val smoothDataList = LinkedList<Point>()
 
+    // Storing final data
     private val preFilter4Ddata = mutableListOf<FrameData>()
     private val postFilter4Ddata = mutableListOf<FrameData>()
 
@@ -107,6 +108,17 @@ class VideoProcessor(private val context: Context) {
         showToast("Tracking data reset.")
     }
 
+    // TODO <Soham Naik>: This part will be exported by YOLO to OpenGL
+    // ------------------------------------------------------------------------------------
+    // **NEW**: Provide final data to MainActivity
+    // ------------------------------------------------------------------------------------
+    fun getPostFilterData(): List<FrameData> {
+        return postFilter4Ddata.toList()
+    }
+
+    /**
+     * Main processing of each frame
+     */
     fun processFrame(bitmap: Bitmap): Bitmap? {
         return try {
             val mat = ImageUtils.bitmapToMat(bitmap)
@@ -151,8 +163,6 @@ class VideoProcessor(private val context: Context) {
             null
         }
     }
-
-    fun getPostFilterData(): List<FrameData> = postFilter4Ddata.toList()
 
     private fun applyKalmanFilter(point: Point): Pair<Double, Double> {
         val measurement = Mat(2, 1, CvType.CV_32F).apply {
@@ -210,8 +220,8 @@ class VideoProcessor(private val context: Context) {
     private fun calculateCenter(contour: MatOfPoint, image: Mat): Pair<Point?, Pair<Int, Int>?> {
         val moments = Imgproc.moments(contour)
         if (moments.m00 == 0.0) return null to null
-        val cx = (moments.m10 / moments.m00).toInt()
-        val cy = (moments.m01 / moments.m00).toInt()
+        val cx = (moments.m10 / moments.m00).roundToInt()
+        val cy = (moments.m01 / moments.m00).roundToInt()
         val centerPoint = Point(cx.toDouble(), cy.toDouble())
         Imgproc.circle(image, centerPoint, 10, Scalar(0.0, 0.0, 255.0), -1)
         return centerPoint to (cx to cy)
@@ -265,6 +275,7 @@ object SplineHelper {
     fun applySplineInterpolation(data: List<Point>):
             Pair<org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction,
                     org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction>? {
+
         if (data.size < 2) return null
         val interpolator = SplineInterpolator()
         val xData = data.map { it.x }.toDoubleArray()
