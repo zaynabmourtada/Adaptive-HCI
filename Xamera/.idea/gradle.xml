@@ -12,7 +12,6 @@
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/OpenCV-4.10.0" />
             <option value="$PROJECT_DIR$/app" />
-            <option value="$PROJECT_DIR$/unityLibrary" />
           </set>
         </option>
         <option name="resolveExternalAnnotations" value="false" />
