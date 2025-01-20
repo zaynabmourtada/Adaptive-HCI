@@ -253,15 +253,15 @@ class MainActivity : AppCompatActivity() {
         val bitmap = viewBinding.viewFinder.bitmap ?: return
         isProcessingFrame = true
 
-        Thread {
-            val processedBitmap = videoProcessor?.processFrame(bitmap)
+        // Use the new callback-based processFrame method
+        videoProcessor?.processFrame(bitmap) { processedBitmap ->
             runOnUiThread {
                 if (processedBitmap != null && isProcessing) {
                     viewBinding.processedFrameView.setImageBitmap(processedBitmap)
                 }
                 isProcessingFrame = false
             }
-        }.start()
+        }
     }
 
     private fun loadBestModelOnStartupThreaded(bestModel: String) {

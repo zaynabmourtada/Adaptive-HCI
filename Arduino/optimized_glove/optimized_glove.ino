@@ -42,8 +42,8 @@ void emitSymbol(const char* binaryPattern) {
 // Function to generate the OOK signal
 void generateOOKSignal() {
   //emitPilotGap();                     // Emit pilot gap
-  //emitSymbol("11110000");        // User_1
-  emitSymbol("10101010");          // User_2
+  emitSymbol("11110000");        // User_1
+  //emitSymbol("10101010");          // User_2
 }
 
 void setup() {

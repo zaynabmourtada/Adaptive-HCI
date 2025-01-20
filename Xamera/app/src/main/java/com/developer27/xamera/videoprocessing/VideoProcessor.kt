@@ -4,13 +4,16 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import android.widget.Toast
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
 import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
-import org.opencv.core.MatOfPoint
 import org.opencv.core.Point
 import org.opencv.core.Scalar
 import org.opencv.core.Size
@@ -20,8 +23,9 @@ import org.pytorch.Module
 import org.pytorch.Tensor
 import org.pytorch.IValue
 import java.util.LinkedList
-import kotlin.math.roundToInt
 import kotlin.math.min
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 data class BoundingBox(
     val x1: Float,
@@ -32,7 +36,19 @@ data class BoundingBox(
     val classId: Int
 )
 
+data class FrameData(
+    val x: Double,
+    val y: Double,
+    val area: Double,
+    val frameCount: Int
+)
+
 object Settings {
+    object Model {
+        const val inputSize = 960
+        const val outputTensorStride = 6 // Number of values per detection
+    }
+
     object Trace {
         var lineLimit = 50
         var splineStep = 0.01
@@ -40,13 +56,20 @@ object Settings {
         var splineLineColor = Scalar(0.0, 0.0, 255.0)  // Blue
         var lineThickness = 4
     }
+
+    object BoundingBox {
+        var boxColor = Scalar(0.0, 255.0, 0.0) // Green
+        var boxThickness = 2
+    }
+
     object Brightness {
         var factor = 2.0
         var threshold = 150.0
     }
+
     object Debug {
         var enableToasts = true
-        var enableLogging = false
+        var enableLogging = true
     }
 }
 
@@ -59,6 +82,10 @@ class VideoProcessor(private val context: Context) {
     private val smoothDataList = LinkedList<Point>()
 
     private var frameCount = 0
+
+    // Storing final data
+    private val preFilter4Ddata = mutableListOf<FrameData>()
+    private val postFilter4Ddata = mutableListOf<FrameData>()
 
     init {
         initOpenCV()
@@ -91,36 +118,77 @@ class VideoProcessor(private val context: Context) {
 
     fun setModel(module: Module) {
         this.module = module
+        logCat("Model loaded successfully")
     }
 
     fun clearTrackingData() {
         frameCount = 0
+        preFilter4Ddata.clear()
+        postFilter4Ddata.clear()
         rawDataList.clear()
         smoothDataList.clear()
         showToast("Tracking data reset.")
     }
 
-    fun processFrame(bitmap: Bitmap): Bitmap? {
+    fun getPostFilterData(): List<FrameData> {
+        return postFilter4Ddata.toList()
+    }
+
+    fun processFrame(bitmap: Bitmap, callback: (Bitmap?) -> Unit) {
+        CoroutineScope(Dispatchers.Default).launch {
+            val result = try {
+                processFrameInternal(bitmap)
+            } catch (e: Exception) {
+                logCat("Error processing frame: ${e.message}", e)
+                null
+            }
+            withContext(Dispatchers.Main) {
+                callback(result) // Return result on the main thread
+            }
+        }
+    }
+
+    private suspend fun processFrameInternal(bitmap: Bitmap): Bitmap? {
+        val mat = Mat()
+        val originalMat = Mat()
+        val resizedMat = Mat()
+
         return try {
-            // Convert bitmap to Mat
-            val mat = ImageUtils.bitmapToMat(bitmap)
+            logCat("Starting frame processing")
+
+            // Convert bitmap to Mat using OpenCV's Utils.bitmapToMat
+            logCat("Converting bitmap to Mat")
+            Utils.bitmapToMat(bitmap, originalMat)
+            logCat("Bitmap converted to Mat: ${originalMat.cols()}x${originalMat.rows()}")
 
             // Resize and pad the image to 960x960
-            val resizedMat = resizeAndPad(mat, 960, 960)
+            logCat("Resizing and padding image")
+            resizeAndPad(originalMat, resizedMat, Settings.Model.inputSize, Settings.Model.inputSize)
+            logCat("Image resized and padded: ${resizedMat.cols()}x${resizedMat.rows()}")
 
             // Convert Mat to Tensor
+            logCat("Converting Mat to Tensor")
             val inputTensor = ImageUtils.matToFloat32Tensor(resizedMat)
+            logCat("Tensor created with shape: ${inputTensor.shape().joinToString()}")
 
-            // Run inference
-            val outputTensor = module?.forward(IValue.from(inputTensor))?.toTensor()
+            // Run inference on the background thread
+            logCat("Running inference")
+            val outputTensor = withContext(Dispatchers.Default) {
+                module?.forward(IValue.from(inputTensor))?.toTensor()
+            }
+            logCat("Inference completed successfully")
 
             // Process output tensor to get bounding boxes
-            val boundingBoxes = outputTensor?.let { processOutputTensor(it, mat.cols(), mat.rows()) } ?: emptyList()
+            logCat("Processing output tensor")
+            val boundingBoxes = outputTensor?.let { parseYOLOOutputTensor(it, originalMat.cols(), originalMat.rows()) } ?: emptyList()
+            logCat("Bounding boxes detected: ${boundingBoxes.size}")
 
             // Draw bounding boxes on the original image
-            drawBoundingBoxes(mat, boundingBoxes)
+            logCat("Drawing bounding boxes")
+            drawBoundingBoxes(originalMat, boundingBoxes)
 
             // Calculate the center of each bounding box and add to rawDataList
+            logCat("Calculating centers and applying Kalman filter")
             for (box in boundingBoxes) {
                 val center = calculateCenter(box)
                 rawDataList.add(center)
@@ -139,65 +207,70 @@ class VideoProcessor(private val context: Context) {
             }
 
             // Draw raw trace
-            TraceRenderer.drawRawTrace(rawDataList, mat)
+            logCat("Drawing raw trace")
+            TraceRenderer.drawRawTrace(rawDataList, originalMat)
 
             // Draw smoothed trace
-            TraceRenderer.drawSplineCurve(smoothDataList, mat)
+            logCat("Drawing smoothed trace")
+            TraceRenderer.drawSplineCurve(smoothDataList, originalMat)
 
-            // Convert Mat back to Bitmap
-            val outputBitmap = ImageUtils.matToBitmap(mat)
-
-            // Release Mats
-            mat.release()
-            resizedMat.release()
-
+            // Convert Mat back to Bitmap using OpenCV's Utils.matToBitmap
+            logCat("Converting Mat back to Bitmap")
+            val outputBitmap = Bitmap.createBitmap(originalMat.cols(), originalMat.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(originalMat, outputBitmap)
+            logCat("Frame processing completed successfully")
             outputBitmap
         } catch (e: Exception) {
-            Log.e("VideoProcessor", "Error processing frame: ${e.message}", e)
+            logCat("Error processing frame: ${e.message}", e)
             null
+        } finally {
+            // Release Mats in the finally block to ensure they are always released
+            mat.release()
+            originalMat.release()
+            resizedMat.release()
         }
     }
 
-    private fun resizeAndPad(mat: Mat, targetWidth: Int, targetHeight: Int): Mat {
-        val resizedMat = Mat()
-        val scale = min(targetWidth.toDouble() / mat.cols(), targetHeight.toDouble() / mat.rows())
-        val resizedWidth = (mat.cols() * scale).toInt()
-        val resizedHeight = (mat.rows() * scale).toInt()
+    private fun resizeAndPad(src: Mat, dst: Mat, targetWidth: Int, targetHeight: Int) {
+        // Calculate the scale to maintain aspect ratio
+        val scale = min(targetWidth.toDouble() / src.cols(), targetHeight.toDouble() / src.rows())
+        val resizedWidth = (src.cols() * scale).toInt()
+        val resizedHeight = (src.rows() * scale).toInt()
 
-        // Resize the image
-        Imgproc.resize(mat, resizedMat, Size(resizedWidth.toDouble(), resizedHeight.toDouble()))
+        // Resize the image to fit within the target dimensions while maintaining aspect ratio
+        Imgproc.resize(src, dst, Size(resizedWidth.toDouble(), resizedHeight.toDouble()))
 
-        // Pad the image to 960x960
+        // Create a square padded image with black borders
         val paddedMat = Mat(targetHeight, targetWidth, CvType.CV_8UC3, Scalar(0.0, 0.0, 0.0)) // Black padding
+
+        // Calculate offsets to center the resized image in the padded square
         val xOffset = (targetWidth - resizedWidth) / 2
         val yOffset = (targetHeight - resizedHeight) / 2
 
-        resizedMat.copyTo(paddedMat.submat(yOffset, yOffset + resizedHeight, xOffset, xOffset + resizedWidth))
-        resizedMat.release()
+        // Copy the resized image into the center of the padded square
+        dst.copyTo(paddedMat.submat(yOffset, yOffset + resizedHeight, xOffset, xOffset + resizedWidth))
 
-        return paddedMat
+        // Copy the padded result back to the destination Mat
+        paddedMat.copyTo(dst)
+        paddedMat.release()
     }
 
-    private fun processOutputTensor(outputTensor: Tensor, originalWidth: Int, originalHeight: Int): List<BoundingBox> {
+    private fun parseYOLOOutputTensor(outputTensor: Tensor, originalWidth: Int, originalHeight: Int): List<BoundingBox> {
         val boundingBoxes = mutableListOf<BoundingBox>()
-
-        // Example: Parse the output tensor (adjust based on your YOLO model's output format)
-        // Assuming the output tensor is of shape [1, N, 6], where N is the number of detected objects,
-        // and each object has [x1, y1, x2, y2, confidence, classId]
         val outputArray = outputTensor.dataAsFloatArray
         val numDetections = outputTensor.shape()[1].toInt()
 
         for (i in 0 until numDetections) {
-            val x1 = outputArray[i * 6 + 0]
-            val y1 = outputArray[i * 6 + 1]
-            val x2 = outputArray[i * 6 + 2]
-            val y2 = outputArray[i * 6 + 3]
-            val confidence = outputArray[i * 6 + 4]
-            val classId = outputArray[i * 6 + 5].toInt()
+            val x1 = outputArray[i * Settings.Model.outputTensorStride + 0]
+            val y1 = outputArray[i * Settings.Model.outputTensorStride + 1]
+            val x2 = outputArray[i * Settings.Model.outputTensorStride + 2]
+            val y2 = outputArray[i * Settings.Model.outputTensorStride + 3]
+            val confidence = outputArray[i * Settings.Model.outputTensorStride + 4]
+            val classId = outputArray[i * Settings.Model.outputTensorStride + 5].toInt()
 
             // Scale bounding box coordinates back to the original image size
-            val scaleX = originalWidth.toFloat() / 960
-            val scaleY = originalHeight.toFloat() / 960
+            val scaleX = originalWidth.toFloat() / Settings.Model.inputSize
+            val scaleY = originalHeight.toFloat() / Settings.Model.inputSize
             val scaledX1 = x1 * scaleX
             val scaledY1 = y1 * scaleY
             val scaledX2 = x2 * scaleX
@@ -213,7 +286,40 @@ class VideoProcessor(private val context: Context) {
         for (box in boundingBoxes) {
             val topLeft = Point(box.x1.toDouble(), box.y1.toDouble())
             val bottomRight = Point(box.x2.toDouble(), box.y2.toDouble())
-            Imgproc.rectangle(mat, topLeft, bottomRight, Scalar(0.0, 255.0, 0.0), 2) // Green box
+
+            // Draw the bounding box
+            Imgproc.rectangle(mat, topLeft, bottomRight, Settings.BoundingBox.boxColor, Settings.BoundingBox.boxThickness)
+
+            // Prepare text to display (class name and confidence score)
+            val label = "User_1 (${"%.2f".format(box.confidence * 100)}%)"
+            val fontScale = 0.6
+            val thickness = 1
+            val baseline = IntArray(1)
+            val textSize = Imgproc.getTextSize(label, Imgproc.FONT_HERSHEY_SIMPLEX, fontScale, thickness, baseline)
+
+            // Calculate text position (above the bounding box)
+            val textX = (box.x1).toInt()
+            val textY = (box.y1 - 5).toInt().coerceAtLeast(10) // Ensure text doesn't go off the top of the image
+
+            // Draw a background rectangle for the text
+            Imgproc.rectangle(
+                mat,
+                Point(textX.toDouble(), textY.toDouble() + baseline[0]),
+                Point(textX + textSize.width, textY - textSize.height),
+                Settings.BoundingBox.boxColor,
+                Imgproc.FILLED
+            )
+
+            // Draw the text
+            Imgproc.putText(
+                mat,
+                label,
+                Point(textX.toDouble(), textY.toDouble()),
+                Imgproc.FONT_HERSHEY_SIMPLEX,
+                fontScale,
+                Scalar(255.0, 255.0, 255.0), // White text
+                thickness
+            )
         }
     }
 
@@ -254,6 +360,16 @@ class VideoProcessor(private val context: Context) {
     private fun showToast(msg: String) {
         if (Settings.Debug.enableToasts) {
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun logCat(message: String, throwable: Throwable? = null) {
+        if (Settings.Debug.enableLogging) {
+            if (throwable != null) {
+                Log.e("VideoProcessor", message, throwable)
+            } else {
+                Log.d("VideoProcessor", message)
+            }
         }
     }
 }
@@ -345,20 +461,29 @@ object Preprocessing {
 }
 
 object ImageUtils {
-    fun bitmapToMat(bitmap: Bitmap): Mat = Mat().also {
-        Utils.bitmapToMat(bitmap, it)
-    }
-    fun matToBitmap(mat: Mat): Bitmap = Bitmap.createBitmap(
-        mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888
-    ).apply {
-        Utils.matToBitmap(mat, this)
-    }
     fun matToFloat32Tensor(mat: Mat): Tensor {
-        // Convert Mat to a float32 tensor
-        // Implementation depends on your model's input requirements
-        // Example:
-        val inputArray = FloatArray(mat.cols() * mat.rows() * 3) // Assuming 3 channels (RGB)
-        mat.get(0, 0, inputArray)
-        return Tensor.fromBlob(inputArray, longArrayOf(1, 3, mat.rows().toLong(), mat.cols().toLong()))
+        // Ensure the Mat is in the correct format (3-channel RGB)
+        require(mat.channels() == 3) { "Input Mat must have 3 channels (RGB)" }
+
+        // Allocate a direct ByteBuffer with the correct capacity
+        val inputBuffer = ByteBuffer.allocateDirect(mat.cols() * mat.rows() * 3) // 1 byte per channel
+        inputBuffer.order(ByteOrder.nativeOrder())
+
+        // Copy pixel data from the Mat to the ByteBuffer
+        for (row in 0 until mat.rows()) {
+            for (col in 0 until mat.cols()) {
+                val pixel = mat.get(row, col)
+                inputBuffer.put((pixel[0].toInt() and 0xFF).toByte()) // B
+                inputBuffer.put((pixel[1].toInt() and 0xFF).toByte()) // G
+                inputBuffer.put((pixel[2].toInt() and 0xFF).toByte()) // R
+            }
+        }
+
+        // Log tensor shape and buffer size
+        Log.d("VideoProcessor", "Tensor shape: [1, 3, ${mat.rows()}, ${mat.cols()}]")
+        Log.d("VideoProcessor", "ByteBuffer size: ${inputBuffer.capacity()}")
+
+        // Create a PyTorch Tensor from the ByteBuffer
+        return Tensor.fromBlob(inputBuffer, longArrayOf(1, 3, mat.rows().toLong(), mat.cols().toLong()))
     }
 }
