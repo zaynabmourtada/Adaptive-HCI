@@ -45,6 +45,7 @@
             </intent-filter>
         </activity>
         <activity android:name=".openGL2D.OpenGL2DActivity" />
+        <activity android:name=".openGL3D.OpenGL3DActivity" />
         <activity android:name=".AboutXameraActivity" />
         <activity android:name=".SettingsActivity" />
     </application>
