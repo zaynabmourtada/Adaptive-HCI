@@ -285,7 +285,8 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (bestLoadedPath.isNotEmpty()) {
                     try {
-                        bestModule = org.pytorch.Module.load(bestLoadedPath)
+                        val bestModule = org.pytorch.Module.load(bestLoadedPath)
+                        videoProcessor?.setModel(bestModule) // Pass the model to VideoProcessor
                         Toast.makeText(
                             this@MainActivity,
                             "YOLO Model loaded: $bestModel",

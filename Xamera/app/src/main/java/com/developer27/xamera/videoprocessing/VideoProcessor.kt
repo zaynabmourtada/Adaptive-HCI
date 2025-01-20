@@ -17,24 +17,22 @@ import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import org.opencv.video.KalmanFilter
 import org.pytorch.Module
+import org.pytorch.Tensor
+import org.pytorch.IValue
 import java.util.LinkedList
 import kotlin.math.roundToInt
+import kotlin.math.min
 
-/**
- * Example advanced VideoProcessor using OpenCV + Kalman filter.
- * Called in real-time from MainActivity for demonstration/tracking overlay.
- */
-data class FrameData(
-    val x: Double,
-    val y: Double,
-    val area: Double,
-    val frameCount: Int
+data class BoundingBox(
+    val x1: Float,
+    val y1: Float,
+    val x2: Float,
+    val y2: Float,
+    val confidence: Float,
+    val classId: Int
 )
 
 object Settings {
-    object Contour {
-        var threshold = 500
-    }
     object Trace {
         var lineLimit = 50
         var splineStep = 0.01
@@ -59,10 +57,6 @@ class VideoProcessor(private val context: Context) {
     // For line-drawing (visualization)
     private val rawDataList = LinkedList<Point>()
     private val smoothDataList = LinkedList<Point>()
-
-    // Storing final data
-    private val preFilter4Ddata = mutableListOf<FrameData>()
-    private val postFilter4Ddata = mutableListOf<FrameData>()
 
     private var frameCount = 0
 
@@ -101,66 +95,125 @@ class VideoProcessor(private val context: Context) {
 
     fun clearTrackingData() {
         frameCount = 0
-        preFilter4Ddata.clear()
-        postFilter4Ddata.clear()
         rawDataList.clear()
         smoothDataList.clear()
         showToast("Tracking data reset.")
     }
 
-    // TODO <Soham Naik>: This part will be exported by YOLO to OpenGL
-    // ------------------------------------------------------------------------------------
-    // **NEW**: Provide final data to MainActivity
-    // ------------------------------------------------------------------------------------
-    fun getPostFilterData(): List<FrameData> {
-        return postFilter4Ddata.toList()
-    }
-
-    /**
-     * Main processing of each frame
-     */
     fun processFrame(bitmap: Bitmap): Bitmap? {
         return try {
+            // Convert bitmap to Mat
             val mat = ImageUtils.bitmapToMat(bitmap)
-            val cleanedMat = preprocessFrame(mat)
-            mat.release()
 
-            val (centerInfo, processedMat) = detectContourBlob(cleanedMat)
-            cleanedMat.release()
+            // Resize and pad the image to 960x960
+            val resizedMat = resizeAndPad(mat, 960, 960)
 
-            val (center, area) = centerInfo
-            if (center != null) {
-                val frameData = FrameData(center.x, center.y, area ?: 0.0, frameCount++)
+            // Convert Mat to Tensor
+            val inputTensor = ImageUtils.matToFloat32Tensor(resizedMat)
+
+            // Run inference
+            val outputTensor = module?.forward(IValue.from(inputTensor))?.toTensor()
+
+            // Process output tensor to get bounding boxes
+            val boundingBoxes = outputTensor?.let { processOutputTensor(it, mat.cols(), mat.rows()) } ?: emptyList()
+
+            // Draw bounding boxes on the original image
+            drawBoundingBoxes(mat, boundingBoxes)
+
+            // Calculate the center of each bounding box and add to rawDataList
+            for (box in boundingBoxes) {
+                val center = calculateCenter(box)
                 rawDataList.add(center)
-                preFilter4Ddata.add(frameData)
 
-                // Kalman filter
+                // Apply Kalman filter to the center point
                 val (fx, fy) = applyKalmanFilter(center)
-                val smoothPoint = Point(fx, fy)
-                smoothDataList.add(smoothPoint)
-                postFilter4Ddata.add(
-                    FrameData(smoothPoint.x, smoothPoint.y, frameData.area, frameData.frameCount)
-                )
-
-                // Keep the trace lines limited
-                if (rawDataList.size > Settings.Trace.lineLimit) {
-                    rawDataList.pollFirst()
-                }
-                if (smoothDataList.size > Settings.Trace.lineLimit) {
-                    smoothDataList.pollFirst()
-                }
-
-                // Draw lines
-                TraceRenderer.drawRawTrace(rawDataList, processedMat)
-                TraceRenderer.drawSplineCurve(smoothDataList, processedMat)
+                smoothDataList.add(Point(fx, fy))
             }
 
-            val outputBitmap = ImageUtils.matToBitmap(processedMat)
-            processedMat.release()
+            // Keep the trace lines limited
+            if (rawDataList.size > Settings.Trace.lineLimit) {
+                rawDataList.pollFirst()
+            }
+            if (smoothDataList.size > Settings.Trace.lineLimit) {
+                smoothDataList.pollFirst()
+            }
+
+            // Draw raw trace
+            TraceRenderer.drawRawTrace(rawDataList, mat)
+
+            // Draw smoothed trace
+            TraceRenderer.drawSplineCurve(smoothDataList, mat)
+
+            // Convert Mat back to Bitmap
+            val outputBitmap = ImageUtils.matToBitmap(mat)
+
+            // Release Mats
+            mat.release()
+            resizedMat.release()
+
             outputBitmap
         } catch (e: Exception) {
             Log.e("VideoProcessor", "Error processing frame: ${e.message}", e)
             null
+        }
+    }
+
+    private fun resizeAndPad(mat: Mat, targetWidth: Int, targetHeight: Int): Mat {
+        val resizedMat = Mat()
+        val scale = min(targetWidth.toDouble() / mat.cols(), targetHeight.toDouble() / mat.rows())
+        val resizedWidth = (mat.cols() * scale).toInt()
+        val resizedHeight = (mat.rows() * scale).toInt()
+
+        // Resize the image
+        Imgproc.resize(mat, resizedMat, Size(resizedWidth.toDouble(), resizedHeight.toDouble()))
+
+        // Pad the image to 960x960
+        val paddedMat = Mat(targetHeight, targetWidth, CvType.CV_8UC3, Scalar(0.0, 0.0, 0.0)) // Black padding
+        val xOffset = (targetWidth - resizedWidth) / 2
+        val yOffset = (targetHeight - resizedHeight) / 2
+
+        resizedMat.copyTo(paddedMat.submat(yOffset, yOffset + resizedHeight, xOffset, xOffset + resizedWidth))
+        resizedMat.release()
+
+        return paddedMat
+    }
+
+    private fun processOutputTensor(outputTensor: Tensor, originalWidth: Int, originalHeight: Int): List<BoundingBox> {
+        val boundingBoxes = mutableListOf<BoundingBox>()
+
+        // Example: Parse the output tensor (adjust based on your YOLO model's output format)
+        // Assuming the output tensor is of shape [1, N, 6], where N is the number of detected objects,
+        // and each object has [x1, y1, x2, y2, confidence, classId]
+        val outputArray = outputTensor.dataAsFloatArray
+        val numDetections = outputTensor.shape()[1].toInt()
+
+        for (i in 0 until numDetections) {
+            val x1 = outputArray[i * 6 + 0]
+            val y1 = outputArray[i * 6 + 1]
+            val x2 = outputArray[i * 6 + 2]
+            val y2 = outputArray[i * 6 + 3]
+            val confidence = outputArray[i * 6 + 4]
+            val classId = outputArray[i * 6 + 5].toInt()
+
+            // Scale bounding box coordinates back to the original image size
+            val scaleX = originalWidth.toFloat() / 960
+            val scaleY = originalHeight.toFloat() / 960
+            val scaledX1 = x1 * scaleX
+            val scaledY1 = y1 * scaleY
+            val scaledX2 = x2 * scaleX
+            val scaledY2 = y2 * scaleY
+
+            boundingBoxes.add(BoundingBox(scaledX1, scaledY1, scaledX2, scaledY2, confidence, classId))
+        }
+
+        return boundingBoxes
+    }
+
+    private fun drawBoundingBoxes(mat: Mat, boundingBoxes: List<BoundingBox>) {
+        for (box in boundingBoxes) {
+            val topLeft = Point(box.x1.toDouble(), box.y1.toDouble())
+            val bottomRight = Point(box.x2.toDouble(), box.y2.toDouble())
+            Imgproc.rectangle(mat, topLeft, bottomRight, Scalar(0.0, 255.0, 0.0), 2) // Green box
         }
     }
 
@@ -171,8 +224,8 @@ class VideoProcessor(private val context: Context) {
         }
         kalmanFilter.predict()
         val corrected = kalmanFilter.correct(measurement)
-        val fx = corrected[0,0][0]
-        val fy = corrected[1,0][0]
+        val fx = corrected[0, 0][0]
+        val fy = corrected[1, 0][0]
         return fx to fy
     }
 
@@ -192,39 +245,10 @@ class VideoProcessor(private val context: Context) {
         return closedMat
     }
 
-    private fun detectContourBlob(image: Mat): Pair<Pair<Point?, Double?>, Mat> {
-        val binaryImage = Mat()
-        Imgproc.threshold(image, binaryImage, 200.0, 255.0, Imgproc.THRESH_BINARY)
-
-        val contours = mutableListOf<MatOfPoint>()
-        Imgproc.findContours(binaryImage, contours, Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
-
-        val largestContour = contours.maxByOrNull { Imgproc.contourArea(it) }
-        val outputImage = Mat()
-        Imgproc.cvtColor(image, outputImage, Imgproc.COLOR_GRAY2BGR)
-
-        val areaThreshold = Settings.Contour.threshold.toDouble()
-        val (centerPoint, area) = largestContour
-            ?.takeIf { Imgproc.contourArea(it) > areaThreshold }
-            ?.let {
-                Imgproc.drawContours(outputImage, listOf(it), -1, Scalar(255.0, 105.0, 180.0), Imgproc.FILLED)
-                val areaVal = Imgproc.contourArea(it)
-                val centerVal = calculateCenter(it, outputImage).first
-                centerVal to areaVal
-            } ?: (null to null)
-
-        binaryImage.release()
-        return (centerPoint to area) to outputImage
-    }
-
-    private fun calculateCenter(contour: MatOfPoint, image: Mat): Pair<Point?, Pair<Int, Int>?> {
-        val moments = Imgproc.moments(contour)
-        if (moments.m00 == 0.0) return null to null
-        val cx = (moments.m10 / moments.m00).roundToInt()
-        val cy = (moments.m01 / moments.m00).roundToInt()
-        val centerPoint = Point(cx.toDouble(), cy.toDouble())
-        Imgproc.circle(image, centerPoint, 10, Scalar(0.0, 0.0, 255.0), -1)
-        return centerPoint to (cx to cy)
+    private fun calculateCenter(box: BoundingBox): Point {
+        val centerX = (box.x1 + box.x2) / 2.0
+        val centerY = (box.y1 + box.y2) / 2.0
+        return Point(centerX, centerY)
     }
 
     private fun showToast(msg: String) {
@@ -328,5 +352,13 @@ object ImageUtils {
         mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888
     ).apply {
         Utils.matToBitmap(mat, this)
+    }
+    fun matToFloat32Tensor(mat: Mat): Tensor {
+        // Convert Mat to a float32 tensor
+        // Implementation depends on your model's input requirements
+        // Example:
+        val inputArray = FloatArray(mat.cols() * mat.rows() * 3) // Assuming 3 channels (RGB)
+        mat.get(0, 0, inputArray)
+        return Tensor.fromBlob(inputArray, longArrayOf(1, 3, mat.rows().toLong(), mat.cols().toLong()))
     }
 }
