@@ -4,6 +4,7 @@
     Removed OpenGL elements and kept "3D Only" button.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/preview_frame"
     android:layout_width="match_parent"
@@ -105,6 +106,7 @@
         android:layout_marginEnd="16dp">
 
         <!-- Zoom In -->
+
         <Button
             android:id="@+id/zoomInButton"
             android:layout_width="60dp"
@@ -150,6 +152,19 @@
             android:elevation="2dp"
             android:textSize="9sp"
             android:textColor="@android:color/black" />
+
+        <Button
+            android:id="@+id/launchUnityPlayer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:backgroundTint="@color/white"
+            android:elevation="1dp"
+            android:fontFamily="sans-serif"
+            android:text="Unity"
+            android:textAppearance="@style/TextAppearance.AppCompat.Body1"
+            android:textColor="@color/black"
+            android:textSize="10sp"
+            app:iconPadding="1dp" />
     </LinearLayout>
 
     <!-- Bottom Controls -->

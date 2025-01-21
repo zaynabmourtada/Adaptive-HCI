@@ -46,10 +46,8 @@ android {
 
     packaging {
         resources {
-            pickFirsts.add("lib/armeabi-v7a/libc++_shared.so")  // Resolves conflict for armeabi-v7a
-            pickFirsts.add("lib/arm64-v8a/libc++_shared.so")   // Resolves conflict for arm64-v8a
-            pickFirsts.add("lib/x86/libc++_shared.so")         // Resolves conflict for x86
-            pickFirsts.add("lib/x86_64/libc++_shared.so")      // Resolves conflict for x86_64
+            // Exclude duplicate .so files
+            //jniLibs.excludes.add("lib/arm64-v8a/libc++_shared.so")
         }
     }
 
@@ -61,9 +59,20 @@ android {
 
 dependencies {
     // OpenCV
-    implementation(project(":OpenCV-4.10.0"))
+    implementation(project(":OpenCV-4.10.0")) {
+        exclude(group = "org.bytedeco", module = "libc++_shared")
+    }
 
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+    // PyTorch
+    implementation("org.pytorch:pytorch_android:1.13.1") {
+        exclude(group = "org.bytedeco", module = "libc++_shared")
+    }
+    implementation("org.pytorch:pytorch_android_torchvision:1.13.1") {
+        exclude(group = "org.bytedeco", module = "libc++_shared")
+    }
+
+    // Unity (arr lib files in /lib)
+    //implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 
     // ML Kit, etc.
     implementation("com.google.mlkit:vision-common:17.3.0")
@@ -76,10 +85,6 @@ dependencies {
     implementation("androidx.camera:camera-video:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
     implementation("androidx.camera:camera-extensions:$cameraxVersion")
-
-    // PyTorch
-    implementation("org.pytorch:pytorch_android:1.13.1")
-    implementation("org.pytorch:pytorch_android_torchvision:1.13.1")
 
     // ARCore (pick a recent version)
     implementation("com.google.ar:core:1.36.0")
