@@ -1,2 +1,0 @@
-ninja: Entering directory `C:\Users\soham\Documents\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\.cxx\Debug\603q584x\x86_64'
-ninja: no work to do.

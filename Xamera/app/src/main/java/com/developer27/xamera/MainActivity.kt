@@ -28,6 +28,7 @@ import com.developer27.xamera.videoprocessing.VideoProcessor
 import org.pytorch.Module
 import java.io.File
 import java.io.FileOutputStream
+import com.unity3d.player.UnityPlayer
 
 /**
  * MainActivity for the Xamera app:
@@ -39,6 +40,8 @@ import java.io.FileOutputStream
  *   Then user can click "3D" to see final path in OpenGL.
  */
 class MainActivity : AppCompatActivity() {
+
+    private lateinit var unityPlayer: UnityPlayer
 
     private lateinit var viewBinding: ActivityMainBinding
     private lateinit var sharedPreferences: SharedPreferences

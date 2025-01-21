@@ -44,9 +44,13 @@ android {
         viewBinding = true
     }
 
-    packagingOptions {
-        pickFirst("lib/armeabi-v7a/libc++_shared.so")
-        pickFirst("lib/arm64-v8a/libc++_shared.so")
+    packaging {
+        resources {
+            pickFirsts.add("lib/armeabi-v7a/libc++_shared.so")  // Resolves conflict for armeabi-v7a
+            pickFirsts.add("lib/arm64-v8a/libc++_shared.so")   // Resolves conflict for arm64-v8a
+            pickFirsts.add("lib/x86/libc++_shared.so")         // Resolves conflict for x86
+            pickFirsts.add("lib/x86_64/libc++_shared.so")      // Resolves conflict for x86_64
+        }
     }
 
     aaptOptions {
@@ -58,6 +62,8 @@ android {
 dependencies {
     // OpenCV
     implementation(project(":OpenCV-4.10.0"))
+
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 
     // ML Kit, etc.
     implementation("com.google.mlkit:vision-common:17.3.0")
