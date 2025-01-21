@@ -1,17 +1,17 @@
 -- Merging decision tree log ---
 manifest
-ADDED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:1-4:12
-INJECTED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:1-4:12
+ADDED from C:\Users\dacikbas\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:1-4:12
+INJECTED from C:\Users\dacikbas\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:1-4:12
 	package
-		ADDED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:3:7-27
-		INJECTED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
+		ADDED from C:\Users\dacikbas\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:3:7-27
+		INJECTED from C:\Users\dacikbas\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
 	xmlns:android
-		ADDED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:11-69
+		ADDED from C:\Users\dacikbas\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:11-69
 uses-sdk
-INJECTED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml reason: use-sdk injection requested
-INJECTED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
-INJECTED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
+INJECTED from C:\Users\dacikbas\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from C:\Users\dacikbas\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
+INJECTED from C:\Users\dacikbas\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
 	android:targetSdkVersion
-		INJECTED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
+		INJECTED from C:\Users\dacikbas\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
 	android:minSdkVersion
-		INJECTED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
+		INJECTED from C:\Users\dacikbas\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
