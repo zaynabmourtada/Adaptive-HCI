@@ -45,9 +45,11 @@ android {
     }
 
     packaging {
-        resources {
-            // Exclude duplicate .so files
-            //jniLibs.excludes.add("lib/arm64-v8a/libc++_shared.so")
+        jniLibs {
+            pickFirsts.add("lib/x86/libc++_shared.so")
+            pickFirsts.add("lib/x86_64/libc++_shared.so")
+            pickFirsts.add("lib/armeabi-v7a/libc++_shared.so")
+            pickFirsts.add("lib/arm64-v8a/libc++_shared.so")
         }
     }
 
