@@ -29,9 +29,9 @@ import org.pytorch.Module
 import java.io.File
 import java.io.FileOutputStream
 import com.unity3d.player.UnityPlayer
-import com.unity3d.player.IUnityPlayerLifecycleEvents
 import com.unity3d.player.UnityPlayerGameActivity
-
+import androidx.activity.OnBackPressedCallback
+import android.view.KeyEvent
 
 /**
  * MainActivity for the Xamera app:
@@ -43,9 +43,6 @@ import com.unity3d.player.UnityPlayerGameActivity
  *   Then user can click "3D" to see final path in OpenGL.
  */
 class MainActivity : AppCompatActivity() {
-
-    private lateinit var unityPlayer: UnityPlayer
-
     private lateinit var viewBinding: ActivityMainBinding
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var cameraManager: CameraManager
@@ -391,19 +388,5 @@ class MainActivity : AppCompatActivity() {
         cameraHelper.isFrontCamera = isFrontCamera
         cameraHelper.closeCamera()
         cameraHelper.openCamera()
-    }
-}
-
-// Define CustomUnityActivity outside of MainActivity but in the same file
-class CustomUnityActivity : UnityPlayerGameActivity() {
-    @Deprecated("Deprecated in Android API level 33. Use OnBackPressedCallback instead.")
-    override fun onBackPressed() {
-        // Navigate back to MainActivity
-        val intent = Intent(this, MainActivity::class.java)
-        startActivity(intent)
-        finish() // Close the Unity activity
-
-        // Call super.onBackPressed() to ensure proper cleanup
-        super.onBackPressed()
     }
 }

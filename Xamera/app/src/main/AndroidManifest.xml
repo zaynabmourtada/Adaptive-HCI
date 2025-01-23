@@ -48,6 +48,5 @@
         <activity android:name=".AboutXameraActivity" />
         <activity android:name=".SettingsActivity" />
         <activity android:name="com.unity3d.player.UnityPlayerGameActivity" />
-        <activity android:name=".CustomUnityActivity" />
     </application>
 </manifest>
