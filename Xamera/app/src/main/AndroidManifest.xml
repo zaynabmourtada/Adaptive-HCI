@@ -47,6 +47,7 @@
         <activity android:name=".openGL3D.OpenGL3DActivity" />
         <activity android:name=".AboutXameraActivity" />
         <activity android:name=".SettingsActivity" />
-        <!--<activity android:name="com.unity3d.player.UnityPlayerGameActivity" />-->
+        <activity android:name="com.unity3d.player.UnityPlayerGameActivity" />
+        <activity android:name=".CustomUnityActivity" />
     </application>
 </manifest>

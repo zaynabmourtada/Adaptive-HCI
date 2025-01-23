@@ -96,14 +96,16 @@
     </LinearLayout>
 
     <!-- Zoom Buttons -->
+
+    <!-- Bottom Controls -->
     <LinearLayout
         android:id="@+id/zoom_button_container"
-        android:layout_width="wrap_content"
+        android:layout_width="70dp"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:gravity="center"
         android:layout_gravity="end|center_vertical"
-        android:layout_marginEnd="16dp">
+        android:layout_marginEnd="16dp"
+        android:gravity="center"
+        android:orientation="vertical">
 
         <!-- Zoom In -->
 
@@ -111,65 +113,64 @@
             android:id="@+id/zoomInButton"
             android:layout_width="60dp"
             android:layout_height="60dp"
-            android:text="+"
+            android:layout_marginBottom="16dp"
             android:backgroundTint="@color/white"
             android:elevation="2dp"
-            android:textSize="24sp"
+            android:text="+"
             android:textColor="@android:color/black"
-            android:layout_marginBottom="16dp" />
+            android:textSize="24sp" />
 
         <!-- Zoom Out -->
         <Button
             android:id="@+id/zoomOutButton"
             android:layout_width="60dp"
             android:layout_height="60dp"
-            android:text="-"
+            android:layout_marginBottom="16dp"
             android:backgroundTint="@color/white"
             android:elevation="2dp"
-            android:textSize="24sp"
+            android:text="-"
             android:textColor="@android:color/black"
-            android:layout_marginBottom="16dp" />
+            android:textSize="24sp" />
 
         <!-- 2D Only Button -->
         <Button
             android:id="@+id/twoDOnlyButton"
             android:layout_width="60dp"
             android:layout_height="60dp"
-            android:text="2D"
+            android:layout_marginBottom="16dp"
             android:backgroundTint="@color/white"
             android:elevation="2dp"
-            android:textSize="9sp"
+            android:text="2D"
             android:textColor="@android:color/black"
-            android:layout_marginBottom="16dp"/>
+            android:textSize="9sp" />
 
         <!-- 3D Only Button -->
         <Button
             android:id="@+id/threeDOnlyButton"
             android:layout_width="60dp"
             android:layout_height="60dp"
-            android:text="3D"
+            android:layout_marginBottom="16dp"
             android:backgroundTint="@color/white"
             android:elevation="2dp"
-            android:textSize="9sp"
+            android:text="3D"
             android:textColor="@android:color/black"
-            android:layout_marginBottom="16dp"/>
+            android:textSize="9sp" />
 
         <!-- Unity Only Button -->
         <Button
-            android:id="@+id/launchUnityPlayer"
+            android:id="@+id/unityButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:backgroundTint="@color/white"
             android:elevation="1dp"
             android:fontFamily="sans-serif"
-            android:text="U"
+            android:text="Unity"
             android:textAppearance="@style/TextAppearance.AppCompat.Body1"
             android:textColor="@color/black"
             android:textSize="10sp"
             app:iconPadding="1dp" />
     </LinearLayout>
 
-    <!-- Bottom Controls -->
     <LinearLayout
         android:id="@+id/button_container"
         android:layout_width="wrap_content"

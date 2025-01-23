@@ -74,7 +74,9 @@ dependencies {
     }
 
     // Unity (arr lib files in /lib)
-    //implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+
+    implementation("androidx.games:games-activity:3.0.5")
 
     // ML Kit, etc.
     implementation("com.google.mlkit:vision-common:17.3.0")

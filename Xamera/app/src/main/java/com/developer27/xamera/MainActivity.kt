@@ -28,7 +28,10 @@ import com.developer27.xamera.videoprocessing.VideoProcessor
 import org.pytorch.Module
 import java.io.File
 import java.io.FileOutputStream
-//import com.unity3d.player.UnityPlayer
+import com.unity3d.player.UnityPlayer
+import com.unity3d.player.IUnityPlayerLifecycleEvents
+import com.unity3d.player.UnityPlayerGameActivity
+
 
 /**
  * MainActivity for the Xamera app:
@@ -41,7 +44,7 @@ import java.io.FileOutputStream
  */
 class MainActivity : AppCompatActivity() {
 
-    //private lateinit var unityPlayer: UnityPlayer
+    private lateinit var unityPlayer: UnityPlayer
 
     private lateinit var viewBinding: ActivityMainBinding
     private lateinit var sharedPreferences: SharedPreferences
@@ -187,6 +190,10 @@ class MainActivity : AppCompatActivity() {
 
         // Optionally load model
         loadBestModelOnStartupThreaded("YOLOv2-Mobile.torchscript")
+
+        viewBinding.unityButton.setOnClickListener {
+            startActivity(Intent(this, com.unity3d.player.UnityPlayerGameActivity::class.java))
+        }
     }
 
     // This function triggers 2D OpenGL feature
@@ -384,5 +391,19 @@ class MainActivity : AppCompatActivity() {
         cameraHelper.isFrontCamera = isFrontCamera
         cameraHelper.closeCamera()
         cameraHelper.openCamera()
+    }
+}
+
+// Define CustomUnityActivity outside of MainActivity but in the same file
+class CustomUnityActivity : UnityPlayerGameActivity() {
+    @Deprecated("Deprecated in Android API level 33. Use OnBackPressedCallback instead.")
+    override fun onBackPressed() {
+        // Navigate back to MainActivity
+        val intent = Intent(this, MainActivity::class.java)
+        startActivity(intent)
+        finish() // Close the Unity activity
+
+        // Call super.onBackPressed() to ensure proper cleanup
+        super.onBackPressed()
     }
 }
