@@ -73,7 +73,7 @@ dependencies {
         exclude(group = "org.bytedeco", module = "libc++_shared")
     }
 
-    // Unity (arr lib files in /lib)
+    // Unity (aar lib files in /lib)
     //implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
     implementation(files("libs/unityLibrary-release.aar"))
 
