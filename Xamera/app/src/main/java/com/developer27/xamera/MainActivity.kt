@@ -28,10 +28,6 @@ import com.developer27.xamera.videoprocessing.VideoProcessor
 import org.pytorch.Module
 import java.io.File
 import java.io.FileOutputStream
-import com.unity3d.player.UnityPlayer
-import com.unity3d.player.UnityPlayerGameActivity
-import androidx.activity.OnBackPressedCallback
-import android.view.KeyEvent
 
 /**
  * MainActivity for the Xamera app:
