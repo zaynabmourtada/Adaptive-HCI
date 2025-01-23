@@ -1,0 +1,198 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.DefaultCompany.AdaptiveHCIUnity3D"
+4    android:installLocation="preferExternal"
+5    android:versionCode="1"
+6    android:versionName="1.0" >
+7
+8    <uses-sdk
+9        android:minSdkVersion="23"
+10        android:targetSdkVersion="35" />
+11
+12    <supports-screens
+12-->C:\testUnity\launcher\src\main\AndroidManifest.xml:4:3-163
+13        android:anyDensity="true"
+13-->C:\testUnity\launcher\src\main\AndroidManifest.xml:4:135-160
+14        android:largeScreens="true"
+14-->C:\testUnity\launcher\src\main\AndroidManifest.xml:4:78-105
+15        android:normalScreens="true"
+15-->C:\testUnity\launcher\src\main\AndroidManifest.xml:4:49-77
+16        android:smallScreens="true"
+16-->C:\testUnity\launcher\src\main\AndroidManifest.xml:4:21-48
+17        android:xlargeScreens="true" />
+17-->C:\testUnity\launcher\src\main\AndroidManifest.xml:4:106-134
+18
+19    <uses-feature android:glEsVersion="0x00030000" />
+19-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:8:5-54
+19-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:8:19-51
+20    <uses-feature
+20-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:9:5-11:36
+21        android:name="android.hardware.vulkan.version"
+21-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:10:9-55
+22        android:required="false" />
+22-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:11:9-33
+23    <uses-feature
+23-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:12:5-14:36
+24        android:name="android.hardware.touchscreen"
+24-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:13:9-52
+25        android:required="false" />
+25-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:14:9-33
+26
+27    <permission
+27-->[androidx.core:core:1.9.0] C:\Users\deniz\.gradle\caches\transforms-3\c919e84cf21a5073ea88f45ff1a29b85\transformed\core-1.9.0\AndroidManifest.xml:22:5-24:47
+28        android:name="com.DefaultCompany.AdaptiveHCIUnity3D.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+28-->[androidx.core:core:1.9.0] C:\Users\deniz\.gradle\caches\transforms-3\c919e84cf21a5073ea88f45ff1a29b85\transformed\core-1.9.0\AndroidManifest.xml:23:9-81
+29        android:protectionLevel="signature" />
+29-->[androidx.core:core:1.9.0] C:\Users\deniz\.gradle\caches\transforms-3\c919e84cf21a5073ea88f45ff1a29b85\transformed\core-1.9.0\AndroidManifest.xml:24:9-44
+30
+31    <uses-permission android:name="com.DefaultCompany.AdaptiveHCIUnity3D.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+31-->[androidx.core:core:1.9.0] C:\Users\deniz\.gradle\caches\transforms-3\c919e84cf21a5073ea88f45ff1a29b85\transformed\core-1.9.0\AndroidManifest.xml:26:5-97
+31-->[androidx.core:core:1.9.0] C:\Users\deniz\.gradle\caches\transforms-3\c919e84cf21a5073ea88f45ff1a29b85\transformed\core-1.9.0\AndroidManifest.xml:26:22-94
+32
+33    <application
+33-->C:\testUnity\launcher\src\main\AndroidManifest.xml:3:3-83
+34        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+34-->[androidx.core:core:1.9.0] C:\Users\deniz\.gradle\caches\transforms-3\c919e84cf21a5073ea88f45ff1a29b85\transformed\core-1.9.0\AndroidManifest.xml:28:18-86
+35        android:enableOnBackInvokedCallback="false"
+35-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:17:9-52
+36        android:extractNativeLibs="true"
+37        android:icon="@mipmap/app_icon"
+37-->C:\testUnity\launcher\src\main\AndroidManifest.xml:3:16-47
+38        android:label="@string/app_name" >
+38-->C:\testUnity\launcher\src\main\AndroidManifest.xml:3:48-80
+39        <meta-data
+39-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:19:9-21:33
+40            android:name="unity.splash-mode"
+40-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:20:13-45
+41            android:value="0" />
+41-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:21:13-30
+42        <meta-data
+42-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:22:9-24:36
+43            android:name="unity.splash-enable"
+43-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:23:13-47
+44            android:value="True" />
+44-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:24:13-33
+45        <meta-data
+45-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:25:9-27:36
+46            android:name="unity.launch-fullscreen"
+46-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:26:13-51
+47            android:value="True" />
+47-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:27:13-33
+48        <meta-data
+48-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:28:9-30:36
+49            android:name="unity.render-outside-safearea"
+49-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:29:13-57
+50            android:value="True" />
+50-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:30:13-33
+51        <meta-data
+51-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:31:9-33:50
+52            android:name="notch.config"
+52-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:32:13-40
+53            android:value="portrait|landscape" />
+53-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:33:13-47
+54        <meta-data
+54-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:34:9-36:36
+55            android:name="unity.auto-report-fully-drawn"
+55-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:35:13-57
+56            android:value="true" />
+56-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:36:13-33
+57        <meta-data
+57-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:37:9-39:36
+58            android:name="unity.auto-set-game-state"
+58-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:38:13-53
+59            android:value="true" />
+59-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:39:13-33
+60        <meta-data
+60-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:40:9-42:36
+61            android:name="unity.strip-engine-code"
+61-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:41:13-51
+62            android:value="true" />
+62-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:42:13-33
+63
+64        <activity
+64-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:44:9-75:20
+65            android:name="com.unity3d.player.UnityPlayerGameActivity"
+65-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:45:13-70
+66            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale|layoutDirection|density"
+66-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:46:13-194
+67            android:enabled="true"
+67-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:47:13-35
+68            android:exported="true"
+68-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:48:13-36
+69            android:hardwareAccelerated="false"
+69-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:49:13-48
+70            android:launchMode="singleTask"
+70-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:50:13-44
+71            android:resizeableActivity="true"
+71-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:51:13-46
+72            android:screenOrientation="fullUser"
+72-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:52:13-49
+73            android:theme="@style/BaseUnityGameActivityTheme" >
+73-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:53:13-62
+74            <intent-filter>
+74-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:54:13-58:29
+75                <category android:name="android.intent.category.LAUNCHER" />
+75-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:55:17-77
+75-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:55:27-74
+76
+77                <action android:name="android.intent.action.MAIN" />
+77-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:57:17-69
+77-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:57:25-66
+78            </intent-filter>
+79
+80            <meta-data
+80-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:60:13-62:40
+81                android:name="unityplayer.UnityActivity"
+81-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:61:17-57
+82                android:value="true" />
+82-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:62:17-37
+83            <meta-data
+83-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:63:13-65:40
+84                android:name="android.app.lib_name"
+84-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:64:17-52
+85                android:value="game" />
+85-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:65:17-37
+86            <meta-data
+86-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:66:13-68:71
+87                android:name="WindowManagerPreference:FreeformWindowSize"
+87-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:67:17-74
+88                android:value="@string/FreeformWindowSize_maximize" />
+88-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:68:17-68
+89            <meta-data
+89-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:69:13-71:79
+90                android:name="WindowManagerPreference:FreeformWindowOrientation"
+90-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:70:17-81
+91                android:value="@string/FreeformWindowOrientation_landscape" />
+91-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:71:17-76
+92            <meta-data
+92-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:72:13-74:40
+93                android:name="notch_support"
+93-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:73:17-45
+94                android:value="true" />
+94-->[:unityLibrary] C:\testUnity\unityLibrary\build\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:74:17-37
+95        </activity>
+96
+97        <provider
+97-->[androidx.emoji2:emoji2:1.2.0] C:\Users\deniz\.gradle\caches\transforms-3\e60bf0ab8a1217670124be7e52d524ab\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:24:9-32:20
+98            android:name="androidx.startup.InitializationProvider"
+98-->[androidx.emoji2:emoji2:1.2.0] C:\Users\deniz\.gradle\caches\transforms-3\e60bf0ab8a1217670124be7e52d524ab\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:25:13-67
+99            android:authorities="com.DefaultCompany.AdaptiveHCIUnity3D.androidx-startup"
+99-->[androidx.emoji2:emoji2:1.2.0] C:\Users\deniz\.gradle\caches\transforms-3\e60bf0ab8a1217670124be7e52d524ab\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:26:13-68
+100            android:exported="false" >
+100-->[androidx.emoji2:emoji2:1.2.0] C:\Users\deniz\.gradle\caches\transforms-3\e60bf0ab8a1217670124be7e52d524ab\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:27:13-37
+101            <meta-data
+101-->[androidx.emoji2:emoji2:1.2.0] C:\Users\deniz\.gradle\caches\transforms-3\e60bf0ab8a1217670124be7e52d524ab\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:29:13-31:52
+102                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+102-->[androidx.emoji2:emoji2:1.2.0] C:\Users\deniz\.gradle\caches\transforms-3\e60bf0ab8a1217670124be7e52d524ab\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:30:17-75
+103                android:value="androidx.startup" />
+103-->[androidx.emoji2:emoji2:1.2.0] C:\Users\deniz\.gradle\caches\transforms-3\e60bf0ab8a1217670124be7e52d524ab\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:31:17-49
+104            <meta-data
+104-->[androidx.lifecycle:lifecycle-process:2.4.1] C:\Users\deniz\.gradle\caches\transforms-3\ca632e50827689b4d45330738d8735e2\transformed\jetified-lifecycle-process-2.4.1\AndroidManifest.xml:31:13-33:52
+105                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+105-->[androidx.lifecycle:lifecycle-process:2.4.1] C:\Users\deniz\.gradle\caches\transforms-3\ca632e50827689b4d45330738d8735e2\transformed\jetified-lifecycle-process-2.4.1\AndroidManifest.xml:32:17-78
+106                android:value="androidx.startup" />
+106-->[androidx.lifecycle:lifecycle-process:2.4.1] C:\Users\deniz\.gradle\caches\transforms-3\ca632e50827689b4d45330738d8735e2\transformed\jetified-lifecycle-process-2.4.1\AndroidManifest.xml:33:17-49
+107        </provider>
+108    </application>
+109
+110</manifest>

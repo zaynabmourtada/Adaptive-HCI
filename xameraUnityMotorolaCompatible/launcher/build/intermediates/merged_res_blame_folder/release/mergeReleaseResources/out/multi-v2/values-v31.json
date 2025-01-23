@@ -1,0 +1,20 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.DefaultCompany.AdaptiveHCIUnity3D.launcher-mergeReleaseResources-19:/values-v31/values-v31.xml",
+            "map": [
+                {
+                    "source": "C:\\testUnity\\unityLibrary\\build\\intermediates\\packaged_res\\release\\packageReleaseResources\\values-v31\\values-v31.xml",
+                    "from": {
+                        "startLines": "2,9",
+                        "startColumns": "4,4",
+                        "startOffsets": "55,617",
+                        "endLines": "8,15",
+                        "endColumns": "10,10",
+                        "endOffsets": "612,1176"
+                    }
+                }
+            ]
+        }
+    ]
+}
