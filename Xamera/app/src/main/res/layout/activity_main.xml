@@ -100,7 +100,7 @@
     <!-- Bottom Controls -->
     <LinearLayout
         android:id="@+id/zoom_button_container"
-        android:layout_width="70dp"
+        android:layout_width="75dp"
         android:layout_height="wrap_content"
         android:layout_gravity="end|center_vertical"
         android:layout_marginEnd="16dp"
