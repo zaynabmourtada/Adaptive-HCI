@@ -28,6 +28,7 @@ import com.developer27.xamera.videoprocessing.VideoProcessor
 import org.pytorch.Module
 import java.io.File
 import java.io.FileOutputStream
+import com.unity3d.player.UnityPlayerGameActivity
 
 /**
  * MainActivity for the Xamera app:

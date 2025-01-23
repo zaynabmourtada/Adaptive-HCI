@@ -74,7 +74,8 @@ dependencies {
     }
 
     // Unity (arr lib files in /lib)
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+    //implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+    implementation(files("libs/unityLibrary-release.aar"))
 
     implementation("androidx.games:games-activity:3.0.5")
 
