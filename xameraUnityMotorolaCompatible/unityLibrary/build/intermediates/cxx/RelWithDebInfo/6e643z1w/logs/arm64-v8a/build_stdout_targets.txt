@@ -1,2 +1,0 @@
-ninja: Entering directory `C:\testUnity\unityLibrary\.cxx\RelWithDebInfo\6e643z1w\arm64-v8a'
-ninja: no work to do.
