@@ -28,7 +28,6 @@ import com.developer27.xamera.videoprocessing.VideoProcessor
 import org.pytorch.Module
 import java.io.File
 import java.io.FileOutputStream
-import com.unity3d.player.UnityPlayerGameActivity
 
 /**
  * MainActivity for the Xamera app:
@@ -49,6 +48,7 @@ class MainActivity : AppCompatActivity() {
     private var bestModule: Module? = null
 
     // Real-time
+    private var isRecording = false //Temproary
     private var isProcessing = false
     private var videoProcessor: VideoProcessor? = null
     private var isProcessingFrame = false
@@ -151,7 +151,7 @@ class MainActivity : AppCompatActivity() {
 
         // Start/Stop
         viewBinding.startProcessingButton.setOnClickListener {
-            if (isProcessing) {
+            if (isRecording) {
                 stopProcessingAndRecording()
             } else {
                 startProcessingAndRecording()
@@ -214,36 +214,41 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startProcessingAndRecording() {
-        isProcessing = true
+        isRecording = true
+        //isProcessing = true
         viewBinding.startProcessingButton.text = "Stop Tracking"
         viewBinding.startProcessingButton.backgroundTintList =
             ContextCompat.getColorStateList(this, R.color.red)
 
-        viewBinding.processedFrameView.visibility = View.VISIBLE
+        // --- Commenting out video processing / overlay ---
+        // viewBinding.processedFrameView.visibility = View.VISIBLE
+        // videoProcessor?.clearTrackingData()
 
-        videoProcessor?.clearTrackingData()
+        // We keep only the raw video recording:
         tempRecorderHelper.startRecordingVideo()
 
         Toast.makeText(this, "Processing + Recording started.", Toast.LENGTH_SHORT).show()
     }
 
     private fun stopProcessingAndRecording() {
-        isProcessing = false
+        isRecording = false
+        //isProcessing = false
         viewBinding.startProcessingButton.text = "Start Tracking"
         viewBinding.startProcessingButton.backgroundTintList =
             ContextCompat.getColorStateList(this, R.color.blue)
 
-        viewBinding.processedFrameView.visibility = View.GONE
-        viewBinding.processedFrameView.setImageBitmap(null)
+        // --- Commenting out video processing / overlay ---
+        // viewBinding.processedFrameView.visibility = View.GONE
+        // viewBinding.processedFrameView.setImageBitmap(null)
 
+        // Stop video recording:
         tempRecorderHelper.stopRecordingVideo()
-        // Retrieve final line coords from VideoProcessor => finalLineCoords
-        finalLineCoords.clear()
 
-        //Retrieves X, Y and Z coordinates from VideoProcessor.kt
-        recieveXYZfromVideoProcessor()
+        // --- Commenting out retrieval of final tracked coords ---
+        // finalLineCoords.clear()
+        // recieveXYZfromVideoProcessor()
 
-        Toast.makeText(this, "Processing + Recording stopped. Coords saved.", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Processing + Recording stopped.", Toast.LENGTH_SHORT).show()
     }
 
     private fun recieveXYZfromVideoProcessor(){
@@ -362,7 +367,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
-        if (isProcessing) {
+        if (isRecording) {
             stopProcessingAndRecording()
         }
         cameraHelper.closeCamera()
@@ -378,7 +383,7 @@ class MainActivity : AppCompatActivity() {
 
     private var isFrontCamera = false
     private fun switchCamera() {
-        if (isProcessing) {
+        if (isRecording) {
             stopProcessingAndRecording()
         }
         isFrontCamera = !isFrontCamera
