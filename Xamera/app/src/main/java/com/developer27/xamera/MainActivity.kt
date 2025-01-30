@@ -215,34 +215,34 @@ class MainActivity : AppCompatActivity() {
 
     private fun startProcessingAndRecording() {
         isRecording = true
-        //isProcessing = true
+        isProcessing = true
         viewBinding.startProcessingButton.text = "Stop Tracking"
         viewBinding.startProcessingButton.backgroundTintList =
             ContextCompat.getColorStateList(this, R.color.red)
 
         // --- Commenting out video processing / overlay ---
-        // viewBinding.processedFrameView.visibility = View.VISIBLE
-        // videoProcessor?.clearTrackingData()
+        viewBinding.processedFrameView.visibility = View.VISIBLE
+        videoProcessor?.clearTrackingData()
 
-        // We keep only the raw video recording:
-        tempRecorderHelper.startRecordingVideo()
+        // Commenting out - We keep only the raw video recording:
+        //tempRecorderHelper.startRecordingVideo()
 
         Toast.makeText(this, "Processing + Recording started.", Toast.LENGTH_SHORT).show()
     }
 
     private fun stopProcessingAndRecording() {
         isRecording = false
-        //isProcessing = false
+        isProcessing = false
         viewBinding.startProcessingButton.text = "Start Tracking"
         viewBinding.startProcessingButton.backgroundTintList =
             ContextCompat.getColorStateList(this, R.color.blue)
 
         // --- Commenting out video processing / overlay ---
-        // viewBinding.processedFrameView.visibility = View.GONE
-        // viewBinding.processedFrameView.setImageBitmap(null)
+        viewBinding.processedFrameView.visibility = View.GONE
+        viewBinding.processedFrameView.setImageBitmap(null)
 
-        // Stop video recording:
-        tempRecorderHelper.stopRecordingVideo()
+        // Commenting out - Stop video recording:
+        //tempRecorderHelper.stopRecordingVideo()
 
         // --- Commenting out retrieval of final tracked coords ---
         // finalLineCoords.clear()
