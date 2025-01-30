@@ -135,21 +135,8 @@ class VideoProcessor(private val context: Context) {
                 logCat("Error processing frame: ${e.message}", e)
                 null
             }
-            // Ensure toast runs on the main thread
             withContext(Dispatchers.Main) {
-                showToast("FrameInf Start")
-            }
-            // Run YOLO test on a separate coroutine to prevent blocking
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    testYOLOsingleImage(context)
-                } catch (e: Exception) {
-                    logCat("Error in testYOLOsingleImage: ${e.message}", e)
-                }
-            }
-            // Return result on the main thread
-            withContext(Dispatchers.Main) {
-                callback(result)
+                callback(result) // Return result on the main thread
             }
         }
     }
@@ -280,63 +267,68 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
-    private fun testYOLOsingleImage(context: Context) {
-        try {
-            Log.d("YOLOTest", "Starting single-image YOLO inference.")
+    fun testYOLOsingleImage(context: Context) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                Log.d("YOLOTest", "Starting single-image YOLO inference.")
 
-            // Load image from assets
-            val assetManager = context.assets
-            val inputStream = assetManager.open("test_frame.png") // Test image file
-            Log.d("YOLOTest", "Image loaded from assets.")
+                // Load image from assets
+                val assetManager = context.assets
+                val inputStream = assetManager.open("test_frame.png") // Test image file
+                Log.d("YOLOTest", "Image loaded from assets.")
 
-            val bitmap = BitmapFactory.decodeStream(inputStream)
-            if (bitmap == null) {
-                Log.e("YOLOTest", "Bitmap is null! Image decoding failed.")
-                return
+                val bitmap = BitmapFactory.decodeStream(inputStream)
+                if (bitmap == null) {
+                    Log.e("YOLOTest", "Bitmap is null! Image decoding failed.")
+                    return@launch
+                }
+                Log.d("YOLOTest", "Image successfully decoded into Bitmap.")
+
+                // Convert Bitmap to OpenCV Mat
+                val originalMat = Mat()
+                Utils.bitmapToMat(bitmap, originalMat)
+                Log.d("YOLOTest", "Converted Bitmap to OpenCV Mat.")
+
+                // Prepare image for YOLO using YOLOHelper
+                val resizedMat = Mat()
+                YOLOHelper.resizeAndPad(originalMat, resizedMat, Settings.Model.inputSize, Settings.Model.inputSize)
+                Log.d("YOLOTest", "Image resized and padded for YOLO.")
+
+                // Convert Mat to Tensor using ImageUtils
+                val inputTensor = ImageUtils.matToFloat32Tensor(resizedMat)
+                Log.d("YOLOTest", "Converted Mat to Tensor for YOLO.")
+
+                // Check if model is loaded before running inference
+                if (module == null) {
+                    Log.e("YOLOTest", "Model is NULL! Cannot run inference.")
+                    return@launch
+                }
+
+                // Run YOLO inference
+                Log.d("YOLOTest", "Running YOLO model inference...")
+                val outputTensor = module?.forward(IValue.from(inputTensor))?.toTensor()
+                Log.d("YOLOTest", "Inference complete.")
+
+                // Process results using YOLOHelper
+                val boundingBoxes = outputTensor?.let {
+                    YOLOHelper.parseYOLOOutputTensor(it, originalMat.cols(), originalMat.rows())
+                } ?: emptyList()
+
+                Log.d("YOLOTest", "Parsed ${boundingBoxes.size} bounding boxes from YOLO output.")
+
+                // Draw bounding boxes using YOLOHelper
+                YOLOHelper.drawBoundingBoxes(originalMat, boundingBoxes)
+                Log.d("YOLOTest", "Bounding boxes drawn on image.")
+
+                // Save the result image (Back to Main Thread)
+                withContext(Dispatchers.Main) {
+                    saveInferenceResult(context, originalMat)
+                    Log.d("YOLOTest", "Inference completed successfully. Image saved.")
+                }
+
+            } catch (e: Exception) {
+                Log.e("YOLOTest", "Error during inference: ${e.message}", e)
             }
-            Log.d("YOLOTest", "Image successfully decoded into Bitmap.")
-
-            // Convert Bitmap to OpenCV Mat
-            val originalMat = Mat()
-            Utils.bitmapToMat(bitmap, originalMat)
-            Log.d("YOLOTest", "Converted Bitmap to OpenCV Mat.")
-
-            // Prepare image for YOLO using YOLOHelper
-            val resizedMat = Mat()
-            YOLOHelper.resizeAndPad(originalMat, resizedMat, Settings.Model.inputSize, Settings.Model.inputSize)
-            Log.d("YOLOTest", "Image resized and padded for YOLO.")
-
-            // Convert Mat to Tensor using ImageUtils
-            val inputTensor = ImageUtils.matToFloat32Tensor(resizedMat)
-            Log.d("YOLOTest", "Converted Mat to Tensor for YOLO.")
-
-            // Check if model is loaded before running inference
-            if (module == null) {
-                Log.e("YOLOTest", "Model is NULL! Cannot run inference.")
-                return
-            }
-
-            // Run YOLO inference
-            Log.d("YOLOTest", "Running YOLO model inference...")
-            val outputTensor = module?.forward(IValue.from(inputTensor))?.toTensor()
-            Log.d("YOLOTest", "Inference complete.")
-
-            // Process results using YOLOHelper
-            val boundingBoxes = outputTensor?.let {
-                YOLOHelper.parseYOLOOutputTensor(it, originalMat.cols(), originalMat.rows())
-            } ?: emptyList()
-
-            Log.d("YOLOTest", "Parsed ${boundingBoxes.size} bounding boxes from YOLO output.")
-
-            // Draw bounding boxes using YOLOHelper
-            YOLOHelper.drawBoundingBoxes(originalMat, boundingBoxes)
-            Log.d("YOLOTest", "Bounding boxes drawn on image.")
-
-            // Save the result image
-            saveInferenceResult(context, originalMat)
-            Log.d("YOLOTest", "Inference completed successfully. Image saved.")
-        } catch (e: Exception) {
-            Log.e("YOLOTest", "Error during inference: ${e.message}", e)
         }
     }
 

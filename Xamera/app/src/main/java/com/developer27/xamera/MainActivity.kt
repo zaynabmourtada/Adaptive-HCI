@@ -224,6 +224,9 @@ class MainActivity : AppCompatActivity() {
         viewBinding.processedFrameView.visibility = View.VISIBLE
         videoProcessor?.clearTrackingData()
 
+        //Log.d("YOLOTest", "stopProcessingAndRecording(): Calling testYOLOsingleImage()")
+        //videoProcessor?.testYOLOsingleImage(this)
+
         // Commenting out - We keep only the raw video recording:
         //tempRecorderHelper.startRecordingVideo()
 
