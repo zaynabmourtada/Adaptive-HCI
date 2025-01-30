@@ -35,6 +35,7 @@ import java.io.FileOutputStream
 import android.graphics.BitmapFactory
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
+import android.os.Environment
 
 data class BoundingBox(
     val x1: Float,
@@ -215,7 +216,7 @@ class VideoProcessor(private val context: Context) {
             YOLOHelper.resizeAndPad(originalMat, resizedMat, Settings.Model.inputSize, Settings.Model.inputSize)
 
             // Convert Mat to Tensor
-            val inputTensor = ImageUtils.matToFloat32Tensor(resizedMat)
+            val inputTensor = YOLOHelper.matToFloat32Tensor(resizedMat)
 
             // Run inference on the background thread
             val outputTensor = withContext(Dispatchers.Default) {
@@ -270,33 +271,29 @@ class VideoProcessor(private val context: Context) {
     fun testYOLOsingleImage(context: Context) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                Log.d("YOLOTest", "Starting single-image YOLO inference.")
-
                 // Load image from assets
                 val assetManager = context.assets
                 val inputStream = assetManager.open("test_frame.png") // Test image file
-                Log.d("YOLOTest", "Image loaded from assets.")
 
                 val bitmap = BitmapFactory.decodeStream(inputStream)
                 if (bitmap == null) {
                     Log.e("YOLOTest", "Bitmap is null! Image decoding failed.")
                     return@launch
                 }
-                Log.d("YOLOTest", "Image successfully decoded into Bitmap.")
 
                 // Convert Bitmap to OpenCV Mat
                 val originalMat = Mat()
                 Utils.bitmapToMat(bitmap, originalMat)
-                Log.d("YOLOTest", "Converted Bitmap to OpenCV Mat.")
 
                 // Prepare image for YOLO using YOLOHelper
                 val resizedMat = Mat()
                 YOLOHelper.resizeAndPad(originalMat, resizedMat, Settings.Model.inputSize, Settings.Model.inputSize)
-                Log.d("YOLOTest", "Image resized and padded for YOLO.")
+
+                // Save preprocessed image for debugging
+                saveInferenceResult(context, resizedMat)
 
                 // Convert Mat to Tensor using ImageUtils
-                val inputTensor = ImageUtils.matToFloat32Tensor(resizedMat)
-                Log.d("YOLOTest", "Converted Mat to Tensor for YOLO.")
+                val inputTensor = YOLOHelper.matToFloat32Tensor(resizedMat)
 
                 // Check if model is loaded before running inference
                 if (module == null) {
@@ -304,15 +301,27 @@ class VideoProcessor(private val context: Context) {
                     return@launch
                 }
 
-                // Run YOLO inference
-                Log.d("YOLOTest", "Running YOLO model inference...")
-                val outputTensor = module?.forward(IValue.from(inputTensor))?.toTensor()
-                Log.d("YOLOTest", "Inference complete.")
+                // Run YOLO Inference
+                val inputData = inputTensor.dataAsFloatArray
+                val outputTensor = runCatching {
+                    module?.forward(IValue.from(inputTensor))?.toTensor()
+                }.onFailure {
+                    Log.e("YOLOTest", "Exception during YOLO inference: ${it.message}", it)
+                    return@launch
+                }.getOrNull()
+
+                // Check if inference produced a valid output
+                if (outputTensor == null) {
+                    Log.e("YOLOTest", "YOLO Inference failed! Output tensor is NULL.")
+                    return@launch
+                }
+
+                Log.d("YOLOTest", "YOLO Inference complete.")
 
                 // Process results using YOLOHelper
-                val boundingBoxes = outputTensor?.let {
+                val boundingBoxes = outputTensor.let {
                     YOLOHelper.parseYOLOOutputTensor(it, originalMat.cols(), originalMat.rows())
-                } ?: emptyList()
+                }
 
                 Log.d("YOLOTest", "Parsed ${boundingBoxes.size} bounding boxes from YOLO output.")
 
@@ -326,6 +335,8 @@ class VideoProcessor(private val context: Context) {
                     Log.d("YOLOTest", "Inference completed successfully. Image saved.")
                 }
 
+            } catch (e: OutOfMemoryError) {
+                Log.e("YOLOTest", "OutOfMemoryError! Model or input size may be too large.", e)
             } catch (e: Exception) {
                 Log.e("YOLOTest", "Error during inference: ${e.message}", e)
             }
@@ -334,27 +345,27 @@ class VideoProcessor(private val context: Context) {
 
     private fun saveInferenceResult(context: Context, mat: Mat) {
         try {
-            Log.d("YOLOTest", "Saving inference result...")
-
             // Convert Mat back to Bitmap
             val outputBitmap = Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888)
             Utils.matToBitmap(mat, outputBitmap)
-            Log.d("YOLOTest", "Converted Mat back to Bitmap.")
 
-            // Define output file path
-            val outputFile = File(context.getExternalFilesDir(null), "yolo_inference_result.jpg")
+            // Save in the public Downloads folder
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val outputFile = File(downloadsDir, "yolo_inference_result.jpg")
 
-            // Save the file
-            val fileOutputStream = FileOutputStream(outputFile)
-            outputBitmap.compress(Bitmap.CompressFormat.JPEG, 90, fileOutputStream)
-            fileOutputStream.flush()
-            fileOutputStream.close()
-            Log.d("YOLOTest", "Saved inference result: ${outputFile.absolutePath}")
+            // Write the image file
+            FileOutputStream(outputFile).use { fos ->
+                outputBitmap.compress(Bitmap.CompressFormat.JPEG, 90, fos)
+                fos.flush()
+            }
+
+            Log.d("YOLOTest", "Saved inference result at: ${outputFile.absolutePath}")
 
         } catch (e: Exception) {
             Log.e("YOLOTest", "Failed to save image: ${e.message}", e)
         }
     }
+
 
     private fun showToast(msg: String) {
         if (Settings.Debug.enableToasts) {
@@ -507,34 +518,6 @@ object Preprocessing {
     }
 }
 
-object ImageUtils {
-    fun matToFloat32Tensor(mat: Mat): Tensor {
-        // Ensure the Mat is in the correct format (3-channel RGB)
-        require(mat.channels() == 3) { "Input Mat must have 3 channels (RGB)" }
-
-        // Allocate a direct ByteBuffer with the correct capacity
-        val inputBuffer = ByteBuffer.allocateDirect(mat.cols() * mat.rows() * 3) // 1 byte per channel
-        inputBuffer.order(ByteOrder.nativeOrder())
-
-        // Copy pixel data from the Mat to the ByteBuffer
-        for (row in 0 until mat.rows()) {
-            for (col in 0 until mat.cols()) {
-                val pixel = mat.get(row, col)
-                inputBuffer.put((pixel[0].toInt() and 0xFF).toByte()) // B
-                inputBuffer.put((pixel[1].toInt() and 0xFF).toByte()) // G
-                inputBuffer.put((pixel[2].toInt() and 0xFF).toByte()) // R
-            }
-        }
-
-        // Log tensor shape and buffer size
-        Log.d("VideoProcessor", "Tensor shape: [1, 3, ${mat.rows()}, ${mat.cols()}]")
-        Log.d("VideoProcessor", "ByteBuffer size: ${inputBuffer.capacity()}")
-
-        // Create a PyTorch Tensor from the ByteBuffer
-        return Tensor.fromBlob(inputBuffer, longArrayOf(1, 3, mat.rows().toLong(), mat.cols().toLong()))
-    }
-}
-
 object ContourDetection {
     fun findContours(mat: Mat): List<MatOfPoint> {
         val contours = mutableListOf<MatOfPoint>()
@@ -561,6 +544,34 @@ object ContourDetection {
 }
 
 object YOLOHelper {
+    fun matToFloat32Tensor(mat: Mat): Tensor {
+        // Ensure the Mat is in the correct format (3-channel RGB)
+        require(mat.channels() == 3) { "Input Mat must have 3 channels (RGB)" }
+
+        val width = mat.cols()
+        val height = mat.rows()
+
+        // Create a FloatArray to store pixel data
+        val floatValues = FloatArray(width * height * 3)
+
+        // Convert Mat pixels to Float32
+        var index = 0
+        for (row in 0 until height) {
+            for (col in 0 until width) {
+                val pixel = mat.get(row, col)
+                floatValues[index++] = (pixel[2] / 255.0).toFloat()  // R
+                floatValues[index++] = (pixel[1] / 255.0).toFloat()  // G
+                floatValues[index++] = (pixel[0] / 255.0).toFloat()  // B
+            }
+        }
+
+        // Log to verify output tensor shape
+        Log.d("YOLOTest", "Converted Mat to FLOAT32 Tensor with shape: [1, 3, $height, $width]")
+
+        // Create and return PyTorch tensor in FLOAT32 format
+        return Tensor.fromBlob(floatValues, longArrayOf(1, 3, height.toLong(), width.toLong()))
+    }
+
     fun resizeAndPad(src: Mat, dst: Mat, targetWidth: Int, targetHeight: Int) {
         val scale = min(targetWidth.toDouble() / src.cols(), targetHeight.toDouble() / src.rows())
         val resizedWidth = (src.cols() * scale).toInt()
