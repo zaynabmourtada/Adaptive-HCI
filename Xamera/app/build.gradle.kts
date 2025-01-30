@@ -82,6 +82,10 @@ dependencies {
     // ML Kit, etc.
     implementation("com.google.mlkit:vision-common:17.3.0")
 
+    // TensorFlow Lite (For GPU Utilization)
+    implementation("org.tensorflow:tensorflow-lite:2.10.0") // Core TFLite runtime
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.10.0") // GPU acceleration
+
     // CameraX
     val cameraxVersion = "1.2.2"
     implementation("androidx.camera:camera-core:$cameraxVersion")
