@@ -38,6 +38,7 @@ import java.nio.channels.FileChannel
 import android.os.Environment
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.exp
 
 data class BoundingBox(
     val x1: Float,
@@ -486,7 +487,6 @@ object YOLOHelper {
             }
         }
 
-        // 🔴 **Ensure Tensor Shape is NCHW (Batch, Channel, Height, Width)**
         Log.d("YOLOTest", "First 10 Input Tensor Values: ${floatValues.take(10).joinToString(", ")}")
         return Tensor.fromBlob(floatValues, longArrayOf(1, 3, height.toLong(), width.toLong()))
     }
@@ -495,53 +495,35 @@ object YOLOHelper {
         val boundingBoxes = mutableListOf<BoundingBox>()
         val outputArray = outputTensor.dataAsFloatArray
         val numDetections = outputTensor.shape()[2].toInt() // 18900
-
         Log.d("YOLOTest", "Total detected objects: $numDetections")
 
+        var bestD: Int = 0
+        var bestX: Float = 0f
+        var bestY: Float = 0f
+        var bestW: Float = 0f
+        var bestH: Float = 0f
+        var bestC: Float = 0f
+
         for (i in 0 until numDetections) {
-            val index = i * 5
+            val x_center = outputArray[i]       // First column (x_center)
+            val y_center = outputArray[i + (numDetections * 1)]   // Second column (y_center)
+            val width = outputArray[i + (numDetections * 2)]      // Third column (width)
+            val height = outputArray[i + (numDetections * 3)]     // Fourth column (height)
+            val rawConfidence = outputArray[i + (numDetections * 4)] // Fifth column (confidence)
+            val confidence = 1f / (1f + exp(-rawConfidence))  // ✅ Apply Sigmoid
 
-            if (index + 4 >= outputArray.size) {
-                Log.e("YOLOTest", "Skipping detection $i: Index out of bounds ($index)")
-                continue
+            if (confidence > bestC) {
+                bestD = i
+                bestX = x_center
+                bestY = y_center
+                bestW = width
+                bestH = height
+                bestC = confidence
             }
-
-            val x_center = outputArray[i]  // First row: x_center
-            val y_center = outputArray[i + numDetections]  // Second row: y_center
-            val width = outputArray[i + numDetections * 2]  // Third row: width
-            val height = outputArray[i + numDetections * 3]  // Fourth row: height
-            val confidence = outputArray[i + numDetections * 4]  // Fifth row: confidence (✅ Correct now)
-
-            // Log full output of each tensor output detection
-            if (confidence > 0.7){
-                Log.d(
-                    "YOLOTest",
-                    "RAW DETECTION $i: x_center=${x_center}, y_center=${y_center}, width=${width}, height=${height}, confidence=${confidence}"
-                )
-            }
-
-            if (confidence < 0.5) continue  // Match Python behavior
-
-            // Convert from (center_x, center_y, width, height) to (x1, y1, x2, y2)
-            val x1 = x_center - (width / 2)
-            val y1 = y_center - (height / 2)
-            val x2 = x_center + (width / 2)
-            val y2 = y_center + (height / 2)
-
-            // Scale bounding boxes back to original image size
-            val scaleX = originalWidth.toFloat() / 960f
-            val scaleY = originalHeight.toFloat() / 960f
-            val scaledX1 = x1 * scaleX
-            val scaledY1 = y1 * scaleY
-            val scaledX2 = x2 * scaleX
-            val scaledY2 = y2 * scaleY
-
-            boundingBoxes.add(BoundingBox(scaledX1, scaledY1, scaledX2, scaledY2, confidence, 1))
         }
-
+        Log.d("YOLOTest", "BEST DETECTION $bestD: x_center=$bestX, y_center=$bestY, width=$bestW, height=$bestH, confidence=${String.format("%.8f", bestC)}")
         return boundingBoxes
     }
-
 
     fun drawBoundingBoxes(mat: Mat, boundingBoxes: List<BoundingBox>) {
         for (box in boundingBoxes) {
@@ -585,3 +567,24 @@ object YOLOHelper {
         return Point(centerX, centerY)
     }
 }
+
+//if(confidence > 0.01){
+//    Log.d("YOLOTest", "DETECTION $i: x_center=${x_center}, y_center=${y_center}, width=${width}, height=${height}, confidence=${confidence}")
+//}
+//if (confidence < 0.5) continue  // ✅ Match Python behavior
+
+// Convert from (center_x, center_y, width, height) to (x1, y1, x2, y2)
+//val x1 = x_center - (width / 2)
+//val y1 = y_center - (height / 2)
+//val x2 = x_center + (width / 2)
+//val y2 = y_center + (height / 2)
+
+// Scale bounding boxes back to original image size
+//val scaleX = originalWidth.toFloat() / 960f
+//val scaleY = originalHeight.toFloat() / 960f
+//val scaledX1 = x1 * scaleX
+//val scaledY1 = y1 * scaleY
+//val scaledX2 = x2 * scaleX
+//val scaledY2 = y2 * scaleY
+
+//boundingBoxes.add(BoundingBox(scaledX1, scaledY1, scaledX2, scaledY2, confidence, 1))

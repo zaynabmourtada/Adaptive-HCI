@@ -61,14 +61,12 @@ if isinstance(output, torch.Tensor):
 
     # Extract bounding boxes
     num_detections = output.shape[2]  # Should be the number of detections
-    print("📌 Number of detections:", output.shape[-1])
+    print("📌 Number of detections:", num_detections)
 
-for i in range(output.shape[-1]):
+for i in range(output.shape[2]):
     x_center, y_center, width, height, confidence = output[0, :, i].tolist()
-    if confidence > 0.01:
-        print(output[0, :, i].tolist())
-        print(f"🏠 Detection {i}: ({x_center:.2f}, {y_center:.2f}), Conf={confidence:.4f}")
-
+    if confidence > 0.8:
+        print(f"DETECTION {i}: x_center={x_center:.8f}, y_center={y_center:.8f}, width={width:.8f}, height={height:.8f} confidence={confidence:.8f}")
 else:
     print(f"⚠️ Unexpected output format: {type(output)}")
 
