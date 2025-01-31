@@ -183,7 +183,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Optionally load model
-        loadBestModelOnStartupThreaded("YOLOv2-Mobile.torchscript")
+        loadBestModelOnStartupThreaded("best.torchscript")
 
         viewBinding.unityButton.setOnClickListener {
             startActivity(Intent(this, com.unity3d.player.UnityPlayerGameActivity::class.java))
@@ -297,8 +297,11 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (bestLoadedPath.isNotEmpty()) {
                     try {
-                        val bestModule = org.pytorch.Module.load(bestLoadedPath)
-                        videoProcessor?.setModel(bestModule) // Pass the model to VideoProcessor
+                        var bestModule = org.pytorch.Module.load(bestLoadedPath)
+
+                        // Pass the model to VideoProcessor
+                        videoProcessor?.setModel(bestModule)
+
                         Toast.makeText(
                             this@MainActivity,
                             "YOLO Model loaded: $bestModel",

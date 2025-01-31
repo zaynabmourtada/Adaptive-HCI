@@ -36,6 +36,8 @@ import android.graphics.BitmapFactory
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
 import android.os.Environment
+import kotlin.math.max
+import kotlin.math.min
 
 data class BoundingBox(
     val x1: Float,
@@ -203,140 +205,53 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
-    private suspend fun processFrameInternalYOLO(bitmap: Bitmap): Bitmap? {
-        val mat = Mat()
-        val originalMat = Mat()
-        val resizedMat = Mat()
-
-        return try {
-            // Convert bitmap to Mat using OpenCV's Utils.bitmapToMat
-            Utils.bitmapToMat(bitmap, originalMat)
-
-            // Resize and pad the image to 960x960
-            YOLOHelper.resizeAndPad(originalMat, resizedMat, Settings.Model.inputSize, Settings.Model.inputSize)
-
-            // Convert Mat to Tensor
-            val inputTensor = YOLOHelper.matToFloat32Tensor(resizedMat)
-
-            // Run inference on the background thread
-            val outputTensor = withContext(Dispatchers.Default) {
-                module?.forward(IValue.from(inputTensor))?.toTensor()
-            }
-
-            // Process output tensor to get bounding boxes
-            val boundingBoxes = outputTensor?.let { YOLOHelper.parseYOLOOutputTensor(it, originalMat.cols(), originalMat.rows()) } ?: emptyList()
-
-            // Draw bounding boxes on the original image
-            YOLOHelper.drawBoundingBoxes(originalMat, boundingBoxes)
-
-            // Calculate the center of each bounding box and add to rawDataList
-            for (box in boundingBoxes) {
-                val center = YOLOHelper.calculateCenter(box)
-                rawDataList.add(center)
-
-                // Apply Kalman filter to the center point
-                val (fx, fy) = KalmanHelper.applyKalmanFilter(center)
-                smoothDataList.add(Point(fx, fy))
-            }
-
-            // Keep the trace lines limited
-            if (rawDataList.size > Settings.Trace.lineLimit) {
-                rawDataList.pollFirst()
-            }
-            if (smoothDataList.size > Settings.Trace.lineLimit) {
-                smoothDataList.pollFirst()
-            }
-
-            // Draw raw trace
-            TraceRenderer.drawRawTrace(rawDataList, originalMat)
-
-            // Draw smoothed trace
-            TraceRenderer.drawSplineCurve(smoothDataList, originalMat)
-
-            // Convert Mat back to Bitmap using OpenCV's Utils.matToBitmap
-            val outputBitmap = Bitmap.createBitmap(originalMat.cols(), originalMat.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(originalMat, outputBitmap)
-            outputBitmap
-        } catch (e: Exception) {
-            logCat("Error processing frame: ${e.message}", e)
-            null
-        } finally {
-            // Release Mats in the finally block to ensure they are always released
-            mat.release()
-            originalMat.release()
-            resizedMat.release()
-        }
-    }
-
     fun testYOLOsingleImage(context: Context) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 // Load image from assets
                 val assetManager = context.assets
-                val inputStream = assetManager.open("test_frame.png") // Test image file
-
+                val inputStream = assetManager.open("test_frame.jpg") // Test image file
                 val bitmap = BitmapFactory.decodeStream(inputStream)
                 if (bitmap == null) {
                     Log.e("YOLOTest", "Bitmap is null! Image decoding failed.")
                     return@launch
                 }
-
                 // Convert Bitmap to OpenCV Mat
                 val originalMat = Mat()
                 Utils.bitmapToMat(bitmap, originalMat)
 
-                // Prepare image for YOLO using YOLOHelper
-                val resizedMat = Mat()
-                YOLOHelper.resizeAndPad(originalMat, resizedMat, Settings.Model.inputSize, Settings.Model.inputSize)
+                // Ensure Correct Color Order (Convert BGR to RGB)
+                Imgproc.cvtColor(originalMat, originalMat, Imgproc.COLOR_BGR2RGB)
+                // Ensure Correct Normalization (0-255 → 0-1)
+                val normalizedMat = Mat()
+                originalMat.convertTo(normalizedMat, CvType.CV_32FC3, 1.0 / 255.0)
+                // Convert Mat to Float32 Tensor (NCHW)
+                val inputTensor = YOLOHelper.matToFloat32Tensor(normalizedMat)
 
-                // Save preprocessed image for debugging
-                saveInferenceResult(context, resizedMat)
-
-                // Convert Mat to Tensor using ImageUtils
-                val inputTensor = YOLOHelper.matToFloat32Tensor(resizedMat)
-
-                // Check if model is loaded before running inference
+                // Ensure Model is Loaded
                 if (module == null) {
                     Log.e("YOLOTest", "Model is NULL! Cannot run inference.")
                     return@launch
                 }
 
-                // Run YOLO Inference
-                val inputData = inputTensor.dataAsFloatArray
-                val outputTensor = runCatching {
-                    module?.forward(IValue.from(inputTensor))?.toTensor()
-                }.onFailure {
-                    Log.e("YOLOTest", "Exception during YOLO inference: ${it.message}", it)
-                    return@launch
-                }.getOrNull()
-
-                // Check if inference produced a valid output
+                // run YOLO Inference
+                val outputTensor = module?.forward(IValue.from(inputTensor))?.toTensor()
                 if (outputTensor == null) {
                     Log.e("YOLOTest", "YOLO Inference failed! Output tensor is NULL.")
                     return@launch
                 }
+                Log.d("YOLOTest", "Full YOLO Output Tensor Shape: ${outputTensor.shape().contentToString()}")
 
-                Log.d("YOLOTest", "YOLO Inference complete.")
-
-                // Process results using YOLOHelper
-                val boundingBoxes = outputTensor.let {
-                    YOLOHelper.parseYOLOOutputTensor(it, originalMat.cols(), originalMat.rows())
-                }
-
-                Log.d("YOLOTest", "Parsed ${boundingBoxes.size} bounding boxes from YOLO output.")
-
-                // Draw bounding boxes using YOLOHelper
+                // Process YOLO Output & Draw Bounding Boxes
+                val boundingBoxes = YOLOHelper.parseYOLOOutputTensor(outputTensor, originalMat.cols(), originalMat.rows())
                 YOLOHelper.drawBoundingBoxes(originalMat, boundingBoxes)
-                Log.d("YOLOTest", "Bounding boxes drawn on image.")
 
-                // Save the result image (Back to Main Thread)
+                // Save Final Inference Result
                 withContext(Dispatchers.Main) {
                     saveInferenceResult(context, originalMat)
                     Log.d("YOLOTest", "Inference completed successfully. Image saved.")
                 }
 
-            } catch (e: OutOfMemoryError) {
-                Log.e("YOLOTest", "OutOfMemoryError! Model or input size may be too large.", e)
             } catch (e: Exception) {
                 Log.e("YOLOTest", "Error during inference: ${e.message}", e)
             }
@@ -345,9 +260,16 @@ class VideoProcessor(private val context: Context) {
 
     private fun saveInferenceResult(context: Context, mat: Mat) {
         try {
+            // Define border size (5% of image width)
+            val borderSize = (mat.cols() * 0.05).toInt() // 5% of width as padding
+
+            // Create a new Mat with a white border
+            val borderedMat = Mat()
+            Core.copyMakeBorder(mat, borderedMat, borderSize, borderSize, borderSize, borderSize, Core.BORDER_CONSTANT, Scalar(255.0, 255.0, 255.0))
+
             // Convert Mat back to Bitmap
-            val outputBitmap = Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(mat, outputBitmap)
+            val outputBitmap = Bitmap.createBitmap(borderedMat.cols(), borderedMat.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(borderedMat, outputBitmap)
 
             // Save in the public Downloads folder
             val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -359,13 +281,15 @@ class VideoProcessor(private val context: Context) {
                 fos.flush()
             }
 
-            Log.d("YOLOTest", "Saved inference result at: ${outputFile.absolutePath}")
+            Log.d("YOLOTest", "Saved inference result with white border at: ${outputFile.absolutePath}")
+
+            // Release Mat resources
+            borderedMat.release()
 
         } catch (e: Exception) {
             Log.e("YOLOTest", "Failed to save image: ${e.message}", e)
         }
     }
-
 
     private fun showToast(msg: String) {
         if (Settings.Debug.enableToasts) {
@@ -545,74 +469,79 @@ object ContourDetection {
 
 object YOLOHelper {
     fun matToFloat32Tensor(mat: Mat): Tensor {
-        // Ensure the Mat is in the correct format (3-channel RGB)
         require(mat.channels() == 3) { "Input Mat must have 3 channels (RGB)" }
 
         val width = mat.cols()
         val height = mat.rows()
 
-        // Create a FloatArray to store pixel data
+        // Convert Mat to Float Array in RGB Order
         val floatValues = FloatArray(width * height * 3)
-
-        // Convert Mat pixels to Float32
         var index = 0
         for (row in 0 until height) {
             for (col in 0 until width) {
                 val pixel = mat.get(row, col)
-                floatValues[index++] = (pixel[2] / 255.0).toFloat()  // R
-                floatValues[index++] = (pixel[1] / 255.0).toFloat()  // G
-                floatValues[index++] = (pixel[0] / 255.0).toFloat()  // B
+                floatValues[index++] = pixel[0].toFloat()  // R (Already Normalized)
+                floatValues[index++] = pixel[1].toFloat()  // G (Already Normalized)
+                floatValues[index++] = pixel[2].toFloat()  // B (Already Normalized)
             }
         }
 
-        // Log to verify output tensor shape
-        Log.d("YOLOTest", "Converted Mat to FLOAT32 Tensor with shape: [1, 3, $height, $width]")
-
-        // Create and return PyTorch tensor in FLOAT32 format
+        // 🔴 **Ensure Tensor Shape is NCHW (Batch, Channel, Height, Width)**
+        Log.d("YOLOTest", "First 10 Input Tensor Values: ${floatValues.take(10).joinToString(", ")}")
         return Tensor.fromBlob(floatValues, longArrayOf(1, 3, height.toLong(), width.toLong()))
-    }
-
-    fun resizeAndPad(src: Mat, dst: Mat, targetWidth: Int, targetHeight: Int) {
-        val scale = min(targetWidth.toDouble() / src.cols(), targetHeight.toDouble() / src.rows())
-        val resizedWidth = (src.cols() * scale).toInt()
-        val resizedHeight = (src.rows() * scale).toInt()
-
-        Imgproc.resize(src, dst, Size(resizedWidth.toDouble(), resizedHeight.toDouble()))
-
-        val paddedMat = Mat(targetHeight, targetWidth, CvType.CV_8UC3, Scalar(0.0, 0.0, 0.0))
-
-        val xOffset = (targetWidth - resizedWidth) / 2
-        val yOffset = (targetHeight - resizedHeight) / 2
-
-        dst.copyTo(paddedMat.submat(yOffset, yOffset + resizedHeight, xOffset, xOffset + resizedWidth))
-        paddedMat.copyTo(dst)
-        paddedMat.release()
     }
 
     fun parseYOLOOutputTensor(outputTensor: Tensor, originalWidth: Int, originalHeight: Int): List<BoundingBox> {
         val boundingBoxes = mutableListOf<BoundingBox>()
         val outputArray = outputTensor.dataAsFloatArray
-        val numDetections = outputTensor.shape()[1].toInt()
+        val numDetections = outputTensor.shape()[2].toInt() // 18900
+
+        Log.d("YOLOTest", "Total detected objects: $numDetections")
 
         for (i in 0 until numDetections) {
-            val x1 = outputArray[i * Settings.Model.outputTensorStride + 0]
-            val y1 = outputArray[i * Settings.Model.outputTensorStride + 1]
-            val x2 = outputArray[i * Settings.Model.outputTensorStride + 2]
-            val y2 = outputArray[i * Settings.Model.outputTensorStride + 3]
-            val confidence = outputArray[i * Settings.Model.outputTensorStride + 4]
-            val classId = outputArray[i * Settings.Model.outputTensorStride + 5].toInt()
+            val index = i * 5
 
-            val scaleX = originalWidth.toFloat() / Settings.Model.inputSize
-            val scaleY = originalHeight.toFloat() / Settings.Model.inputSize
+            if (index + 4 >= outputArray.size) {
+                Log.e("YOLOTest", "Skipping detection $i: Index out of bounds ($index)")
+                continue
+            }
+
+            val x_center = outputArray[i]  // First row: x_center
+            val y_center = outputArray[i + numDetections]  // Second row: y_center
+            val width = outputArray[i + numDetections * 2]  // Third row: width
+            val height = outputArray[i + numDetections * 3]  // Fourth row: height
+            val confidence = outputArray[i + numDetections * 4]  // Fifth row: confidence (✅ Correct now)
+
+            // Log full output of each tensor output detection
+            if (confidence > 0.7){
+                Log.d(
+                    "YOLOTest",
+                    "RAW DETECTION $i: x_center=${x_center}, y_center=${y_center}, width=${width}, height=${height}, confidence=${confidence}"
+                )
+            }
+
+            if (confidence < 0.5) continue  // Match Python behavior
+
+            // Convert from (center_x, center_y, width, height) to (x1, y1, x2, y2)
+            val x1 = x_center - (width / 2)
+            val y1 = y_center - (height / 2)
+            val x2 = x_center + (width / 2)
+            val y2 = y_center + (height / 2)
+
+            // Scale bounding boxes back to original image size
+            val scaleX = originalWidth.toFloat() / 960f
+            val scaleY = originalHeight.toFloat() / 960f
             val scaledX1 = x1 * scaleX
             val scaledY1 = y1 * scaleY
             val scaledX2 = x2 * scaleX
             val scaledY2 = y2 * scaleY
 
-            boundingBoxes.add(BoundingBox(scaledX1, scaledY1, scaledX2, scaledY2, confidence, classId))
+            boundingBoxes.add(BoundingBox(scaledX1, scaledY1, scaledX2, scaledY2, confidence, 1))
         }
+
         return boundingBoxes
     }
+
 
     fun drawBoundingBoxes(mat: Mat, boundingBoxes: List<BoundingBox>) {
         for (box in boundingBoxes) {
