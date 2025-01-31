@@ -10,6 +10,9 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        flatDir {
+            dirs("${rootDir}/app/libs")
+        }
     }
 }
 

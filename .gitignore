@@ -1,0 +1,5 @@
+venv/
+/YOLOv8/Models/yolo_mobile_env
+/YOLOv8/Tools/yolo_mobile_env
+/YOLOv8/Tools/.vscode
+/YOLOv8/Tools/YOLOvenv

@@ -1,8 +1,5 @@
 plugins {
-    // Plugin for Android application
     id("com.android.application")
-
-    // Plugin for Kotlin Android integration
     id("org.jetbrains.kotlin.android")
 }
 
@@ -39,53 +36,88 @@ android {
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
-    buildFeatures {
-        viewBinding = true
-    }
-
     kotlinOptions {
         jvmTarget = "1.8"
     }
 
-    packagingOptions {
-        pickFirst("lib/armeabi-v7a/libc++_shared.so")
-        pickFirst("lib/arm64-v8a/libc++_shared.so")
+    buildFeatures {
+        viewBinding = true
+    }
+
+    packaging {
+        jniLibs {
+            pickFirsts.add("lib/x86/libc++_shared.so")
+            pickFirsts.add("lib/x86_64/libc++_shared.so")
+            pickFirsts.add("lib/armeabi-v7a/libc++_shared.so")
+            pickFirsts.add("lib/arm64-v8a/libc++_shared.so")
+        }
+    }
+
+    aaptOptions {
+        noCompress("pt")
+        noCompress("torchscript")
     }
 }
 
 dependencies {
-    implementation("androidx.preference:preference-ktx:1.2.1")
-    implementation(project(":OpenCV-4.10.0"))
-    implementation(project(":OpenCV-4.10.0"))
+    // OpenCV
+    implementation(project(":OpenCV-4.10.0")) {
+        exclude(group = "org.bytedeco", module = "libc++_shared")
+    }
+
+    // PyTorch
+    implementation("org.pytorch:pytorch_android:1.13.1") {
+        exclude(group = "org.bytedeco", module = "libc++_shared")
+    }
+    implementation("org.pytorch:pytorch_android_torchvision:1.13.1") {
+        exclude(group = "org.bytedeco", module = "libc++_shared")
+    }
+
+    // Unity (aar lib files in /lib)
+    //implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+    implementation(files("libs/unityLibrary-release.aar"))
+
+    implementation("androidx.games:games-activity:3.0.5")
+
+    // ML Kit, etc.
     implementation("com.google.mlkit:vision-common:17.3.0")
 
-    // CameraX dependencies for camera functionality
-    var camerax_version = "1.2.2"
-    implementation("androidx.camera:camera-core:$camerax_version")
-    implementation("androidx.camera:camera-camera2:$camerax_version")
-    implementation("androidx.camera:camera-lifecycle:$camerax_version")
-    implementation("androidx.camera:camera-video:$camerax_version")
-    implementation("androidx.camera:camera-view:$camerax_version")
-    implementation("androidx.camera:camera-extensions:$camerax_version")
+    // TensorFlow Lite (For GPU Utilization)
+    implementation("org.tensorflow:tensorflow-lite:2.10.0") // Core TFLite runtime
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.10.0") // GPU acceleration
 
-    // Camera2 dependencies (comes with the Android SDK but can add if needed)
-    implementation("androidx.camera:camera-camera2:${camerax_version}")
+    // CameraX
+    val cameraxVersion = "1.2.2"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-video:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+    implementation("androidx.camera:camera-extensions:$cameraxVersion")
 
-    // Add PyTorch dependencies
-    implementation("org.pytorch:pytorch_android:1.13.1")
-    implementation("org.pytorch:pytorch_android_torchvision:1.13.1")
+    // ARCore (pick a recent version)
+    implementation("com.google.ar:core:1.36.0")
 
-    // Android and Kotlin core libraries
+    // Sceneform Community Fork (core + ux)
+    implementation("com.gorisse.thomas.sceneform:sceneform:1.19.6")
+
+    // Kotlin & Android core libs
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
-    // Unit testing dependencies
+    // Preferences
+    implementation("androidx.preference:preference-ktx:1.2.1")
+
+    // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 
-    //Apache Commons Math
+    // Apache Commons Math
     implementation("org.apache.commons:commons-math3:3.6.1")
+
+    // ARCore library
+    implementation("com.google.ar:core:1.36.0")
 }
