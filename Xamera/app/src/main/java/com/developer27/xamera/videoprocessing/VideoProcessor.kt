@@ -125,7 +125,7 @@ class VideoProcessor(private val context: Context) {
     fun processFrame(bitmap: Bitmap, callback: (Bitmap?) -> Unit) {
         CoroutineScope(Dispatchers.Default).launch {
             val result = try {
-                processFrameInternalCONTOUR(bitmap)
+                processFrameInternalYOLO(bitmap)
             } catch (e: Exception) {
                 logCat("Error processing frame: ${e.message}", e)
                 null
@@ -199,6 +199,94 @@ class VideoProcessor(private val context: Context) {
 
     // add padding or resizing functions, switch to live stream from camera, add trace lines etc
     // building blocks availible
+    private suspend fun processFrameInternalYOLO(bitmap: Bitmap): Bitmap? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val newBitMap = makeSquareAndResize(bitmap)
+                // Convert Frame Bitmap to Tensor (scale pixel values to [0, 1])
+                val inputTensor = TensorImageUtils.bitmapToFloat32Tensor(
+                    newBitMap,
+                    floatArrayOf(0f, 0f, 0f),  // No mean subtraction
+                    floatArrayOf(1f, 1f, 1f)   // No std division (scale to [0, 1])
+                )
+
+                // The tensor shape will be [1, 3, 960, 960] after unsqueeze
+                val batchedInputTensor = Tensor.fromBlob(
+                    inputTensor.dataAsFloatArray, // Original tensor data
+                    longArrayOf(1, 3, 960, 960)  // New shape with batch dimension
+                )
+
+                // Ensure Model is Loaded
+                if (module == null) {
+                    Log.e("YOLOTest", "Model is NULL! Cannot run inference.")
+                    return@withContext null
+                }
+
+                // Run YOLO Inference
+                val outputTensor = module?.forward(IValue.from(batchedInputTensor))?.toTensor()
+                if (outputTensor == null) {
+                    Log.e("YOLOTest", "YOLO Inference failed! Output tensor is NULL.")
+                    return@withContext null
+                }
+                Log.d("YOLOTest", "Full YOLO Output Tensor Shape: ${outputTensor.shape().contentToString()}")
+
+                // Convert Bitmap to OpenCV Mat
+                val originalMat = Mat()
+                Utils.bitmapToMat(bitmap, originalMat)
+
+                // Process YOLO Output & Draw Bounding Boxes
+                val (boundingBoxes, listOfPoints) = YOLOHelper.parseYOLOOutputTensor(outputTensor, originalMat.cols(), originalMat.rows())
+                YOLOHelper.drawBoundingBoxes(originalMat, boundingBoxes, listOfPoints)
+
+                // Convert Mat back to Bitmap using OpenCV's Utils.matToBitmap
+                val outputBitmap = Bitmap.createBitmap(originalMat.cols(), originalMat.rows(), Bitmap.Config.ARGB_8888)
+                Utils.matToBitmap(originalMat, outputBitmap)
+                originalMat.release()
+
+                outputBitmap
+            } catch (e: Exception) {
+                Log.e("YOLOTest", "Error during inference: ${e.message}", e)
+                null
+            }
+        }
+    }
+
+    private fun makeSquareAndResize(bitmap: Bitmap): Bitmap {
+        // Convert Bitmap to OpenCV Mat
+        val mat = Mat()
+        Utils.bitmapToMat(bitmap, mat)
+
+        // Get original dimensions
+        val height = mat.rows()
+        val width = mat.cols()
+        val maxDim = maxOf(height, width)
+
+        // Calculate padding (black padding with zero pixels)
+        val top = (maxDim - height) / 2
+        val bottom = maxDim - height - top
+        val left = (maxDim - width) / 2
+        val right = maxDim - width - left
+
+        // Create a padded Mat with black (zero) padding
+        val paddedMat = Mat()
+        Core.copyMakeBorder(mat, paddedMat, top, bottom, left, right, Core.BORDER_CONSTANT, Scalar(0.0, 0.0, 0.0))
+
+        // Resize to 960x960
+        val resizedMat = Mat()
+        Imgproc.resize(paddedMat, resizedMat, Size(960.0, 960.0), 0.0, 0.0, Imgproc.INTER_AREA)
+
+        // Convert back to Bitmap
+        val outputBitmap = Bitmap.createBitmap(960, 960, Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(resizedMat, outputBitmap)
+
+        // Release Mat memory
+        mat.release()
+        paddedMat.release()
+        resizedMat.release()
+
+        return outputBitmap
+    }
+
     fun testYOLOsingleImage(context: Context) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -246,11 +334,6 @@ class VideoProcessor(private val context: Context) {
                 val (boundingBoxes, listOfPoints) = YOLOHelper.parseYOLOOutputTensor(outputTensor, originalMat.cols(), originalMat.rows())
                 YOLOHelper.drawBoundingBoxes(originalMat, boundingBoxes, listOfPoints)
 
-                // Save Final Inference Result
-                withContext(Dispatchers.Main) {
-                    saveInferenceResult(context, originalMat)
-                    Log.d("YOLOTest", "Inference completed successfully. Image saved.")
-                }
                 originalMat.release()
 
             } catch (e: Exception) {
@@ -261,16 +344,9 @@ class VideoProcessor(private val context: Context) {
 
     private fun saveInferenceResult(context: Context, mat: Mat) {
         try {
-            // Define border size (5% of image width)
-            val borderSize = (mat.cols() * 0.01).toInt() // 1% of width as padding
-
-            // Create a new Mat with a white border
-            val borderedMat = Mat()
-            Core.copyMakeBorder(mat, borderedMat, borderSize, borderSize, borderSize, borderSize, Core.BORDER_CONSTANT, Scalar(255.0, 255.0, 255.0))
-
             // Convert Mat back to Bitmap
-            val outputBitmap = Bitmap.createBitmap(borderedMat.cols(), borderedMat.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(borderedMat, outputBitmap)
+            val outputBitmap = Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(mat, outputBitmap)
 
             // Save in the public Downloads folder
             val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -282,10 +358,10 @@ class VideoProcessor(private val context: Context) {
                 fos.flush()
             }
 
-            Log.d("YOLOTest", "Saved inference result with white border at: ${outputFile.absolutePath}")
+            Log.d("YOLOTest", "Saved inference result at: ${outputFile.absolutePath}")
 
             // Release Mat resources
-            borderedMat.release()
+            mat.release()
 
         } catch (e: Exception) {
             Log.e("YOLOTest", "Failed to save image: ${e.message}", e)
@@ -489,9 +565,7 @@ object YOLOHelper {
             val width = outputArray[i + (numDetections * 2)]      // Third column (width)
             val height = outputArray[i + (numDetections * 3)]     // Fourth column (height)
             val confidence = outputArray[i + (numDetections * 4)] // Fifth column (confidence)
-
-            Log.d("YOLOTest", "DETECTION $i: confidence=${String.format("%.8f", confidence)}, x_center=$x_center, y_center=$y_center, width=$width, height=$height")
-
+            //Log.d("YOLOTest", "DETECTION $i: confidence=${String.format("%.8f", confidence)}, x_center=$x_center, y_center=$y_center, width=$width, height=$height")
             if (confidence > bestC) {
                 bestD = i
                 bestX = x_center
@@ -502,15 +576,12 @@ object YOLOHelper {
             }
         }
         Log.d("YOLOTest", "BEST DETECTION $bestD: confidence=${String.format("%.8f", bestC)}, x_center=$bestX, y_center=$bestY, width=$bestW, height=$bestH")
-
         // Convert from (center_x, center_y, width, height) to (x1, y1, x2, y2)
         val x1 = bestX - (bestW / 2)
         val y1 = bestY - (bestH / 2)
         val x2 = bestX + (bestW / 2)
         val y2 = bestY + (bestH / 2)
-
-        Log.d("YOLOTest", "BOUND BOX: confidence=${String.format("%.8f", bestC)}, X1=$x1: Y1=$y1, X2=$x2, Y2=$y2")
-
+        //Log.d("YOLOTest", "BOUND BOX: confidence=${String.format("%.8f", bestC)}, X1=$x1: Y1=$y1, X2=$x2, Y2=$y2")
         // Scale bounding boxes back to original image size
         val scaleX = originalWidth.toFloat() / 960f
         val scaleY = originalHeight.toFloat() / 960f
@@ -518,9 +589,7 @@ object YOLOHelper {
         val scaledY1 = y1 * scaleY
         val scaledX2 = x2 * scaleX
         val scaledY2 = y2 * scaleY
-
-        Log.d("YOLOTest", "BOUND BOX: confidence=${String.format("%.8f", bestC)}, scaledX1=$scaledX1: scaledY1=$scaledY1, scaledX2=$scaledX2, scaledY2=$scaledY2")
-
+        //Log.d("YOLOTest", "BOUND BOX: confidence=${String.format("%.8f", bestC)}, scaledX1=$scaledX1: scaledY1=$scaledY1, scaledX2=$scaledX2, scaledY2=$scaledY2")
         // Add bounding Box
         boundingBoxes.add(BoundingBox(scaledX1, scaledY1, scaledX2, scaledY2, bestC, 1))
         listOfPoints.add(Point(bestX.toDouble(), bestY.toDouble()))
@@ -562,8 +631,3 @@ object YOLOHelper {
         }
     }
 }
-
-//if(confidence > 0.01){
-//    Log.d("YOLOTest", "DETECTION $i: x_center=${x_center}, y_center=${y_center}, width=${width}, height=${height}, confidence=${confidence}")
-//}
-//if (confidence < 0.5) continue  // ✅ Match Python behavior
