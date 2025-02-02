@@ -48,11 +48,6 @@ data class FrameData(
 )
 
 object Settings {
-    object Model {
-        const val inputSize = 960
-        const val outputTensorStride = 6 // Number of values per detection
-    }
-
     object Trace {
         var lineLimit = 50
         var splineStep = 0.01
@@ -122,10 +117,13 @@ class VideoProcessor(private val context: Context) {
         return postFilter4Ddata.toList()
     }
 
+    // Switch Between YOLO vs Contour Detection
     fun processFrame(bitmap: Bitmap, callback: (Bitmap?) -> Unit) {
         CoroutineScope(Dispatchers.Default).launch {
             val result = try {
+                // Switch Between YOLO vs Contour Detection
                 processFrameInternalYOLO(bitmap)
+                //processFrameInternalCONTOUR(bitmap)
             } catch (e: Exception) {
                 logCat("Error processing frame: ${e.message}", e)
                 null
