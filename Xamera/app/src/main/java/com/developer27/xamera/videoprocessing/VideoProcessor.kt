@@ -122,8 +122,8 @@ class VideoProcessor(private val context: Context) {
         CoroutineScope(Dispatchers.Default).launch {
             val result = try {
                 // Switch Between YOLO vs Contour Detection
-                processFrameInternalYOLO(bitmap)
-                //processFrameInternalCONTOUR(bitmap)
+                //processFrameInternalYOLO(bitmap)
+                processFrameInternalCONTOUR(bitmap)
             } catch (e: Exception) {
                 logCat("Error processing frame: ${e.message}", e)
                 null
@@ -155,7 +155,7 @@ class VideoProcessor(private val context: Context) {
             // If a contour is found, draw it and calculate its center of mass
             if (largestContour != null) {
                 // Draw the largest contour on the original image
-                ContourDetection.drawContour(originalMat, largestContour)
+                // ContourDetection.drawContour(originalMat, largestContour)
 
                 // Calculate the center of mass of the largest contour
                 val center = ContourDetection.calculateCenterOfMass(largestContour)
