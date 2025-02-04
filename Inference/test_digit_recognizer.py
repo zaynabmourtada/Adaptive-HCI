@@ -1,25 +1,35 @@
 import torch
 import torchvision.transforms as transforms
-from torchvision.datasets import MNIST
+from torchvision.datasets import ImageFolder
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+from torch.utils.data import DataLoader
+import torch.nn as nn
+import torch.nn.functional as F
 
-class DigitRecognizer(torch.nn.Module):
+
+class ImprovedDigitRecognizer(torch.nn.Module):
     def __init__(self):
-        super(DigitRecognizer, self).__init__()
-        self.conv1 = torch.nn.Conv2d(1, 16, kernel_size=5, stride=1, padding=2)
-        self.conv2 = torch.nn.Conv2d(16, 32, kernel_size=5, stride=1, padding=2)
-        self.fc1 = torch.nn.Linear(7*7*32, 128)
-        self.fc2 = torch.nn.Linear(128, 10)
+        super(ImprovedDigitRecognizer, self).__init__()
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=2)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=5, stride=1, padding=2)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+        self.fc1 = nn.Linear(3*3*128, 256)
+        self.fc2 = nn.Linear(256, 10)
+        self.dropout = nn.Dropout(0.3)
+
 
     def forward(self, x):
-        x = torch.relu(self.conv1(x))
-        x = torch.max_pool2d(x, 2)
-        x = torch.relu(self.conv2(x))
-        x = torch.max_pool2d(x, 2)
-        x = x.view(-1, 7*7*32)
-        x = torch.relu(self.fc1(x))
+        x = F.relu(self.conv1(x))
+        x = F.max_pool2d(x, 2)
+        x = F.relu(self.conv2(x))
+        x = F.max_pool2d(x, 2)
+        x = F.relu(self.conv3(x))
+        x = F.max_pool2d(x, 2)
+        x = x.view(-1, 3*3*128)
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)
         x = self.fc2(x)
         return x
 
@@ -60,21 +70,44 @@ def show_sample_images(images, labels, predictions):
     plt.show()
 
 def main():
-    device = torch.device("cpu")  
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    test_dataset_path = os.path.join(script_dir, "test_dataset.pth")
+
+    if os.path.exists(test_dataset_path):
+        test_indices = torch.load(test_dataset_path)  
+        print("Test dataset indices loaded successfully!")
+    else:
+        print("Error: Test dataset file not found!")
+        return
+    
     transform = transforms.Compose([
         transforms.Grayscale(num_output_channels=1),
+        transforms.Resize((28, 28)),
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
     ])
-    
-    test_dataset = MNIST(root='./MNIST_data', train=False, transform=transform, download=True)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000, shuffle=False)
 
-    model = DigitRecognizer().to(device)
+    dataset_path = os.path.join(script_dir, "10000 DIDA")  
+    full_dataset = ImageFolder(root=dataset_path, transform=transform)
+
+    if max(test_indices) >= len(full_dataset):
+        print("Error: Test indices exceed dataset size!")
+        return
     
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    test_dataset = torch.utils.data.Subset(full_dataset, test_indices)
+    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+
     model_path = os.path.join(script_dir, "digit_recognizer.pth")
+    model = ImprovedDigitRecognizer().to(device)
+
+    if os.path.exists(model_path):
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        print("Model loaded successfully!")
+    else:
+        print("Error: Model file not found!")
+        return
 
     test_model(model, test_loader, device)
 
