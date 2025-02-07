@@ -124,17 +124,22 @@ class ProcessedVideoRecorder(
             // 2) [Optional] Clone for detection.
             val detectionMat = originalMat.clone()
             val preprocessedMat = Preprocessing.preprocessFrame(detectionMat)
-            val contours = ContourDetection.findContours(preprocessedMat)
-            val largestContour: MatOfPoint? = ContourDetection.findLargestContour(contours)
-
+            val (center, processedMat) = ContourDetection.processContourDetection(preprocessedMat)
             // Prepare data for line drawing.
-            if (largestContour != null) {
-                val center = ContourDetection.calculateCenterOfMass(largestContour)
+            if (center != null) {
                 rawDataList.add(center)
+
+                // Apply Kalman filter to smooth tracking
                 val (fx, fy) = KalmanHelper.applyKalmanFilter(center)
                 smoothDataList.add(Point(fx, fy))
+
+                // Maintain trace history within limits
                 if (rawDataList.size > Settings.Trace.lineLimit) rawDataList.pollFirst()
                 if (smoothDataList.size > Settings.Trace.lineLimit) smoothDataList.pollFirst()
+
+                // Draw raw trace and smoothed trace directly on preprocessedMat
+                //TraceRenderer.drawRawTrace(rawDataList, preprocessedMat)
+                TraceRenderer.drawSplineCurve(smoothDataList, preprocessedMat)
             }
 
             // 3) Apply rolling shutter effect.
@@ -146,7 +151,7 @@ class ProcessedVideoRecorder(
             Utils.matToBitmap(rolledMat, baseBitmap)
 
             // 4) Use OpenGL to overlay the line on top of the base image.
-            val hasContour = (largestContour != null)
+            val hasContour = (center != null)
             val outputBitmap = renderWithOpenGLOverlay(baseBitmap, smoothDataList, hasContour)
             return outputBitmap
 
@@ -198,11 +203,7 @@ class ProcessedVideoRecorder(
      *   4. Render the line overlay (using the provided points or fallback).
      *   5. Read the rendered pixels into a Bitmap.
      */
-    private fun renderWithOpenGLOverlay(
-        baseBitmap: Bitmap,
-        points: LinkedList<Point>,
-        hasContour: Boolean
-    ): Bitmap? {
+    private fun renderWithOpenGLOverlay(baseBitmap: Bitmap, points: LinkedList<Point>, hasContour: Boolean): Bitmap? {
         // 1. Set up EGL.
         val eglDisplay: EGLDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
         if (eglDisplay == EGL14.EGL_NO_DISPLAY) {
