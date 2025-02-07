@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraManager
 import android.os.Bundle
+import android.os.Environment
 import android.preference.PreferenceManager
 import android.util.Log
 import android.util.SparseIntArray
@@ -20,23 +21,21 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.developer27.xamera.camera.CameraHelper
-import com.developer27.xamera.camera.TempRecorderHelper
 import com.developer27.xamera.databinding.ActivityMainBinding
 import com.developer27.xamera.openGL2D.OpenGL2DActivity
 import com.developer27.xamera.openGL3D.OpenGL3DActivity
+import com.developer27.xamera.videoprocessing.ProcessedVideoRecorder
 import com.developer27.xamera.videoprocessing.VideoProcessor
 import org.pytorch.Module
 import java.io.File
 import java.io.FileOutputStream
 
 /**
- * MainActivity for the Xamera app:
- * - Starts/stops real-time processing (VideoProcessor) & raw video recording (TempRecorderHelper).
- *
- * Flow:
- *   [Start Processing] => Start video + real-time processing overlay
- *   [Stop Processing]  => Stop video + real-time processing overlay
- *   Then user can click "3D" to see final path in OpenGL.
+ * MainActivity:
+ * - Sets up the camera preview and UI controls.
+ * - Processes frames via VideoProcessor (which draws OpenCV overlays such as lines).
+ * - Sends the processed frames to ProcessedVideoRecorder.
+ * - When "Stop Tracking" is clicked, the recorder finalizes the video and saves an MP4 file in the Movies folder.
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var viewBinding: ActivityMainBinding
@@ -44,22 +43,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraManager: CameraManager
     private lateinit var cameraHelper: CameraHelper
 
-    private lateinit var tempRecorderHelper: TempRecorderHelper
-    private var bestModule: Module? = null
+    // Our custom recorder.
+    private var processedVideoRecorder: ProcessedVideoRecorder? = null
 
-    // Real-time
-    private var isRecording = false //Temproary
-    private var isProcessing = false
+    // VideoProcessor applies processing (e.g. overlays).
     private var videoProcessor: VideoProcessor? = null
+
+    // State flags.
+    private var isRecording = false
+    private var isProcessing = false
     private var isProcessingFrame = false
-
-    // We'll store final line coords here after "Stop Processing".
-    // Each element is [x, y, z] in OpenGL coordinate space.
-    private var finalLineCoords = mutableListOf<List<Float>>()
-
-    // Suppose your camera frames are 640×480
-    private val frameWidth = 640f
-    private val frameHeight = 480f
 
     private val REQUIRED_PERMISSIONS = arrayOf(
         Manifest.permission.CAMERA,
@@ -69,15 +62,15 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val SETTINGS_REQUEST_CODE = 1
-        private val ORIENTATIONS = SparseIntArray()
-        init {
-            ORIENTATIONS.append(Surface.ROTATION_0, 90)
-            ORIENTATIONS.append(Surface.ROTATION_90, 0)
-            ORIENTATIONS.append(Surface.ROTATION_180, 270)
-            ORIENTATIONS.append(Surface.ROTATION_270, 180)
+        private val ORIENTATIONS = SparseIntArray().apply {
+            append(Surface.ROTATION_0, 90)
+            append(Surface.ROTATION_90, 0)
+            append(Surface.ROTATION_180, 270)
+            append(Surface.ROTATION_270, 180)
         }
     }
 
+    // Listener for the camera preview's TextureView.
     private val textureListener = object : TextureView.SurfaceTextureListener {
         @SuppressLint("MissingPermission")
         override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
@@ -99,43 +92,31 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
 
-        viewBinding.processedFrameView.visibility = View.GONE
-
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+        cameraManager = getSystemService(CAMERA_SERVICE) as CameraManager
 
         cameraHelper = CameraHelper(this, viewBinding, sharedPreferences)
-        tempRecorderHelper = TempRecorderHelper(this, cameraHelper, sharedPreferences, viewBinding)
+        videoProcessor = VideoProcessor(this)
 
-        // Listen for shutter_speed changes
-        sharedPreferences.registerOnSharedPreferenceChangeListener { _, key ->
-            if (key == "shutter_speed") {
-                cameraHelper.updateShutterSpeed()
-            }
-        }
+        viewBinding.processedFrameView.visibility = View.GONE
 
-        requestPermissionLauncher = registerForActivityResult(
-            ActivityResultContracts.RequestMultiplePermissions()
-        ) { permissions ->
-            val camGranted = permissions[Manifest.permission.CAMERA] ?: false
-            val micGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
-            if (camGranted && micGranted) {
-                if (viewBinding.viewFinder.isAvailable) {
-                    cameraHelper.openCamera()
+        requestPermissionLauncher =
+            registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+                val camGranted = permissions[Manifest.permission.CAMERA] ?: false
+                val micGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
+                if (camGranted && micGranted) {
+                    if (viewBinding.viewFinder.isAvailable) {
+                        cameraHelper.openCamera()
+                    } else {
+                        viewBinding.viewFinder.surfaceTextureListener = textureListener
+                    }
                 } else {
-                    viewBinding.viewFinder.surfaceTextureListener = textureListener
+                    Toast.makeText(this, "Camera & Audio permissions are required.", Toast.LENGTH_SHORT).show()
                 }
-            } else {
-                Toast.makeText(
-                    this,
-                    "Camera & Audio permissions are required.",
-                    Toast.LENGTH_SHORT
-                ).show()
             }
-        }
 
         if (allPermissionsGranted()) {
             if (viewBinding.viewFinder.isAvailable) {
@@ -147,9 +128,6 @@ class MainActivity : AppCompatActivity() {
             requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
         }
 
-        videoProcessor = VideoProcessor(this)
-
-        // Start/Stop
         viewBinding.startProcessingButton.setOnClickListener {
             if (isRecording) {
                 stopProcessingAndRecording()
@@ -157,59 +135,25 @@ class MainActivity : AppCompatActivity() {
                 startProcessingAndRecording()
             }
         }
-        // Switch cam
-        viewBinding.switchCameraButton.setOnClickListener {
-            switchCamera()
-        }
-        // Zoom
-        cameraHelper.setupZoomControls()
-
-        // 2D
-        viewBinding.twoDOnlyButton.setOnClickListener {
-            launch2DOnlyFeature()
-        }
-
-        // 3D => pass finalLineCoords as float array
-        viewBinding.threeDOnlyButton.setOnClickListener {
-            launch3DOnlyFeature()
-        }
-
-        // About/Settings
+        viewBinding.switchCameraButton.setOnClickListener { switchCamera() }
+        viewBinding.twoDOnlyButton.setOnClickListener { launch2DOnlyFeature() }
+        viewBinding.threeDOnlyButton.setOnClickListener { launch3DOnlyFeature() }
         viewBinding.aboutButton.setOnClickListener {
             startActivity(Intent(this, AboutXameraActivity::class.java))
         }
         viewBinding.settingsButton.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-
-        // Optionally load model
-        loadBestModelOnStartupThreaded("best.torchscript")
-
         viewBinding.unityButton.setOnClickListener {
             startActivity(Intent(this, com.unity3d.player.UnityPlayerGameActivity::class.java))
         }
-    }
 
-    // This function triggers 2D OpenGL feature
-    private fun launch2DOnlyFeature() {
-        try {
-            val intent = Intent(this, OpenGL2DActivity::class.java)
-            startActivity(intent)
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error launching 2D feature: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // This function triggers 3D OpenGL feature
-    private fun launch3DOnlyFeature() {
-        try {
-            val intent = Intent(this, OpenGL3DActivity::class.java)
-
-            val flatArray = finalLineCoords.flatten().toFloatArray()
-            intent.putExtra("3D_POINTS", flatArray)
-            startActivity(intent)
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error launching 3D feature: ${e.message}", Toast.LENGTH_SHORT).show()
+        loadBestModelOnStartupThreaded("best.torchscript")
+        cameraHelper.setupZoomControls()
+        sharedPreferences.registerOnSharedPreferenceChangeListener { _, key ->
+            if (key == "shutter_speed") {
+                cameraHelper.updateShutterSpeed()
+            }
         }
     }
 
@@ -219,13 +163,14 @@ class MainActivity : AppCompatActivity() {
         viewBinding.startProcessingButton.text = "Stop Tracking"
         viewBinding.startProcessingButton.backgroundTintList =
             ContextCompat.getColorStateList(this, R.color.red)
-
-        // --- Commenting out video processing / overlay ---
         viewBinding.processedFrameView.visibility = View.VISIBLE
+
         videoProcessor?.clearTrackingData()
 
-        // Commenting out - We keep only the raw video recording:
-        //tempRecorderHelper.startRecordingVideo()
+        // Get output file path in Movies folder.
+        val outputPath = getProcessedVideoOutputPath()
+        processedVideoRecorder = ProcessedVideoRecorder(640, 480, outputPath)
+        processedVideoRecorder?.start()
 
         Toast.makeText(this, "Processing + Recording started.", Toast.LENGTH_SHORT).show()
     }
@@ -236,40 +181,13 @@ class MainActivity : AppCompatActivity() {
         viewBinding.startProcessingButton.text = "Start Tracking"
         viewBinding.startProcessingButton.backgroundTintList =
             ContextCompat.getColorStateList(this, R.color.blue)
-
-        // --- Commenting out video processing / overlay ---
         viewBinding.processedFrameView.visibility = View.GONE
         viewBinding.processedFrameView.setImageBitmap(null)
 
-        // Commenting out - Stop video recording:
-        //tempRecorderHelper.stopRecordingVideo()
-
-        // --- Commenting out retrieval of final tracked coords ---
-        // finalLineCoords.clear()
-        // recieveXYZfromVideoProcessor()
+        processedVideoRecorder?.stop()
+        processedVideoRecorder = null
 
         Toast.makeText(this, "Processing + Recording stopped.", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun recieveXYZfromVideoProcessor(){
-        // TODO <Soham Naik> X, Y and Z coordinates must be transmitted from YOLO model.
-        val postFilterData = videoProcessor?.getPostFilterData()
-        if (postFilterData != null) {
-            for (f in postFilterData) {
-                // Suppose (f.x, f.y) in [0..640]x[0..480]
-                // Move origin to center => x - 320, y - 240 => then scale to [-1..1]
-                val centerX = f.x.toFloat() - (frameWidth / 2f)
-                val centerY = f.y.toFloat() - (frameHeight / 2f)
-
-                // Scale so that -320..320 => -1..1 in X, -240..240 => -1..1 in Y
-                val ndcX = centerX / (frameWidth / 2f)    // => [-1..1]
-                // Typically, we invert Y so top is +1 => so maybe:
-                val ndcY = -centerY / (frameHeight / 2f)  // => [-1..1]
-                val z    = 0f
-
-                finalLineCoords.add(listOf(ndcX, ndcY, z))
-            }
-        }
     }
 
     private fun processFrameWithVideoProcessor() {
@@ -277,15 +195,24 @@ class MainActivity : AppCompatActivity() {
         val bitmap = viewBinding.viewFinder.bitmap ?: return
         isProcessingFrame = true
 
-        // Use the new callback-based processFrame method
         videoProcessor?.processFrame(bitmap) { processedBitmap ->
             runOnUiThread {
                 if (processedBitmap != null && isProcessing) {
                     viewBinding.processedFrameView.setImageBitmap(processedBitmap)
+                    processedVideoRecorder?.recordFrame(processedBitmap)
                 }
                 isProcessingFrame = false
             }
         }
+    }
+
+    private fun getProcessedVideoOutputPath(): String {
+        @Suppress("DEPRECATION")
+        val moviesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+        if (!moviesDir.exists()) {
+            moviesDir.mkdirs()
+        }
+        return File(moviesDir, "Processed_${System.currentTimeMillis()}.mp4").absolutePath
     }
 
     private fun loadBestModelOnStartupThreaded(bestModel: String) {
@@ -294,30 +221,15 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (bestLoadedPath.isNotEmpty()) {
                     try {
-                        var bestModule = org.pytorch.Module.load(bestLoadedPath)
-
-                        // Pass the model to VideoProcessor
+                        val bestModule = Module.load(bestLoadedPath)
                         videoProcessor?.setModel(bestModule)
-
-                        Toast.makeText(
-                            this@MainActivity,
-                            "YOLO Model loaded: $bestModel",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        Toast.makeText(this, "YOLO Model loaded: $bestModel", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Error loading model: ${e.message}",
-                            Toast.LENGTH_LONG
-                        ).show()
+                        Toast.makeText(this, "Error loading model: ${e.message}", Toast.LENGTH_LONG).show()
                         Log.e("MainActivity", "Module.load() error", e)
                     }
                 } else {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Failed to copy or load $bestModel",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    Toast.makeText(this, "Failed to copy or load $bestModel", Toast.LENGTH_SHORT).show()
                 }
             }
         }.start()
@@ -346,11 +258,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == SETTINGS_REQUEST_CODE && resultCode == RESULT_OK) {
-            cameraHelper.updateShutterSpeed()
-            Toast.makeText(this, "Settings updated", Toast.LENGTH_SHORT).show()
+    private fun launch2DOnlyFeature() {
+        try {
+            startActivity(Intent(this, OpenGL2DActivity::class.java))
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error launching 2D feature: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun launch3DOnlyFeature() {
+        try {
+            val intent = Intent(this, OpenGL3DActivity::class.java)
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error launching 3D feature: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -360,7 +281,6 @@ class MainActivity : AppCompatActivity() {
         if (viewBinding.viewFinder.isAvailable) {
             if (allPermissionsGranted()) {
                 cameraHelper.openCamera()
-                cameraHelper.updateShutterSpeed()
             } else {
                 requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
             }
