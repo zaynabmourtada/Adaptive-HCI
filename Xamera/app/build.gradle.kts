@@ -50,12 +50,15 @@ android {
             pickFirsts.add("lib/x86_64/libc++_shared.so")
             pickFirsts.add("lib/armeabi-v7a/libc++_shared.so")
             pickFirsts.add("lib/arm64-v8a/libc++_shared.so")
+            pickFirsts.add("lib/arm64-v8a/libtensorflowlite_gpu_jni.so")
+            pickFirsts.add("lib/armeabi-v7a/libtensorflowlite_gpu_jni.so")
         }
     }
 
     aaptOptions {
         noCompress("pt")
         noCompress("torchscript")
+        noCompress("tflite")
     }
 }
 
@@ -83,8 +86,10 @@ dependencies {
     implementation("com.google.mlkit:vision-common:17.3.0")
 
     // TensorFlow Lite (For GPU Utilization)
-    implementation("org.tensorflow:tensorflow-lite:2.10.0") // Core TFLite runtime
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.10.0") // GPU acceleration
+    implementation("org.tensorflow:tensorflow-lite:2.13.0") // Core TFLite runtime
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.13.0") // GPU acceleration
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4") // Support library
+
 
     // CameraX
     val cameraxVersion = "1.2.2"

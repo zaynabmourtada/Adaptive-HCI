@@ -25,9 +25,13 @@ import com.developer27.xamera.databinding.ActivityMainBinding
 import com.developer27.xamera.openGL2D.OpenGL2DActivity
 import com.developer27.xamera.openGL3D.OpenGL3DActivity
 import com.developer27.xamera.videoprocessing.VideoProcessor
-import org.pytorch.Module
+import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.gpu.GpuDelegate
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.MappedByteBuffer
+import java.nio.channels.FileChannel
 
 /**
  * MainActivity for the Xamera app:
@@ -45,12 +49,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraHelper: CameraHelper
 
     private lateinit var tempRecorderHelper: TempRecorderHelper
-    private var bestModule: Module? = null
 
     // Real-time
-    private var isRecording = false //Temproary
+    private var isRecording = false
     private var isProcessing = false
+
     private var videoProcessor: VideoProcessor? = null
+    private var tfliteInterpreter: Interpreter? = null
+    private var gpuDelegate: GpuDelegate? = null
+
     private var isProcessingFrame = false
 
     // We'll store final line coords here after "Stop Processing".
@@ -99,6 +106,13 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        try {
+            System.loadLibrary("tensorflowlite_gpu_jni")
+            Log.d("TFLiteLoader", "✅ Successfully loaded GPU JNI library")
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e("TFLiteLoader", "❌ Failed to load GPU JNI library. Falling back to CPU.", e)
+        }
 
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
@@ -182,8 +196,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        // Optionally load model
-        loadBestModelOnStartupThreaded("best.torchscript")
+        loadTFLiteModelOnStartupThreaded("YOLOv3_float32.tflite")
 
         viewBinding.unityButton.setOnClickListener {
             startActivity(Intent(this, com.unity3d.player.UnityPlayerGameActivity::class.java))
@@ -227,7 +240,7 @@ class MainActivity : AppCompatActivity() {
         // Commenting out - We keep only the raw video recording:
         //tempRecorderHelper.startRecordingVideo()
 
-        Toast.makeText(this, "Processing + Recording started.", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "VideoProc started.", Toast.LENGTH_SHORT).show()
     }
 
     private fun stopProcessingAndRecording() {
@@ -248,7 +261,7 @@ class MainActivity : AppCompatActivity() {
         // finalLineCoords.clear()
         // recieveXYZfromVideoProcessor()
 
-        Toast.makeText(this, "Processing + Recording stopped.", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "VideoProc Stopped.", Toast.LENGTH_SHORT).show()
     }
 
     private fun recieveXYZfromVideoProcessor(){
@@ -288,20 +301,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun loadBestModelOnStartupThreaded(bestModel: String) {
+    private fun loadTFLiteModelOnStartupThreaded(modelName: String) {
         Thread {
-            val bestLoadedPath = copyAssetModelBlocking(bestModel)
+            val modelPath = copyTFLiteModelBlocking(modelName) // Copy model from assets
             runOnUiThread {
-                if (bestLoadedPath.isNotEmpty()) {
+                if (modelPath.isNotEmpty()) {
                     try {
-                        var bestModule = org.pytorch.Module.load(bestLoadedPath)
+                        // Correct instantiation of TFLite Interpreter
+                        tfliteInterpreter = Interpreter(loadModelFile(modelPath))
 
                         // Pass the model to VideoProcessor
-                        videoProcessor?.setModel(bestModule)
+                        videoProcessor?.setTFLiteModel(tfliteInterpreter!!)
 
                         Toast.makeText(
                             this@MainActivity,
-                            "YOLO Model loaded: $bestModel",
+                            "TFLite Model loaded: $modelName",
                             Toast.LENGTH_SHORT
                         ).show()
                     } catch (e: Exception) {
@@ -310,12 +324,12 @@ class MainActivity : AppCompatActivity() {
                             "Error loading model: ${e.message}",
                             Toast.LENGTH_LONG
                         ).show()
-                        Log.e("MainActivity", "Module.load() error", e)
+                        Log.e("MainActivity", "TFLite Interpreter.load() error", e)
                     }
                 } else {
                     Toast.makeText(
                         this@MainActivity,
-                        "Failed to copy or load $bestModel",
+                        "Failed to copy or load $modelName",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -323,25 +337,45 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun copyAssetModelBlocking(assetName: String): String {
+    /** Cleanup Function: Call This When Activity is Destroyed */
+    private fun releaseTFLiteResources() {
+        try {
+            tfliteInterpreter?.close()
+            gpuDelegate?.close() // ✅ Properly release the GPU delegate
+            Log.d("TFLiteLoader", "FLite Interpreter & GPU Delegate released!")
+        } catch (e: Exception) {
+            Log.e("TFLiteLoader", "Error releasing TFLite resources: ${e.message}", e)
+        }
+    }
+
+    private fun loadModelFile(modelPath: String): MappedByteBuffer {
+        val file = File(modelPath)
+        val inputStream = FileInputStream(file)
+        val fileChannel = inputStream.channel
+        return fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, file.length())
+    }
+
+    private fun copyTFLiteModelBlocking(assetName: String): String {
         return try {
             val outFile = File(filesDir, assetName)
+
+            // If file already exists and is valid, return its path
             if (outFile.exists() && outFile.length() > 0) {
+                Log.d("TFLiteLoader", "Model already exists: ${outFile.absolutePath}")
                 return outFile.absolutePath
             }
+
+            // Copy from assets to internal storage
             assets.open(assetName).use { input ->
                 FileOutputStream(outFile).use { output ->
-                    val buffer = ByteArray(4 * 1024)
-                    var bytesRead: Int
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        output.write(buffer, 0, bytesRead)
-                    }
-                    output.flush()
+                    input.copyTo(output)
                 }
             }
+
+            Log.d("TFLiteLoader", "Successfully copied model to: ${outFile.absolutePath}")
             outFile.absolutePath
         } catch (e: Exception) {
-            Log.e("MainActivity", "Error copying asset $assetName: ${e.message}")
+            Log.e("TFLiteLoader", "Error copying TFLite model $assetName: ${e.message}", e)
             ""
         }
     }

@@ -2,7 +2,7 @@ import os
 from ultralytics import YOLO
 
 # Define input directory containing .pt files
-input_dir = r"F:\GitHub\Adaptive-HCI\YOLOv8\Models\yolo_v2\weights"
+input_dir = r"F:\GitHub\Adaptive-HCI\YOLOv8\Models\4\weights"
 
 # Ensure the directory exists
 if not os.path.exists(input_dir):
