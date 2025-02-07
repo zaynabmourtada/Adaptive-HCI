@@ -34,14 +34,12 @@ data class BoundingBox(
     val confidence: Float,
     val classId: Int
 )
-
 data class FrameData(
     val x: Double,
     val y: Double,
     val area: Double,
     val frameCount: Int
 )
-
 object Settings {
     object Trace {
         var lineLimit = 50
@@ -50,17 +48,14 @@ object Settings {
         var splineLineColor = Scalar(0.0, 0.0, 255.0)  // Blue
         var lineThickness = 4
     }
-
     object BoundingBox {
         var boxColor = Scalar(0.0, 255.0, 0.0) // Green
         var boxThickness = 2
     }
-
     object Brightness {
         var factor = 2.0
         var threshold = 150.0
     }
-
     object Debug {
         var enableToasts = true
         var enableLogging = true
@@ -69,13 +64,10 @@ object Settings {
 
 class VideoProcessor(private val context: Context) {
     private var tfliteInterpreter: Interpreter? = null
-
     // For line-drawing (visualization)
     private val rawDataList = LinkedList<Point>()
     private val smoothDataList = LinkedList<Point>()
-
     private var frameCount = 0
-
     // Storing final data
     private val preFilter4Ddata = mutableListOf<FrameData>()
     private val postFilter4Ddata = mutableListOf<FrameData>()
@@ -84,7 +76,6 @@ class VideoProcessor(private val context: Context) {
         initOpenCV()
         KalmanHelper.initKalmanFilter()
     }
-
     private fun initOpenCV() {
         try {
             System.loadLibrary("opencv_java4")
@@ -93,14 +84,12 @@ class VideoProcessor(private val context: Context) {
             Log.e("VideoProcessor", "OpenCV failed to load: ${e.message}")
         }
     }
-
     fun setTFLiteModel(model: Interpreter) {
         synchronized(this) { // 🔹 Ensure Thread Safety
             tfliteInterpreter = model
         }
         logCat("✅ TFLite Model set in VideoProcessor successfully!")
     }
-
     fun clearTrackingData() {
         frameCount = 0
         preFilter4Ddata.clear()
@@ -141,11 +130,13 @@ class VideoProcessor(private val context: Context) {
             // Preprocess the frame (Enhance light blobs, noise reduction, etc.)
             preprocessedMat = Preprocessing.preprocessFrame(originalMat)
             // Perform contour detection and get the center of mass
-            val center = ContourDetection.processContourDetection(preprocessedMat)
+            val (center, processedMat) = ContourDetection.processContourDetection(preprocessedMat)
+
+            // Ensure Mat is in BGR format before drawing
+            Imgproc.cvtColor(processedMat, processedMat, Imgproc.COLOR_GRAY2BGR)
 
             if (center != null) {
                 rawDataList.add(center)
-
                 // Apply Kalman filter to smooth tracking
                 val (fx, fy) = KalmanHelper.applyKalmanFilter(center)
                 smoothDataList.add(Point(fx, fy))
@@ -154,14 +145,14 @@ class VideoProcessor(private val context: Context) {
                 if (rawDataList.size > Settings.Trace.lineLimit) rawDataList.pollFirst()
                 if (smoothDataList.size > Settings.Trace.lineLimit) smoothDataList.pollFirst()
 
-                // Draw raw trace and smoothed trace directly on preprocessedMat
-                //TraceRenderer.drawRawTrace(rawDataList, preprocessedMat)
-                TraceRenderer.drawSplineCurve(smoothDataList, preprocessedMat)
+                // Draw raw trace and smoothed trace directly on processedMat
+                TraceRenderer.drawRawTrace(smoothDataList, processedMat)
+                TraceRenderer.drawSplineCurve(smoothDataList, processedMat)
             }
 
-            // Convert preprocessedMat back to Bitmap (Returning the processed frame)
-            val outputBitmap = Bitmap.createBitmap(preprocessedMat.cols(), preprocessedMat.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(preprocessedMat, outputBitmap)
+            // Convert processedMat back to Bitmap (Returning the processed frame)
+            val outputBitmap = Bitmap.createBitmap(processedMat.cols(), processedMat.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(processedMat, outputBitmap)
             outputBitmap
         } catch (e: Exception) {
             logCat("Error processing frame: ${e.message}", e)
@@ -172,8 +163,6 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
-    // add padding or resizing functions, switch to live stream from camera, add trace lines etc
-    // building blocks available
     private suspend fun processFrameInternalYOLO(bitmap: Bitmap): Bitmap? {
         return withContext(Dispatchers.IO) {
             try {
@@ -255,7 +244,6 @@ object TraceRenderer {
     fun drawSplineCurve(data: List<Point>, image: Mat) {
         val splinePair = SplineHelper.applySplineInterpolation(data) ?: return
         val (splineX, splineY) = splinePair
-
         var prevPoint: Point? = null
         var t = 0.0
         val maxT = (data.size - 1).toDouble()
@@ -275,7 +263,6 @@ object TraceRenderer {
         }
     }
 }
-
 object SplineHelper {
     fun applySplineInterpolation(data: List<Point>): Pair<org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction, org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction>? {
         if (data.size < 2) return null
@@ -288,12 +275,10 @@ object SplineHelper {
         return splineX to splineY
     }
 }
-
 object KalmanHelper {
     private lateinit var kalmanFilter: KalmanFilter
     fun initKalmanFilter() {
         kalmanFilter = KalmanFilter(4, 2)
-
         kalmanFilter._transitionMatrix = Mat.eye(4, 4, CvType.CV_32F).apply {
             put(0, 2, 1.0)
             put(1, 3, 1.0)
@@ -308,29 +293,22 @@ object KalmanHelper {
             put(0, 0, point.x)
             put(1, 0, point.y)
         }
-
         kalmanFilter.predict()
         val corrected = kalmanFilter.correct(measurement)
-
         val fx = corrected[0, 0][0]
         val fy = corrected[1, 0][0]
-
         return fx to fy
     }
 }
-
 object Preprocessing {
     fun preprocessFrame(src: Mat): Mat {
         val grayMat = applyGrayscale(src)
         val enhancedMat = enhanceBrightness(grayMat)
         grayMat.release()
-
         val thresholdMat = conditionalThresholding(enhancedMat)
         enhancedMat.release()
-
         val blurredMat = applyGaussianBlur(thresholdMat)
         thresholdMat.release()
-
         val closedMat = applyMorphologicalClosing(blurredMat)
         blurredMat.release()
         return closedMat
@@ -365,19 +343,17 @@ object Preprocessing {
         return closedImage
     }
 }
-
 object ContourDetection {
-    fun processContourDetection(mat: Mat): Point? {
-        // Find contours in the preprocessed image
+    fun processContourDetection(mat: Mat): Pair<Point?, Mat> {
         val contours = findContours(mat)
-
-        // Find the largest contour (blob of light)
         val largestContour = findLargestContour(contours)
 
-        return largestContour?.let {
-            // Calculate the center of mass of the largest contour
+        val center = largestContour?.let {
+            drawContour(mat, it)
             calculateCenterOfMass(it)
         }
+
+        return Pair(center, mat)
     }
     private fun findContours(mat: Mat): List<MatOfPoint> {
         val contours = mutableListOf<MatOfPoint>()
@@ -399,13 +375,8 @@ object ContourDetection {
         return Point(centerX, centerY)
     }
 }
-
 object YOLOHelper {
-    fun parseTFLiteOutputTensor(
-        outputArray: Array<Array<FloatArray>>,
-        originalWidth: Int,
-        originalHeight: Int
-    ): Pair<List<BoundingBox>, List<Point>> {
+    fun parseTFLiteOutputTensor(outputArray: Array<Array<FloatArray>>, originalWidth: Int, originalHeight: Int): Pair<List<BoundingBox>, List<Point>> {
         val boundingBoxes = mutableListOf<BoundingBox>()
         val listOfPoints = mutableListOf<Point>()
 
