@@ -51,9 +51,9 @@ object Settings {
     object Trace {
         var lineLimit = 50
         var splineStep = 0.01
-        var originalLineColor = Scalar(255.0, 0.0, 0.0) // Red
+        //var originalLineColor = Scalar(255.0, 0.0, 0.0) // Red
         var splineLineColor = Scalar(0.0, 0.0, 255.0)  // Blue
-        var lineThickness = 4
+        var lineThickness = 10
     }
 
     object BoundingBox {
@@ -122,8 +122,8 @@ class VideoProcessor(private val context: Context) {
         CoroutineScope(Dispatchers.Default).launch {
             val result = try {
                 // Switch Between YOLO vs Contour Detection
-                processFrameInternalYOLO(bitmap)
-                //processFrameInternalCONTOUR(bitmap)
+                //processFrameInternalYOLO(bitmap)
+                processFrameInternalCONTOUR(bitmap)
             } catch (e: Exception) {
                 logCat("Error processing frame: ${e.message}", e)
                 null
@@ -155,7 +155,7 @@ class VideoProcessor(private val context: Context) {
             // If a contour is found, draw it and calculate its center of mass
             if (largestContour != null) {
                 // Draw the largest contour on the original image
-                ContourDetection.drawContour(originalMat, largestContour)
+                // ContourDetection.drawContour(originalMat, largestContour)
 
                 // Calculate the center of mass of the largest contour
                 val center = ContourDetection.calculateCenterOfMass(largestContour)
@@ -174,7 +174,7 @@ class VideoProcessor(private val context: Context) {
                 }
 
                 // Draw raw trace
-                TraceRenderer.drawRawTrace(rawDataList, originalMat)
+               // TraceRenderer.drawRawTrace(rawDataList, originalMat)
 
                 // Draw smoothed trace
                 TraceRenderer.drawSplineCurve(smoothDataList, originalMat)
@@ -390,7 +390,7 @@ object TraceRenderer {
                 image,
                 data[i - 1],
                 data[i],
-                Settings.Trace.originalLineColor,
+                Settings.Trace.splineLineColor,
                 Settings.Trace.lineThickness
             )
         }

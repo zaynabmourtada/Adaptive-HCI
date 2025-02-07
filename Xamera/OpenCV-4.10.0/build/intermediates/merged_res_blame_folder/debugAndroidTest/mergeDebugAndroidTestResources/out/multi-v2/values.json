@@ -4,7 +4,7 @@
             "outputFile": "org.opencv.test.OpenCV-4.10.0-mergeDebugAndroidTestResources-1:/values/values.xml",
             "map": [
                 {
-                    "source": "F:\\GitHub\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\packaged_res\\debug\\packageDebugResources\\values\\values.xml",
+                    "source": "C:\\Users\\zayna\\OneDrive\\Documents\\University\\Senior Design\\adaptive_code\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\packaged_res\\debug\\packageDebugResources\\values\\values.xml",
                     "from": {
                         "startLines": "2",
                         "startColumns": "4",
