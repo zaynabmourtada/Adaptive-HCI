@@ -27,8 +27,11 @@ import com.developer27.xamera.openGL3D.OpenGL3DActivity
 import com.developer27.xamera.videoprocessing.ProcessedVideoRecorder
 import com.developer27.xamera.videoprocessing.VideoProcessor
 import org.pytorch.Module
+import org.tensorflow.lite.Interpreter
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.MappedByteBuffer
+import java.nio.channels.FileChannel
 
 /**
  * MainActivity:
@@ -42,9 +45,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var cameraManager: CameraManager
     private lateinit var cameraHelper: CameraHelper
+    private var tfliteInterpreter: Interpreter? = null  // Global TFLite Interpreter
 
     // Our custom recorder.
-    private var processedVideoRecorder: ProcessedVideoRecorder? = null
+    //private var processedVideoRecorder: ProcessedVideoRecorder? = null
 
     // VideoProcessor applies processing (e.g. overlays).
     private var videoProcessor: VideoProcessor? = null
@@ -148,7 +152,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, com.unity3d.player.UnityPlayerGameActivity::class.java))
         }
 
-        loadBestModelOnStartupThreaded("best.torchscript")
+        loadBestModelOnStartupThreaded("YOLOv3_float32.tflite")
         cameraHelper.setupZoomControls()
         sharedPreferences.registerOnSharedPreferenceChangeListener { _, key ->
             if (key == "shutter_speed") {
@@ -169,8 +173,8 @@ class MainActivity : AppCompatActivity() {
 
         // Get output file path in Movies folder.
         val outputPath = getProcessedVideoOutputPath()
-        processedVideoRecorder = ProcessedVideoRecorder(640, 480, outputPath)
-        processedVideoRecorder?.start()
+        //processedVideoRecorder = ProcessedVideoRecorder(640, 480, outputPath)
+        //processedVideoRecorder?.start()
 
         Toast.makeText(this, "Processing + Recording started.", Toast.LENGTH_SHORT).show()
     }
@@ -184,8 +188,8 @@ class MainActivity : AppCompatActivity() {
         viewBinding.processedFrameView.visibility = View.GONE
         viewBinding.processedFrameView.setImageBitmap(null)
 
-        processedVideoRecorder?.stop()
-        processedVideoRecorder = null
+        //processedVideoRecorder?.stop()
+        //processedVideoRecorder = null
 
         Toast.makeText(this, "Processing + Recording stopped.", Toast.LENGTH_SHORT).show()
     }
@@ -199,7 +203,7 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (processedBitmap != null && isProcessing) {
                     viewBinding.processedFrameView.setImageBitmap(processedBitmap)
-                    processedVideoRecorder?.recordFrame(processedBitmap)
+                    //processedVideoRecorder?.recordFrame(processedBitmap)
                 }
                 isProcessingFrame = false
             }
@@ -221,12 +225,19 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (bestLoadedPath.isNotEmpty()) {
                     try {
-                        val bestModule = Module.load(bestLoadedPath)
-                        videoProcessor?.setModel(bestModule)
-                        Toast.makeText(this, "YOLO Model loaded: $bestModel", Toast.LENGTH_SHORT).show()
+                        // Create and configure the TFLite Interpreter
+                        val options = Interpreter.Options().apply {
+                            setNumThreads(Runtime.getRuntime().availableProcessors())  // Use multiple threads
+                        }
+                        tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
+
+                        // Pass TFLite Interpreter to videoProcessor
+                        videoProcessor?.setTFLiteModel(tfliteInterpreter!!)
+
+                        Toast.makeText(this, "TFLite Model loaded: $bestModel", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
-                        Toast.makeText(this, "Error loading model: ${e.message}", Toast.LENGTH_LONG).show()
-                        Log.e("MainActivity", "Module.load() error", e)
+                        Toast.makeText(this, "Error loading TFLite model: ${e.message}", Toast.LENGTH_LONG).show()
+                        Log.e("MainActivity", "TFLite Interpreter error", e)
                     }
                 } else {
                     Toast.makeText(this, "Failed to copy or load $bestModel", Toast.LENGTH_SHORT).show()
@@ -235,6 +246,15 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    // Helper function to load model as a MappedByteBuffer (efficient for TFLite)
+    private fun loadMappedFile(modelPath: String): MappedByteBuffer {
+        val file = File(modelPath)
+        val fileInputStream = file.inputStream()
+        val fileChannel = fileInputStream.channel
+        return fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, file.length())
+    }
+
+    // Copy TFLite model from assets to internal storage
     private fun copyAssetModelBlocking(assetName: String): String {
         return try {
             val outFile = File(filesDir, assetName)
