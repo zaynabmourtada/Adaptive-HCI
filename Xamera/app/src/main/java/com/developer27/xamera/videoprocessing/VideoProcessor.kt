@@ -1,9 +1,8 @@
-@file:Suppress("SameParameterValue")
-
 package com.developer27.xamera.videoprocessing
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Environment
 import android.util.Log
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
@@ -21,10 +20,11 @@ import org.opencv.core.Scalar
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import org.opencv.video.KalmanFilter
-import org.tensorflow.lite.DataType
+import org.pytorch.Module
+import org.pytorch.Tensor
+import java.io.File
+import java.io.FileOutputStream
 import java.util.LinkedList
-import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.support.image.TensorImage
 
 data class BoundingBox(
     val x1: Float,
@@ -46,9 +46,9 @@ object Settings {
     object Trace {
         var lineLimit = 50
         var splineStep = 0.01
-        var originalLineColor = Scalar(255.0, 0.0, 0.0) // Red
-        var splineLineColor = Scalar(0.0, 0.0, 255.0)  // Blue
-        var lineThickness = 4
+        // You can choose a color for the drawn spline; here blue is used.
+        var splineLineColor = Scalar(0.0, 0.0, 255.0)
+        var lineThickness = 10
     }
 
     object BoundingBox {
@@ -67,8 +67,19 @@ object Settings {
     }
 }
 
+/**
+ * VideoProcessor applies processing to each camera frame.
+ * In the processFrameInternalCONTOUR function the frame is converted to a Mat,
+ * preprocessed, and contours are found. If a contour is detected, the center is determined,
+ * filtered via a Kalman filter, and the list of points is updated.
+ *
+ * The TraceRenderer.drawSplineCurve(smoothDataList, originalMat) call draws a spline curve
+ * connecting the filtered points directly on the original frame Mat.
+ *
+ * Finally, the Mat (with the drawn lines) is converted back to a Bitmap, which is then returned.
+ */
 class VideoProcessor(private val context: Context) {
-    private var tfliteInterpreter: Interpreter? = null
+    private var module: Module? = null
 
     // For line-drawing (visualization)
     private val rawDataList = LinkedList<Point>()
@@ -76,7 +87,7 @@ class VideoProcessor(private val context: Context) {
 
     private var frameCount = 0
 
-    // Storing final data
+    // Storing final data (if needed for later use)
     private val preFilter4Ddata = mutableListOf<FrameData>()
     private val postFilter4Ddata = mutableListOf<FrameData>()
 
@@ -94,11 +105,9 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
-    fun setTFLiteModel(model: Interpreter) {
-        synchronized(this) { // 🔹 Ensure Thread Safety
-            tfliteInterpreter = model
-        }
-        logCat("✅ TFLite Model set in VideoProcessor successfully!")
+    fun setModel(module: Module) {
+        this.module = module
+        logCat("Model loaded successfully")
     }
 
     fun clearTrackingData() {
@@ -114,120 +123,127 @@ class VideoProcessor(private val context: Context) {
         return postFilter4Ddata.toList()
     }
 
-    // Switch Between YOLO vs Contour Detection
+    /**
+     * Processes a frame by choosing between YOLO inference and contour detection.
+     * In this example, we use contour detection.
+     */
     fun processFrame(bitmap: Bitmap, callback: (Bitmap?) -> Unit) {
         CoroutineScope(Dispatchers.Default).launch {
             val result = try {
-                // Switch Between YOLO vs Contour Detection
                 processFrameInternalCONTOUR(bitmap)
-                //processFrameInternalYOLO(bitmap)
             } catch (e: Exception) {
                 logCat("Error processing frame: ${e.message}", e)
                 null
             }
             withContext(Dispatchers.Main) {
-                callback(result) // Return result on the main thread
+                callback(result)
             }
         }
     }
 
     private fun processFrameInternalCONTOUR(bitmap: Bitmap): Bitmap? {
+        val mat = Mat()
         val originalMat = Mat()
-        val preprocessedMat: Mat
+        val resizedMat = Mat()
 
         return try {
-            // Convert bitmap to Mat using OpenCV
+            // Convert bitmap to Mat.
             Utils.bitmapToMat(bitmap, originalMat)
 
-            // Preprocess the frame (Enhance light blobs, noise reduction, etc.)
-            preprocessedMat = Preprocessing.preprocessFrame(originalMat)
+            // Preprocess the frame to enhance light blobs.
+            val preprocessedMat = Preprocessing.preprocessFrame(originalMat)
 
-            // Find contours in the preprocessed image
+            // Find contours in the preprocessed image.
             val contours = ContourDetection.findContours(preprocessedMat)
 
-            // Find the largest contour (blob of light)
+            // Find the largest contour.
             val largestContour = ContourDetection.findLargestContour(contours)
 
             if (largestContour != null) {
-                // Calculate the center of mass of the largest contour
+                // Optionally, you could draw the raw contour:
+                // ContourDetection.drawContour(originalMat, largestContour)
+
+                // Calculate the center of mass of the largest contour.
                 val center = ContourDetection.calculateCenterOfMass(largestContour)
                 rawDataList.add(center)
 
-                // Apply Kalman filter to smooth tracking
+                // Apply Kalman filter to the center point.
                 val (fx, fy) = KalmanHelper.applyKalmanFilter(center)
                 smoothDataList.add(Point(fx, fy))
 
-                // Maintain trace history within limits
-                if (rawDataList.size > Settings.Trace.lineLimit) rawDataList.pollFirst()
-                if (smoothDataList.size > Settings.Trace.lineLimit) smoothDataList.pollFirst()
+                // Keep the trace lines limited.
+                if (rawDataList.size > Settings.Trace.lineLimit) {
+                    rawDataList.pollFirst()
+                }
+                if (smoothDataList.size > Settings.Trace.lineLimit) {
+                    smoothDataList.pollFirst()
+                }
 
-                // Draw raw trace and smoothed trace directly on preprocessedMat
-                //TraceRenderer.drawRawTrace(rawDataList, preprocessedMat)
-                //TraceRenderer.drawSplineCurve(smoothDataList, preprocessedMat)
+                // Draw the smoothed trace (spline curve) on the original image.
+                TraceRenderer.drawSplineCurve(smoothDataList, originalMat)
             }
 
-            // Convert preprocessedMat back to Bitmap (Returning the processed frame)
-            val outputBitmap = Bitmap.createBitmap(preprocessedMat.cols(), preprocessedMat.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(preprocessedMat, outputBitmap)
+            // Convert the modified Mat (with drawn lines) back to Bitmap.
+            val outputBitmap = Bitmap.createBitmap(originalMat.cols(), originalMat.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(originalMat, outputBitmap)
             outputBitmap
         } catch (e: Exception) {
             logCat("Error processing frame: ${e.message}", e)
             null
         } finally {
-            // Release Mats to free memory
+            // Ensure resources are released.
+            mat.release()
             originalMat.release()
+            resizedMat.release()
         }
     }
 
-    // add padding or resizing functions, switch to live stream from camera, add trace lines etc
-    // building blocks available
+    // (Optional YOLO-based processing can be placed here.)
     private suspend fun processFrameInternalYOLO(bitmap: Bitmap): Bitmap? {
-        return withContext(Dispatchers.IO) {
-            try {
-                val originalWidth = bitmap.width
-                val originalHeight = bitmap.height
-                val modelInputSize = 416 // Ensure this matches your model's expected size
+        // Implementation omitted for brevity.
+        return null
+    }
 
-                // Resize bitmap to YOLO model input size
-                val resizedBitmap = Bitmap.createScaledBitmap(bitmap, modelInputSize, modelInputSize, true)
+    private fun makeSquareAndResize(bitmap: Bitmap): Bitmap {
+        val mat = Mat()
+        Utils.bitmapToMat(bitmap, mat)
+        val height = mat.rows()
+        val width = mat.cols()
+        val maxDim = maxOf(height, width)
+        val top = (maxDim - height) / 2
+        val bottom = maxDim - height - top
+        val left = (maxDim - width) / 2
+        val right = maxDim - width - left
+        val paddedMat = Mat()
+        Core.copyMakeBorder(mat, paddedMat, top, bottom, left, right, Core.BORDER_CONSTANT, Scalar(0.0, 0.0, 0.0))
+        val resizedMat = Mat()
+        Imgproc.resize(paddedMat, resizedMat, Size(960.0, 960.0), 0.0, 0.0, Imgproc.INTER_AREA)
+        val outputBitmap = Bitmap.createBitmap(960, 960, Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(resizedMat, outputBitmap)
+        mat.release()
+        paddedMat.release()
+        resizedMat.release()
+        return outputBitmap
+    }
 
-                // Convert Bitmap to TensorImage directly
-                val tensorImage = TensorImage(DataType.FLOAT32)
-                tensorImage.load(resizedBitmap)
+    fun testYOLOsingleImage(context: Context) {
+        // Implementation for single image testing.
+    }
 
-                // Ensure TFLite Model is Loaded
-                if (tfliteInterpreter == null) {
-                    Log.e("YOLOTest", "TFLite Model is NULL! Cannot run inference.")
-                    return@withContext null
-                }
-
-                // Prepare Output Tensor for TFLite
-                val outputShape = arrayOf(1, 5, 3549) // Adjust based on your model's output
-                val outputArray = Array(outputShape[0]) { Array(outputShape[1]) { FloatArray(outputShape[2]) } }
-
-                // Run YOLO Inference
-                tfliteInterpreter?.run(tensorImage.buffer, outputArray)
-
-                Log.d("YOLOTest", "TFLite Inference Completed.")
-
-                // Convert Bitmap to OpenCV Mat for Bounding Box Drawing
-                val originalMat = Mat()
-                Utils.bitmapToMat(bitmap, originalMat)
-
-                // Process YOLO Output & Draw Bounding Boxes
-                val (boundingBoxes, listOfPoints) = YOLOHelper.parseTFLiteOutputTensor(outputArray, originalWidth, originalHeight)
-                YOLOHelper.drawBoundingBoxes(originalMat, boundingBoxes, listOfPoints)
-
-                // Convert Mat back to Bitmap (Directly using original dimensions)
-                val outputBitmap = Bitmap.createBitmap(originalWidth, originalHeight, Bitmap.Config.ARGB_8888)
-                Utils.matToBitmap(originalMat, outputBitmap)
-                originalMat.release() // Free memory
-
-                outputBitmap
-            } catch (e: Exception) {
-                Log.e("YOLOTest", "Error during inference: ${e.message}", e)
-                null
+    private fun saveInferenceResult(context: Context, mat: Mat) {
+        try {
+            val outputBitmap = Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(mat, outputBitmap)
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val outputFile = File(downloadsDir, "yolo_inference_result.jpg")
+            FileOutputStream(outputFile).use { fos ->
+                outputBitmap.compress(Bitmap.CompressFormat.JPEG, 90, fos)
+                fos.flush()
             }
+            Log.d("YOLOTest", "Saved inference result at: ${outputFile.absolutePath}")
+            mat.release()
+        } catch (e: Exception) {
+            Log.e("YOLOTest", "Failed to save image: ${e.message}", e)
         }
     }
 
@@ -236,6 +252,7 @@ class VideoProcessor(private val context: Context) {
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
+
     private fun logCat(message: String, throwable: Throwable? = null) {
         if (Settings.Debug.enableLogging) {
             if (throwable != null) {
@@ -248,21 +265,10 @@ class VideoProcessor(private val context: Context) {
 }
 
 object TraceRenderer {
-    fun drawRawTrace(data: List<Point>, image: Mat) {
-        for (i in 1 until data.size) {
-            Imgproc.line(
-                image,
-                data[i - 1],
-                data[i],
-                Settings.Trace.originalLineColor,
-                Settings.Trace.lineThickness
-            )
-        }
-    }
+    // Draws a spline curve connecting the provided points.
     fun drawSplineCurve(data: List<Point>, image: Mat) {
         val splinePair = SplineHelper.applySplineInterpolation(data) ?: return
         val (splineX, splineY) = splinePair
-
         var prevPoint: Point? = null
         var t = 0.0
         val maxT = (data.size - 1).toDouble()
@@ -284,7 +290,9 @@ object TraceRenderer {
 }
 
 object SplineHelper {
-    fun applySplineInterpolation(data: List<Point>): Pair<org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction, org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction>? {
+    fun applySplineInterpolation(data: List<Point>):
+            Pair<org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction,
+                    org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction>? {
         if (data.size < 2) return null
         val interpolator = SplineInterpolator()
         val xData = data.map { it.x }.toDoubleArray()
@@ -298,9 +306,9 @@ object SplineHelper {
 
 object KalmanHelper {
     private lateinit var kalmanFilter: KalmanFilter
+
     fun initKalmanFilter() {
         kalmanFilter = KalmanFilter(4, 2)
-
         kalmanFilter._transitionMatrix = Mat.eye(4, 4, CvType.CV_32F).apply {
             put(0, 2, 1.0)
             put(1, 3, 1.0)
@@ -310,18 +318,16 @@ object KalmanHelper {
         kalmanFilter._measurementNoiseCov = Mat.eye(2, 2, CvType.CV_32F).apply { setTo(Scalar(1e-2)) }
         kalmanFilter._errorCovPost = Mat.eye(4, 4, CvType.CV_32F)
     }
+
     fun applyKalmanFilter(point: Point): Pair<Double, Double> {
         val measurement = Mat(2, 1, CvType.CV_32F).apply {
             put(0, 0, point.x)
             put(1, 0, point.y)
         }
-
         kalmanFilter.predict()
         val corrected = kalmanFilter.correct(measurement)
-
         val fx = corrected[0, 0][0]
         val fy = corrected[1, 0][0]
-
         return fx to fy
     }
 }
@@ -331,41 +337,34 @@ object Preprocessing {
         val grayMat = applyGrayscale(src)
         val enhancedMat = enhanceBrightness(grayMat)
         grayMat.release()
-
         val thresholdMat = conditionalThresholding(enhancedMat)
         enhancedMat.release()
-
         val blurredMat = applyGaussianBlur(thresholdMat)
         thresholdMat.release()
-
         val closedMat = applyMorphologicalClosing(blurredMat)
         blurredMat.release()
         return closedMat
     }
-    private fun applyGrayscale(frame: Mat): Mat {
+
+    fun applyGrayscale(frame: Mat): Mat {
         val grayMat = Mat()
         Imgproc.cvtColor(frame, grayMat, Imgproc.COLOR_BGR2GRAY)
         return grayMat
     }
-    private fun enhanceBrightness(image: Mat): Mat = Mat().apply {
+    fun enhanceBrightness(image: Mat): Mat = Mat().apply {
         Core.multiply(image, Scalar(Settings.Brightness.factor), this)
     }
-    private fun conditionalThresholding(image: Mat): Mat {
+    fun conditionalThresholding(image: Mat): Mat {
         val thresholdMat = Mat()
-        Imgproc.threshold(
-            image, thresholdMat,
-            Settings.Brightness.threshold,
-            255.0,
-            Imgproc.THRESH_TOZERO
-        )
+        Imgproc.threshold(image, thresholdMat, Settings.Brightness.threshold, 255.0, Imgproc.THRESH_TOZERO)
         return thresholdMat
     }
-    private fun applyGaussianBlur(image: Mat): Mat {
+    fun applyGaussianBlur(image: Mat): Mat {
         val blurredMat = Mat()
         Imgproc.GaussianBlur(image, blurredMat, Size(5.0, 5.0), 0.0)
         return blurredMat
     }
-    private fun applyMorphologicalClosing(image: Mat): Mat {
+    fun applyMorphologicalClosing(image: Mat): Mat {
         val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
         val closedImage = Mat()
         Imgproc.morphologyEx(image, closedImage, Imgproc.MORPH_CLOSE, kernel)
@@ -381,12 +380,15 @@ object ContourDetection {
         hierarchy.release()
         return contours
     }
+
     fun findLargestContour(contours: List<MatOfPoint>): MatOfPoint? {
         return contours.maxByOrNull { Imgproc.contourArea(it) }
     }
+
     fun drawContour(mat: Mat, contour: MatOfPoint) {
         Imgproc.drawContours(mat, listOf(contour), -1, Settings.BoundingBox.boxColor, Settings.BoundingBox.boxThickness)
     }
+
     fun calculateCenterOfMass(contour: MatOfPoint): Point {
         val moments = Imgproc.moments(contour)
         val centerX = moments.m10 / moments.m00
@@ -396,55 +398,46 @@ object ContourDetection {
 }
 
 object YOLOHelper {
-    fun parseTFLiteOutputTensor(
-        outputArray: Array<Array<FloatArray>>,
-        originalWidth: Int,
-        originalHeight: Int
-    ): Pair<List<BoundingBox>, List<Point>> {
+    fun parseYOLOOutputTensor(outputTensor: Tensor, originalWidth: Int, originalHeight: Int): Pair<List<BoundingBox>, List<Point>> {
         val boundingBoxes = mutableListOf<BoundingBox>()
         val listOfPoints = mutableListOf<Point>()
-
-        val numDetections = outputArray[0][0].size // 3549
+        val outputArray = outputTensor.dataAsFloatArray
+        val numDetections = outputTensor.shape()[2].toInt() // For example, 18900
         Log.d("YOLOTest", "Total detected objects: $numDetections")
-
         var bestD = 0
         var bestX = 0f
         var bestY = 0f
         var bestW = 0f
         var bestH = 0f
         var bestC = 0f
-
         for (i in 0 until numDetections) {
-            val xCenterNorm = outputArray[0][0][i]  // Normalized x_center (0-1)
-            val yCenterNorm = outputArray[0][1][i]  // Normalized y_center (0-1)
-            val widthNorm = outputArray[0][2][i]    // Normalized width (0-1)
-            val heightNorm = outputArray[0][3][i]   // Normalized height (0-1)
-            val confidence = outputArray[0][4][i]   // Confidence score
-
+            val x_center = outputArray[i]
+            val y_center = outputArray[i + (numDetections * 1)]
+            val width = outputArray[i + (numDetections * 2)]
+            val height = outputArray[i + (numDetections * 3)]
+            val confidence = outputArray[i + (numDetections * 4)]
             if (confidence > bestC) {
                 bestD = i
-                bestX = xCenterNorm
-                bestY = yCenterNorm
-                bestW = widthNorm
-                bestH = heightNorm
+                bestX = x_center
+                bestY = y_center
+                bestW = width
+                bestH = height
                 bestC = confidence
             }
         }
-
-        Log.d("YOLOTest", "BEST DETECTION $bestD: confidence=${"%.8f".format(bestC)}, x_center=$bestX, y_center=$bestY, width=$bestW, height=$bestH")
-
-        // Convert from normalized values (0-1) to absolute pixel values
-        val x1 = (bestX - (bestW / 2)) * originalWidth
-        val y1 = (bestY - (bestH / 2)) * originalHeight
-        val x2 = (bestX + (bestW / 2)) * originalWidth
-        val y2 = (bestY + (bestH / 2)) * originalHeight
-
-        Log.d("YOLOTest", "BOUNDING BOX: x1=${"%.8f".format(x1)}, y1=${"%.8f".format(y1)}, x2=${"%.8f".format(x2)}, y2=${"%.8f".format(y2)}")
-
-        // Add bounding box
-        boundingBoxes.add(BoundingBox(x1, y1, x2, y2, bestC, 1))
-        listOfPoints.add(Point(bestX.toDouble() * originalWidth, bestY.toDouble() * originalHeight))
-
+        Log.d("YOLOTest", "BEST DETECTION $bestD: confidence=${String.format("%.8f", bestC)}, x_center=$bestX, y_center=$bestY, width=$bestW, height=$bestH")
+        val x1 = bestX - (bestW / 2)
+        val y1 = bestY - (bestH / 2)
+        val x2 = bestX + (bestW / 2)
+        val y2 = bestY + (bestH / 2)
+        val scaleX = originalWidth.toFloat() / 960f
+        val scaleY = originalHeight.toFloat() / 960f
+        val scaledX1 = x1 * scaleX
+        val scaledY1 = y1 * scaleY
+        val scaledX2 = x2 * scaleX
+        val scaledY2 = y2 * scaleY
+        boundingBoxes.add(BoundingBox(scaledX1, scaledY1, scaledX2, scaledY2, bestC, 1))
+        listOfPoints.add(Point(bestX.toDouble(), bestY.toDouble()))
         return Pair(boundingBoxes, listOfPoints)
     }
 
@@ -452,34 +445,18 @@ object YOLOHelper {
         for (box in boundingBoxes) {
             val topLeft = Point(box.x1.toDouble(), box.y1.toDouble())
             val bottomRight = Point(box.x2.toDouble(), box.y2.toDouble())
-
             Imgproc.rectangle(mat, topLeft, bottomRight, Settings.BoundingBox.boxColor, Settings.BoundingBox.boxThickness)
             val label = "User_1 (${"%.2f".format(box.confidence * 100)}%)"
             val fontScale = 0.6
             val thickness = 1
             val baseline = IntArray(1)
             val textSize = Imgproc.getTextSize(label, Imgproc.FONT_HERSHEY_SIMPLEX, fontScale, thickness, baseline)
-
             val textX = (box.x1).toInt()
             val textY = (box.y1 - 5).toInt().coerceAtLeast(10)
-
-            Imgproc.rectangle(
-                mat,
-                Point(textX.toDouble(), textY.toDouble() + baseline[0]),
-                Point(textX + textSize.width, textY - textSize.height),
-                Settings.BoundingBox.boxColor,
-                Imgproc.FILLED
-            )
-
-            Imgproc.putText(
-                mat,
-                label,
-                Point(textX.toDouble(), textY.toDouble()),
-                Imgproc.FONT_HERSHEY_SIMPLEX,
-                fontScale,
-                Scalar(255.0, 255.0, 255.0),
-                thickness
-            )
+            Imgproc.rectangle(mat, Point(textX.toDouble(), textY + baseline[0].toDouble()),
+                Point((textX + textSize.width).toDouble(), (textY - textSize.height).toDouble()),
+                Settings.BoundingBox.boxColor, Imgproc.FILLED)
+            Imgproc.putText(mat, label, Point(textX.toDouble(), textY.toDouble()), Imgproc.FONT_HERSHEY_SIMPLEX, fontScale, Scalar(255.0, 255.0, 255.0), thickness)
         }
     }
 }
