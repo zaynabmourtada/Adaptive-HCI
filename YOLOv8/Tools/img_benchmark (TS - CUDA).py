@@ -87,7 +87,7 @@ def main():
     # Paths
     model_path = r"F:\GitHub\Adaptive-HCI\YOLOv8\Models\yolo_v2\weights\best.torchscript"
     test_image_path = "./4_validation_images/input/frame_0128.jpg"
-    output_image_path = "./4_validation_images/output/frame_0128.jpg"
+    output_image_path = "./4_validation_images/output/frame_0128_TS.jpg"
 
     # Load model
     model = load_model(model_path, device)

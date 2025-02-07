@@ -15,7 +15,7 @@ cv2.setNumThreads(6)  # Set the number of threads based on your CPU cores
 cv2.setUseOptimized(True)  # Enable optimization
 
 # Paths to model, input images, and output folder
-model_path = "F:\\GitHub\\Adaptive-HCI\\YOLOv8\\Models\\yolo_v1\\weights\\best.pt"  # Path to your YOLO model
+model_path = "F:\\GitHub\\Adaptive-HCI\\YOLOv8\\Models\\3\\weights\\best.pt"  # Path to your YOLO model
 input_dir = "./4_validation_images/input"  # Directory containing input images
 output_dir = "./4_validation_images/output"  # Directory to save processed images
 
@@ -25,29 +25,50 @@ os.makedirs(output_dir, exist_ok=True)
 # Load YOLO model with the specified device
 model = YOLO(model_path).to(device)
 
-# Function to process a single batch of images
+# Automatically detect expected input size
+expected_size = model.overrides.get("imgsz", 640)  # Get imgsz if available, else default to 640
+print(f"Model expected image size: {expected_size}x{expected_size}")
+
+# Function to process a batch of images
 def process_batch(images, image_paths, output_dir, progress_bar):
     try:
-        # Run batch inference on the images with CUDA
-        results = model.predict(images, imgsz=960, device=device, verbose=False)  # Use CUDA for inference
+        # Store original image sizes (width, height)
+        original_sizes = [(img.shape[1], img.shape[0]) for img in images]
+
+        # Resize images to model's expected size
+        resized_images = [cv2.resize(img, (expected_size, expected_size)) for img in images]
+
+        # Run batch inference
+        results = model.predict(resized_images, imgsz=expected_size, device=device, verbose=False)
 
         for i, (result, image_path) in enumerate(zip(results, image_paths)):
             detections = result.boxes.data.cpu().numpy() if result.boxes.data is not None else []
-            processed_image = images[i].copy()
+            original_image = images[i].copy()  # Keep original image for drawing
+            
+            # Get the original image size
+            orig_w, orig_h = original_sizes[i]
+            
+            # Calculate scaling factors to map bounding boxes back to the original image size
+            scale_x = orig_w / expected_size
+            scale_y = orig_h / expected_size
 
-            # Draw detections on the image
+            # Draw detections on the original image
             for det in detections:
                 xmin, ymin, xmax, ymax, confidence, cls = det
                 label = f"Class {int(cls)}"
-                print(f"  - {os.path.basename(image_path)}: Label={label}, Confidence={confidence:.2f}, "
-                      f"Bounding Box=({int(xmin)}, {int(ymin)}) | ({int(xmax)}, {int(ymax)})")
-                cv2.rectangle(processed_image, (int(xmin), int(ymin)), (int(xmax), int(ymax)), (0, 255, 0), 2)
-                cv2.putText(processed_image, f"{label} {confidence:.2f}", (int(xmin), int(ymin) - 10),
+
+                # Scale bounding boxes back to original image size
+                xmin, xmax = int(xmin * scale_x), int(xmax * scale_x)
+                ymin, ymax = int(ymin * scale_y), int(ymax * scale_y)
+
+                # Draw bounding boxes on the original-sized image
+                cv2.rectangle(original_image, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
+                cv2.putText(original_image, f"{label} {confidence:.2f}", (xmin, ymin - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-            # Save the processed image
-            output_path = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(image_path))[0]}_proc.jpg")
-            cv2.imwrite(output_path, processed_image)
+            # Save the processed image (original size with bounding boxes)
+            output_path = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(image_path))[0]}_PT.jpg")
+            cv2.imwrite(output_path, original_image)
             progress_bar.update(1)  # Update the progress bar
             print(f"Saved processed image to {output_path}")
 
