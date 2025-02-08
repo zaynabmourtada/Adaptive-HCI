@@ -87,9 +87,9 @@ dependencies {
     implementation("com.google.mlkit:vision-common:17.3.0")
 
     // TensorFlow Lite (For GPU Utilization)
-    implementation("org.tensorflow:tensorflow-lite:2.13.0") // Core TFLite runtime
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.13.0") // GPU acceleration
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4") // Support library
+    implementation("com.google.ai.edge.litert:litert:1.1.0") // Core TFLite runtime
+    implementation("com.google.ai.edge.litert:litert-gpu:1.1.0") // GPU acceleration
+    implementation("com.google.ai.edge.litert:litert-support:1.1.0") // Support library
 
 
     // CameraX

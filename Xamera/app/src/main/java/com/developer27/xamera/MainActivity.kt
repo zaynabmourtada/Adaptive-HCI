@@ -26,7 +26,7 @@ import com.developer27.xamera.openGL2D.OpenGL2DActivity
 import com.developer27.xamera.openGL3D.OpenGL3DActivity
 import com.developer27.xamera.videoprocessing.ProcessedVideoRecorder
 import com.developer27.xamera.videoprocessing.VideoProcessor
-import org.pytorch.Module
+import org.tensorflow.lite.gpu.GpuDelegate
 import org.tensorflow.lite.Interpreter
 import java.io.File
 import java.io.FileOutputStream
@@ -224,14 +224,17 @@ class MainActivity : AppCompatActivity() {
                 if (bestLoadedPath.isNotEmpty()) {
                     try {
                         // Create and configure the TFLite Interpreter
+                        val gpuDelegate = GpuDelegate()
+                        // Option 2: If the new API requires a Builder (uncomment the following lines):
+                        // val gpuDelegateOptions = GpuDelegate.Options.Builder().build()
+                        // val gpuDelegate = GpuDelegate(gpuDelegateOptions)
                         val options = Interpreter.Options().apply {
-                            setNumThreads(Runtime.getRuntime().availableProcessors())  // Use multiple threads
+                            addDelegate(gpuDelegate)
+                            setNumThreads(Runtime.getRuntime().availableProcessors())
                         }
-                        tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
-
                         // Pass TFLite Interpreter to videoProcessor
+                        tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
                         videoProcessor?.setTFLiteModel(tfliteInterpreter!!)
-
                         Toast.makeText(this, "TFLite Model loaded: $bestModel", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
                         Toast.makeText(this, "Error loading TFLite model: ${e.message}", Toast.LENGTH_LONG).show()
@@ -244,7 +247,7 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    // Helper function to load model as a MappedByteBuffer (efficient for TFLite)
+    // Helper function to load the model as a MappedByteBuffer (unchanged)
     private fun loadMappedFile(modelPath: String): MappedByteBuffer {
         val file = File(modelPath)
         val fileInputStream = file.inputStream()
@@ -252,7 +255,7 @@ class MainActivity : AppCompatActivity() {
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, file.length())
     }
 
-    // Copy TFLite model from assets to internal storage
+    // Copy TFLite model from assets to internal storage (unchanged)
     private fun copyAssetModelBlocking(assetName: String): String {
         return try {
             val outFile = File(filesDir, assetName)
