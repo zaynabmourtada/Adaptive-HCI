@@ -48,7 +48,7 @@ class MainActivity : AppCompatActivity() {
     private var tfliteInterpreter: Interpreter? = null  // Global TFLite Interpreter
 
     // Our custom recorder.
-    //private var processedVideoRecorder: ProcessedVideoRecorder? = null
+    private var processedVideoRecorder: ProcessedVideoRecorder? = null
 
     // VideoProcessor applies processing (e.g. overlays).
     private var videoProcessor: VideoProcessor? = null
@@ -171,10 +171,10 @@ class MainActivity : AppCompatActivity() {
 
         videoProcessor?.clearTrackingData()
 
-        // Get output file path in Movies folder.
+        // Determine an output file path in the Movies folder.
         val outputPath = getProcessedVideoOutputPath()
-        //processedVideoRecorder = ProcessedVideoRecorder(640, 480, outputPath)
-        //processedVideoRecorder?.start()
+        processedVideoRecorder = ProcessedVideoRecorder(640, 480, outputPath)
+        processedVideoRecorder?.start()
 
         Toast.makeText(this, "Processing + Recording started.", Toast.LENGTH_SHORT).show()
     }
@@ -187,10 +187,8 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.getColorStateList(this, R.color.blue)
         viewBinding.processedFrameView.visibility = View.GONE
         viewBinding.processedFrameView.setImageBitmap(null)
-
-        //processedVideoRecorder?.stop()
-        //processedVideoRecorder = null
-
+        processedVideoRecorder?.stop()
+        processedVideoRecorder = null
         Toast.makeText(this, "Processing + Recording stopped.", Toast.LENGTH_SHORT).show()
     }
 
@@ -203,7 +201,7 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (processedBitmap != null && isProcessing) {
                     viewBinding.processedFrameView.setImageBitmap(processedBitmap)
-                    //processedVideoRecorder?.recordFrame(processedBitmap)
+                    processedVideoRecorder?.recordFrame(processedBitmap)
                 }
                 isProcessingFrame = false
             }
