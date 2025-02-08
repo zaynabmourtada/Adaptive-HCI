@@ -60,7 +60,7 @@
             android:launchMode="singleTask"
             android:screenOrientation="fullSensor"
             android:resizeableActivity="false"
-            tools:node="merge">
+            tools:node="replace">
             <!-- No launcher intent-filter -->
         </activity>
 
