@@ -149,7 +149,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         viewBinding.unityButton.setOnClickListener {
-            startActivity(Intent(this, com.unity3d.player.UnityPlayerGameActivity::class.java))
+            startActivity(Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java))
         }
 
         loadBestModelOnStartupThreaded("YOLOv3_float32.tflite")

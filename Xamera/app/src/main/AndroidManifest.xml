@@ -34,7 +34,8 @@
         android:roundIcon="@mipmap/xamera_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Xamera"
-        tools:targetApi="31">
+        tools:targetApi="31"
+        tools:replace="android:allowBackup, android:icon, android:theme">
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -50,5 +51,23 @@
         <activity android:name="com.unity3d.player.UnityPlayerGameActivity"
             tools:node="replace"
             android:configChanges="orientation|screenSize" />
+        <!-- Integrated AR Activity from the exported AR library -->
+        <activity
+            android:name="com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize"
+            android:theme="@style/Theme.AppCompat.NoActionBar"
+            android:launchMode="singleTask"
+            android:screenOrientation="fullSensor"
+            android:resizeableActivity="false"
+            tools:node="merge">
+            <!-- No launcher intent-filter -->
+        </activity>
+
+        <!-- ARCore meta-data with override in case of conflicts -->
+        <meta-data
+            android:name="com.google.ar.core"
+            android:value="required"
+            tools:replace="android:value" />
     </application>
 </manifest>

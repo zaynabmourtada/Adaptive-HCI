@@ -164,7 +164,7 @@
             android:backgroundTint="@color/white"
             android:elevation="2dp"
             android:fontFamily="sans-serif"
-            android:text="VR"
+            android:text="AR"
             android:textAppearance="@style/TextAppearance.AppCompat.Body1"
             android:textColor="@color/black"
             android:textSize="9sp"
