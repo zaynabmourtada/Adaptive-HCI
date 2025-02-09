@@ -31,6 +31,8 @@ import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.image.TensorImage
 import java.io.File
 import java.util.LinkedList
+import android.graphics.Canvas
+import android.graphics.Color
 
 // Data class for bounding box information.
 data class BoundingBox(
@@ -54,7 +56,7 @@ data class FrameData(
 object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
-        var current: Mode = Mode.YOLO
+        var current: Mode = Mode.CONTOUR
     }
     object Trace {
         var enableRAWtrace = true
@@ -223,6 +225,24 @@ class VideoProcessor(private val context: Context) {
             if (enableRAWtrace) TraceRenderer.drawRawTrace(smoothDataList, mat)
             if (enableSPLINEtrace) TraceRenderer.drawSplineCurve(smoothDataList, mat)
         }
+    }
+
+    // Creates a white Bitmap with Drawn Spline Trace (Black)
+    fun exportTraceForInference(width: Int, height: Int): Bitmap {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(Color.WHITE)
+        val mat = Mat()
+        Utils.bitmapToMat(bitmap, mat)
+        val originalColor = Settings.Trace.splineLineColor
+        val originalThickness = Settings.Trace.lineThickness
+        Settings.Trace.splineLineColor = Scalar(0.0, 0.0, 0.0)
+        Settings.Trace.lineThickness = 10
+        TraceRenderer.drawSplineCurve(smoothDataList, mat)
+        Settings.Trace.splineLineColor = originalColor
+        Settings.Trace.lineThickness = originalThickness
+        Utils.matToBitmap(mat, bitmap)
+        mat.release()
+        return bitmap
     }
 
     // Shows a Toast message.

@@ -27,6 +27,7 @@ import com.developer27.xamera.databinding.ActivityMainBinding
 import com.developer27.xamera.openGL2D.OpenGL2DActivity
 import com.developer27.xamera.openGL3D.OpenGL3DActivity
 import com.developer27.xamera.videoprocessing.ProcessedVideoRecorder
+import com.developer27.xamera.videoprocessing.ProcessedFrameRecorder
 import com.developer27.xamera.videoprocessing.VideoProcessor
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.GpuDelegate
@@ -53,6 +54,7 @@ class MainActivity : AppCompatActivity() {
 
     // Custom recorder to save processed video frames.
     private var processedVideoRecorder: ProcessedVideoRecorder? = null
+    private var processedFrameRecorder: ProcessedFrameRecorder? = null
 
     // VideoProcessor applies detection and drawing overlays.
     private var videoProcessor: VideoProcessor? = null
@@ -188,7 +190,11 @@ class MainActivity : AppCompatActivity() {
 
         // Set up the video recorder with a determined output path.
         val outputPath = getProcessedVideoOutputPath()
-        processedVideoRecorder = ProcessedVideoRecorder(640, 480, outputPath)
+
+        val width = cameraHelper.previewSize?.width ?: 640  // Fallback to 640 if null.
+        val height = cameraHelper.previewSize?.height ?: 480 // Fallback to 480 if null.
+
+        processedVideoRecorder = ProcessedVideoRecorder(width, height, outputPath)
         processedVideoRecorder?.start()
 
         Toast.makeText(this, "Processing + Recording started.", Toast.LENGTH_SHORT).show()
@@ -205,6 +211,16 @@ class MainActivity : AppCompatActivity() {
         viewBinding.processedFrameView.setImageBitmap(null)
         processedVideoRecorder?.stop()
         processedVideoRecorder = null
+
+        // Receives BitMap for inference, saves as a jpg for testing
+        val outputPath = getProcessedImageOutputPath()
+        processedFrameRecorder = ProcessedFrameRecorder(outputPath)
+        val width = cameraHelper.previewSize?.width ?: 640  // Fallback to 640 if null.
+        val height = cameraHelper.previewSize?.height ?: 480 // Fallback to 480 if null.
+        val bitmap = videoProcessor?.exportTraceForInference(width, height)
+        if(bitmap != null){
+            processedFrameRecorder?.save(bitmap)
+        }
 
         // NEW: Prompt the user to enter a name for the tracking data before saving.
         videoProcessor?.promptSaveLineData()
@@ -238,6 +254,18 @@ class MainActivity : AppCompatActivity() {
         }
         return File(moviesDir, "Processed_${System.currentTimeMillis()}.mp4").absolutePath
     }
+
+    // Determine an output path for the processed image file.
+    private fun getProcessedImageOutputPath(): String {
+        @Suppress("DEPRECATION")
+        val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        if (!picturesDir.exists()) {
+            picturesDir.mkdirs()
+        }
+        // You can choose the file extension based on your preferred format (e.g., .jpg or .png)
+        return File(picturesDir, "Processed_${System.currentTimeMillis()}.jpg").absolutePath
+    }
+
 
     // Load the best model on a background thread.
     private fun loadBestModelOnStartupThreaded(bestModel: String) {

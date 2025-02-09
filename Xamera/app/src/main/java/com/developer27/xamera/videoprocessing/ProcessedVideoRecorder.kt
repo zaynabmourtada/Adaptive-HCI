@@ -7,7 +7,6 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaMuxer
-import android.os.Build
 import android.util.Log
 import android.view.Surface
 import java.lang.RuntimeException
