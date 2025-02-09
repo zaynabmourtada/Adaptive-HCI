@@ -2,8 +2,10 @@
 
 package com.developer27.xamera.videoprocessing
 
+// Standard Android, OpenCV, and Kotlin imports.
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Environment
 import android.util.Log
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
@@ -24,8 +26,10 @@ import org.opencv.video.KalmanFilter
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.image.TensorImage
+import java.io.File
 import java.util.LinkedList
 
+// Data class for bounding box information.
 data class BoundingBox(
     val x1: Float,
     val y1: Float,
@@ -35,6 +39,7 @@ data class BoundingBox(
     val classId: Int
 )
 
+// Data class for frame data (if needed).
 data class FrameData(
     val x: Double,
     val y: Double,
@@ -42,6 +47,7 @@ data class FrameData(
     val frameCount: Int
 )
 
+// Object to hold various configuration settings.
 object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
@@ -71,10 +77,13 @@ object Settings {
     }
 }
 
+// Main VideoProcessor class.
 class VideoProcessor(private val context: Context) {
 
     private var tfliteInterpreter: Interpreter? = null
+    // List to store raw tracking points.
     private val rawDataList = LinkedList<Point>()
+    // List to store smoothed tracking points.
     private val smoothDataList = LinkedList<Point>()
     private var frameCount = 0
     private val preFilter4Ddata = mutableListOf<FrameData>()
@@ -85,6 +94,7 @@ class VideoProcessor(private val context: Context) {
         KalmanHelper.initKalmanFilter()
     }
 
+    // Loads the OpenCV library.
     private fun initOpenCV() {
         try {
             System.loadLibrary("opencv_java4")
@@ -94,11 +104,13 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
+    // Sets the TFLite model.
     fun setTFLiteModel(model: Interpreter) {
         synchronized(this) { tfliteInterpreter = model }
         logCat("TFLite Model set in VideoProcessor successfully!")
     }
 
+    // Clears tracking data.
     fun clearTrackingData() {
         frameCount = 0
         preFilter4Ddata.clear()
@@ -110,6 +122,7 @@ class VideoProcessor(private val context: Context) {
 
     fun getPostFilterData(): List<FrameData> = postFilter4Ddata.toList()
 
+    // Processes a frame asynchronously.
     fun processFrame(bitmap: Bitmap, callback: (Bitmap?) -> Unit) {
         CoroutineScope(Dispatchers.Default).launch {
             val result = try {
@@ -125,6 +138,7 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
+    // Processes a frame using contour detection.
     private fun processFrameInternalCONTOUR(bitmap: Bitmap): Bitmap? {
         val originalMat = Mat()
         return try {
@@ -146,6 +160,7 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
+    // Processes a frame using YOLO.
     private suspend fun processFrameInternalYOLO(bitmap: Bitmap): Bitmap? {
         return withContext(Dispatchers.IO) {
             try {
@@ -185,6 +200,7 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
+    // Determines the model input size.
     private fun getModelInputSize(): Pair<Int, Int> {
         val inputTensor = tfliteInterpreter?.getInputTensor(0)
         val inputShape = inputTensor?.shape()
@@ -193,6 +209,7 @@ class VideoProcessor(private val context: Context) {
         return Pair(width, height)
     }
 
+    // Updates tracking data and draws traces on the image.
     private fun updateTrackingData(point: Point, mat: Mat) {
         rawDataList.add(point)
         val (fx, fy) = KalmanHelper.applyKalmanFilter(point)
@@ -205,20 +222,61 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
+    // Shows a Toast message.
     private fun showToast(msg: String) {
         if (Settings.Debug.enableToasts) {
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
 
+    // Logs messages to Logcat.
     private fun logCat(message: String, throwable: Throwable? = null) {
         if (Settings.Debug.enableLogging) {
             if (throwable != null) Log.e("VideoProcessor", message, throwable)
             else Log.d("VideoProcessor", message)
         }
     }
+
+    /**
+     * NEW FUNCTION:
+     * Saves the current (smoothed) tracking data—the points that form the drawn line—into a text file.
+     * This version saves the file into the public Documents folder.
+     *
+     * IMPORTANT: To write to the public Documents folder, you may need to declare and request the
+     * WRITE_EXTERNAL_STORAGE permission in your AndroidManifest.xml and at runtime.
+     */
+    fun saveLineDataToFile() {
+        if (smoothDataList.isEmpty()) {
+            logCat("No tracking data to save.")
+            return
+        }
+        try {
+            // Get the public Documents directory.
+            val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+            // Create a subfolder named "tracking" within Documents.
+            val trackingDir = File(documentsDir, "tracking")
+            if (!trackingDir.exists()) {
+                trackingDir.mkdirs()
+            }
+            // Create a unique file name using the current timestamp.
+            val fileName = "tracking_line_${System.currentTimeMillis()}.txt"
+            val file = File(trackingDir, fileName)
+
+            // Convert each point to a string ("x,y") and join them with newlines.
+            val dataString = smoothDataList.joinToString(separator = "\n") { point ->
+                "${point.x},${point.y}"
+            }
+            file.writeText(dataString)
+            logCat("Tracking data saved to ${file.absolutePath}")
+            Toast.makeText(context, "Tracking data saved to Documents", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            logCat("Error saving tracking data: ${e.message}", e)
+            Toast.makeText(context, "Error saving tracking data", Toast.LENGTH_SHORT).show()
+        }
+    }
 }
 
+// Helper object to draw raw and spline traces.
 object TraceRenderer {
     fun drawRawTrace(data: List<Point>, image: Mat) {
         for (i in 1 until data.size) {
@@ -240,6 +298,7 @@ object TraceRenderer {
     }
 }
 
+// Helper object for spline interpolation using Apache Commons Math.
 object SplineHelper {
     fun applySplineInterpolation(data: List<Point>): Pair<org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction, org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction>? {
         if (data.size < 2) return null
@@ -253,6 +312,7 @@ object SplineHelper {
     }
 }
 
+// Helper object for applying a Kalman filter to smooth tracking points.
 object KalmanHelper {
     private lateinit var kalmanFilter: KalmanFilter
     fun initKalmanFilter() {
@@ -279,6 +339,7 @@ object KalmanHelper {
     }
 }
 
+// Helper object for preprocessing frames with OpenCV.
 object Preprocessing {
     fun preprocessFrame(src: Mat): Mat {
         val grayMat = applyGrayscale(src)
@@ -316,6 +377,7 @@ object Preprocessing {
     }
 }
 
+// Helper object for contour detection.
 object ContourDetection {
     fun processContourDetection(mat: Mat): Pair<Point?, Mat> {
         val contours = findContours(mat)
@@ -345,6 +407,7 @@ object ContourDetection {
     }
 }
 
+// Helper object for YOLO detection using TensorFlow Lite.
 object YOLOHelper {
     fun parseTFLiteOutputTensor(outputArray: Array<Array<FloatArray>>, originalWidth: Int, originalHeight: Int): Pair<List<BoundingBox>, List<Point>> {
         val boundingBoxes = mutableListOf<BoundingBox>()
@@ -359,6 +422,7 @@ object YOLOHelper {
         var bestH = 0f
         var bestC = 0f
 
+        // Identify the detection with the highest confidence.
         for (i in 0 until numDetections) {
             val xCenterNorm = outputArray[0][0][i]
             val yCenterNorm = outputArray[0][1][i]
