@@ -2,17 +2,20 @@
 
 package com.developer27.xamera.videoprocessing
 
-// Standard Android, OpenCV, and Kotlin imports.
+import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Environment
+import android.text.InputType
 import android.util.Log
+import android.widget.EditText
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.apache.commons.math3.analysis.interpolation.SplineInterpolator
+import org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction
 import org.opencv.android.Utils
 import org.opencv.core.Core
 import org.opencv.core.CvType
@@ -238,18 +241,42 @@ class VideoProcessor(private val context: Context) {
     }
 
     /**
-     * NEW FUNCTION:
-     * Saves the current (smoothed) tracking data—the points that form the drawn line—into a text file.
-     * This version saves the file into the public Documents folder.
-     *
-     * IMPORTANT: To write to the public Documents folder, you may need to declare and request the
-     * WRITE_EXTERNAL_STORAGE permission in your AndroidManifest.xml and at runtime.
+     * Prompts the user to enter a name for the tracking data, then saves the data with that name.
      */
-    fun saveLineDataToFile() {
+    fun promptSaveLineData() {
         if (smoothDataList.isEmpty()) {
             logCat("No tracking data to save.")
             return
         }
+        val builder = AlertDialog.Builder(context)
+        builder.setTitle("Save Tracking Data")
+        builder.setMessage("Enter a name for your tracking data:")
+        val input = EditText(context)
+        input.inputType = InputType.TYPE_CLASS_TEXT
+        builder.setView(input)
+        builder.setPositiveButton("Save") { dialog, _ ->
+            val userProvidedName = input.text.toString().trim()
+            if (userProvidedName.isEmpty()) {
+                Toast.makeText(context, "Please enter a valid name.", Toast.LENGTH_SHORT).show()
+            } else {
+                saveLineDataToFile(userProvidedName)
+            }
+        }
+        builder.setNegativeButton("Cancel") { dialog, _ ->
+            dialog.cancel()
+        }
+        builder.show()
+    }
+
+    /**
+     * Saves the current (smoothed) tracking data—the points that form the drawn line—into a text file.
+     * The file name incorporates the user-provided name and a timestamp.
+     * The file is saved in the public Documents/tracking folder.
+     *
+     * IMPORTANT: To write to the public Documents folder, you may need to declare and request the
+     * WRITE_EXTERNAL_STORAGE permission in your AndroidManifest.xml and at runtime.
+     */
+    fun saveLineDataToFile(userDataName: String) {
         try {
             // Get the public Documents directory.
             val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
@@ -258,8 +285,8 @@ class VideoProcessor(private val context: Context) {
             if (!trackingDir.exists()) {
                 trackingDir.mkdirs()
             }
-            // Create a unique file name using the current timestamp.
-            val fileName = "tracking_line_${System.currentTimeMillis()}.txt"
+            // Create a unique file name using the user-provided name and the current timestamp.
+            val fileName = "${userDataName}_tracking_line_${System.currentTimeMillis()}.txt"
             val file = File(trackingDir, fileName)
 
             // Convert each point to a string ("x,y") and join them with newlines.
@@ -268,7 +295,7 @@ class VideoProcessor(private val context: Context) {
             }
             file.writeText(dataString)
             logCat("Tracking data saved to ${file.absolutePath}")
-            Toast.makeText(context, "Tracking data saved to Documents", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Tracking data saved. Run Xamera AR to view it.", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             logCat("Error saving tracking data: ${e.message}", e)
             Toast.makeText(context, "Error saving tracking data", Toast.LENGTH_SHORT).show()
@@ -300,7 +327,7 @@ object TraceRenderer {
 
 // Helper object for spline interpolation using Apache Commons Math.
 object SplineHelper {
-    fun applySplineInterpolation(data: List<Point>): Pair<org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction, org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction>? {
+    fun applySplineInterpolation(data: List<Point>): Pair<PolynomialSplineFunction, PolynomialSplineFunction>? {
         if (data.size < 2) return null
         val interpolator = SplineInterpolator()
         val xData = data.map { it.x }.toDoubleArray()
@@ -399,7 +426,7 @@ object ContourDetection {
     private fun drawContour(mat: Mat, contour: MatOfPoint) {
         Imgproc.drawContours(mat, listOf(contour), -1, Settings.BoundingBox.boxColor, Settings.BoundingBox.boxThickness)
     }
-    private fun calculateCenterOfMass(contour: MatOfPoint): Point {
+    private fun calculateCenterOfMass(contour: Mat): Point {
         val moments = Imgproc.moments(contour)
         val centerX = moments.m10 / moments.m00
         val centerY = moments.m01 / moments.m00

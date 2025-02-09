@@ -1,6 +1,7 @@
 package com.developer27.xamera
 
 // Standard Android imports.
+// Imports from our project.
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -21,15 +22,14 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-// Imports from our project.
 import com.developer27.xamera.camera.CameraHelper
 import com.developer27.xamera.databinding.ActivityMainBinding
 import com.developer27.xamera.openGL2D.OpenGL2DActivity
 import com.developer27.xamera.openGL3D.OpenGL3DActivity
 import com.developer27.xamera.videoprocessing.ProcessedVideoRecorder
 import com.developer27.xamera.videoprocessing.VideoProcessor
-import org.tensorflow.lite.gpu.GpuDelegate
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.gpu.GpuDelegate
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.MappedByteBuffer
@@ -40,7 +40,8 @@ import java.nio.channels.FileChannel
  * - Sets up the camera preview and UI controls.
  * - Processes frames via VideoProcessor (which applies OpenCV overlays such as drawn traces).
  * - Records the processed frames to a video file.
- * - When the user stops tracking, the app saves the tracking data (drawn line) into a text file.
+ * - When the user stops tracking, the app now prompts the user to enter a name for the tracking data
+ *   before saving the drawn line data into a text file.
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var viewBinding: ActivityMainBinding
@@ -205,8 +206,8 @@ class MainActivity : AppCompatActivity() {
         processedVideoRecorder?.stop()
         processedVideoRecorder = null
 
-        // NEW: Save the tracking (drawn line) data to a text file.
-        videoProcessor?.saveLineDataToFile()
+        // NEW: Prompt the user to enter a name for the tracking data before saving.
+        videoProcessor?.promptSaveLineData()
 
         Toast.makeText(this, "Processing + Recording stopped.", Toast.LENGTH_SHORT).show()
     }
