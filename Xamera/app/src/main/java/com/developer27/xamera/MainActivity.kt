@@ -1,5 +1,6 @@
 package com.developer27.xamera
 
+// Standard Android imports.
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -20,6 +21,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+// Imports from our project.
 import com.developer27.xamera.camera.CameraHelper
 import com.developer27.xamera.databinding.ActivityMainBinding
 import com.developer27.xamera.openGL2D.OpenGL2DActivity
@@ -36,28 +38,30 @@ import java.nio.channels.FileChannel
 /**
  * MainActivity:
  * - Sets up the camera preview and UI controls.
- * - Processes frames via VideoProcessor (which draws OpenCV overlays such as lines).
- * - Sends the processed frames to ProcessedVideoRecorder.
- * - When "Stop Tracking" is clicked, the recorder finalizes the video and saves an MP4 file in the Movies folder.
+ * - Processes frames via VideoProcessor (which applies OpenCV overlays such as drawn traces).
+ * - Records the processed frames to a video file.
+ * - When the user stops tracking, the app saves the tracking data (drawn line) into a text file.
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var viewBinding: ActivityMainBinding
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var cameraManager: CameraManager
     private lateinit var cameraHelper: CameraHelper
-    private var tfliteInterpreter: Interpreter? = null  // Global TFLite Interpreter
+    // Global TFLite Interpreter instance.
+    private var tfliteInterpreter: Interpreter? = null
 
-    // Our custom recorder.
+    // Custom recorder to save processed video frames.
     private var processedVideoRecorder: ProcessedVideoRecorder? = null
 
-    // VideoProcessor applies processing (e.g. overlays).
+    // VideoProcessor applies detection and drawing overlays.
     private var videoProcessor: VideoProcessor? = null
 
-    // State flags.
+    // Flags to control the processing/recording states.
     private var isRecording = false
     private var isProcessing = false
     private var isProcessingFrame = false
 
+    // Permissions required by the app.
     private val REQUIRED_PERMISSIONS = arrayOf(
         Manifest.permission.CAMERA,
         Manifest.permission.RECORD_AUDIO
@@ -66,6 +70,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val SETTINGS_REQUEST_CODE = 1
+        // Mapping for camera rotation.
         private val ORIENTATIONS = SparseIntArray().apply {
             append(Surface.ROTATION_0, 90)
             append(Surface.ROTATION_90, 0)
@@ -74,7 +79,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Listener for the camera preview's TextureView.
+    // TextureView listener for the camera preview.
     private val textureListener = object : TextureView.SurfaceTextureListener {
         @SuppressLint("MissingPermission")
         override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
@@ -96,17 +101,21 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Inflate the layout using view binding.
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
 
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
         cameraManager = getSystemService(CAMERA_SERVICE) as CameraManager
 
+        // Initialize the helper classes.
         cameraHelper = CameraHelper(this, viewBinding, sharedPreferences)
         videoProcessor = VideoProcessor(this)
 
+        // Hide the processed frame view until processing starts.
         viewBinding.processedFrameView.visibility = View.GONE
 
+        // Register permission launcher for Camera and Audio.
         requestPermissionLauncher =
             registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
                 val camGranted = permissions[Manifest.permission.CAMERA] ?: false
@@ -122,6 +131,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+        // Open camera if permissions are granted.
         if (allPermissionsGranted()) {
             if (viewBinding.viewFinder.isAvailable) {
                 cameraHelper.openCamera()
@@ -132,6 +142,7 @@ class MainActivity : AppCompatActivity() {
             requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
         }
 
+        // Set up button click listeners.
         viewBinding.startProcessingButton.setOnClickListener {
             if (isRecording) {
                 stopProcessingAndRecording()
@@ -152,6 +163,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java))
         }
 
+        // Load the TensorFlow Lite model on a separate thread.
         loadBestModelOnStartupThreaded("YOLOv3_float32.tflite")
         cameraHelper.setupZoomControls()
         sharedPreferences.registerOnSharedPreferenceChangeListener { _, key ->
@@ -161,6 +173,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Start the processing and recording session.
     private fun startProcessingAndRecording() {
         isRecording = true
         isProcessing = true
@@ -169,9 +182,10 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.getColorStateList(this, R.color.red)
         viewBinding.processedFrameView.visibility = View.VISIBLE
 
+        // Reset tracking data.
         videoProcessor?.clearTrackingData()
 
-        // Determine an output file path in the Movies folder.
+        // Set up the video recorder with a determined output path.
         val outputPath = getProcessedVideoOutputPath()
         processedVideoRecorder = ProcessedVideoRecorder(640, 480, outputPath)
         processedVideoRecorder?.start()
@@ -179,6 +193,7 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Processing + Recording started.", Toast.LENGTH_SHORT).show()
     }
 
+    // Stop the processing and recording session.
     private fun stopProcessingAndRecording() {
         isRecording = false
         isProcessing = false
@@ -189,9 +204,14 @@ class MainActivity : AppCompatActivity() {
         viewBinding.processedFrameView.setImageBitmap(null)
         processedVideoRecorder?.stop()
         processedVideoRecorder = null
+
+        // NEW: Save the tracking (drawn line) data to a text file.
+        videoProcessor?.saveLineDataToFile()
+
         Toast.makeText(this, "Processing + Recording stopped.", Toast.LENGTH_SHORT).show()
     }
 
+    // Process a frame from the camera preview using VideoProcessor.
     private fun processFrameWithVideoProcessor() {
         if (isProcessingFrame) return
         val bitmap = viewBinding.viewFinder.bitmap ?: return
@@ -208,6 +228,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Determine an output path for the processed video file.
     private fun getProcessedVideoOutputPath(): String {
         @Suppress("DEPRECATION")
         val moviesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
@@ -217,22 +238,20 @@ class MainActivity : AppCompatActivity() {
         return File(moviesDir, "Processed_${System.currentTimeMillis()}.mp4").absolutePath
     }
 
+    // Load the best model on a background thread.
     private fun loadBestModelOnStartupThreaded(bestModel: String) {
         Thread {
             val bestLoadedPath = copyAssetModelBlocking(bestModel)
             runOnUiThread {
                 if (bestLoadedPath.isNotEmpty()) {
                     try {
-                        // Create and configure the TFLite Interpreter
+                        // Create a GPU delegate and configure the TFLite interpreter.
                         val gpuDelegate = GpuDelegate()
-                        // Option 2: If the new API requires a Builder (uncomment the following lines):
-                        // val gpuDelegateOptions = GpuDelegate.Options.Builder().build()
-                        // val gpuDelegate = GpuDelegate(gpuDelegateOptions)
                         val options = Interpreter.Options().apply {
                             addDelegate(gpuDelegate)
                             setNumThreads(Runtime.getRuntime().availableProcessors())
                         }
-                        // Pass TFLite Interpreter to videoProcessor
+                        // Load the model as a MappedByteBuffer.
                         tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
                         videoProcessor?.setTFLiteModel(tfliteInterpreter!!)
                         Toast.makeText(this, "TFLite Model loaded: $bestModel", Toast.LENGTH_SHORT).show()
@@ -247,7 +266,7 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    // Helper function to load the model as a MappedByteBuffer (unchanged)
+    // Load the model file into a MappedByteBuffer.
     private fun loadMappedFile(modelPath: String): MappedByteBuffer {
         val file = File(modelPath)
         val fileInputStream = file.inputStream()
@@ -255,7 +274,7 @@ class MainActivity : AppCompatActivity() {
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, file.length())
     }
 
-    // Copy TFLite model from assets to internal storage (unchanged)
+    // Copy the model from the assets folder to the device's internal storage.
     private fun copyAssetModelBlocking(assetName: String): String {
         return try {
             val outFile = File(filesDir, assetName)
@@ -279,6 +298,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Launch the 2D-only feature activity.
     private fun launch2DOnlyFeature() {
         try {
             startActivity(Intent(this, OpenGL2DActivity::class.java))
@@ -287,6 +307,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Launch the 3D-only feature activity.
     private fun launch3DOnlyFeature() {
         try {
             val intent = Intent(this, OpenGL3DActivity::class.java)
@@ -319,12 +340,14 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    // Check that all required permissions are granted.
     private fun allPermissionsGranted(): Boolean {
         return REQUIRED_PERMISSIONS.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }
     }
 
+    // Switch between front and back cameras.
     private var isFrontCamera = false
     private fun switchCamera() {
         if (isRecording) {
