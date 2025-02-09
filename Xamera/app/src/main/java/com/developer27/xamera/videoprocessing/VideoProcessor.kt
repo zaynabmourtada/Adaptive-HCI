@@ -128,13 +128,19 @@ class VideoProcessor(private val context: Context) {
 
     fun getPostFilterData(): List<FrameData> = postFilter4Ddata.toList()
 
-    // Processes a frame asynchronously.
-    fun processFrame(bitmap: Bitmap, callback: (Bitmap?) -> Unit) {
+    // Processes a frame asynchronously and returns a Pair (outputBitmap, videoBitmap).
+    fun processFrame(bitmap: Bitmap, callback: (Pair<Bitmap, Bitmap>?) -> Unit) {
         CoroutineScope(Dispatchers.Default).launch {
-            val result = try {
+            val result: Pair<Bitmap, Bitmap>? = try {
                 when (Settings.DetectionMode.current) {
-                    Settings.DetectionMode.Mode.CONTOUR -> processFrameInternalCONTOUR(bitmap)
-                    Settings.DetectionMode.Mode.YOLO -> processFrameInternalYOLO(bitmap)
+                    Settings.DetectionMode.Mode.CONTOUR -> {
+                        // processFrameInternalCONTOUR now returns a Pair<Bitmap, Bitmap>?
+                        processFrameInternalCONTOUR(bitmap)
+                    }
+                    Settings.DetectionMode.Mode.YOLO -> {
+                        // processFrameInternalYOLO now returns a Pair<Bitmap, Bitmap>?
+                        processFrameInternalYOLO(bitmap)
+                    }
                 }
             } catch (e: Exception) {
                 logCat("Error processing frame: ${e.message}", e)
@@ -144,12 +150,18 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
-    // Processes a frame using contour detection.
-    private fun processFrameInternalCONTOUR(bitmap: Bitmap): Bitmap? {
+
+    // Processes a frame using Contour Detection - Returns a Pair containing outputBitmap and videoBitmap.
+    private fun processFrameInternalCONTOUR(bitmap: Bitmap): Pair<Bitmap, Bitmap>? {
         val originalMat = Mat()
+        var preprocessedMat: Mat? = null
         return try {
             Utils.bitmapToMat(bitmap, originalMat)
-            val preprocessedMat = Preprocessing.preprocessFrame(originalMat)
+
+            preprocessedMat = Preprocessing.preprocessFrame(originalMat)
+            val videoBitmap = Bitmap.createBitmap(preprocessedMat.cols(), preprocessedMat.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(preprocessedMat, videoBitmap)
+
             val (center, processedMat) = ContourDetection.processContourDetection(preprocessedMat)
             Imgproc.cvtColor(processedMat, processedMat, Imgproc.COLOR_GRAY2BGR)
             if (center != null) {
@@ -157,35 +169,45 @@ class VideoProcessor(private val context: Context) {
             }
             val outputBitmap = Bitmap.createBitmap(processedMat.cols(), processedMat.rows(), Bitmap.Config.ARGB_8888)
             Utils.matToBitmap(processedMat, outputBitmap)
-            outputBitmap
+
+            Pair(outputBitmap, videoBitmap)
         } catch (e: Exception) {
             logCat("Error processing frame: ${e.message}", e)
             null
         } finally {
             originalMat.release()
+            preprocessedMat?.release()
         }
     }
 
-    // Processes a frame using YOLO.
-    private suspend fun processFrameInternalYOLO(bitmap: Bitmap): Bitmap? {
+    // Processes a frame using YOLO - Returns a Pair containing outputBitmap and videoBitmap.
+    private suspend fun processFrameInternalYOLO(bitmap: Bitmap): Pair<Bitmap, Bitmap>? {
         return withContext(Dispatchers.IO) {
+            val mat = Mat()
+            var preprocessedMat: Mat? = null
             try {
                 val originalWidth = bitmap.width
                 val originalHeight = bitmap.height
                 val (modelInputWidth, modelInputHeight) = getModelInputSize()
+                // Resize bitmap to model input size.
                 val resizedBitmap = Bitmap.createScaledBitmap(bitmap, modelInputWidth, modelInputHeight, true)
+                Utils.bitmapToMat(resizedBitmap, mat)
+                // Preprocess the resized image.
+                preprocessedMat = Preprocessing.preprocessFrame(mat)
+                Utils.matToBitmap(preprocessedMat, resizedBitmap)
+                // Prepare tensor image for inference.
                 val tensorImage = TensorImage(DataType.FLOAT32).apply { load(resizedBitmap) }
 
                 if (tfliteInterpreter == null) {
                     Log.e("YOLOTest", "TFLite Model is NULL! Cannot run inference.")
                     return@withContext null
                 }
-
+                // Run inference.
                 val outputShape = arrayOf(1, 5, 3549)
                 val outputArray = Array(outputShape[0]) { Array(outputShape[1]) { FloatArray(outputShape[2]) } }
                 tfliteInterpreter?.run(tensorImage.buffer, outputArray)
                 Log.d("YOLOTest", "TFLite Inference Completed.")
-
+                // Create a Mat from the original bitmap for drawing bounding boxes.
                 val originalMat = Mat()
                 Utils.bitmapToMat(bitmap, originalMat)
                 val (boundingBoxes, listOfPoints) = YOLOHelper.parseTFLiteOutputTensor(outputArray, originalWidth, originalHeight)
@@ -195,16 +217,21 @@ class VideoProcessor(private val context: Context) {
                 if (listOfPoints.isNotEmpty()) {
                     updateTrackingData(listOfPoints.first(), originalMat)
                 }
+                // Convert the processed originalMat to a Bitmap.
                 val outputBitmap = Bitmap.createBitmap(originalWidth, originalHeight, Bitmap.Config.ARGB_8888)
                 Utils.matToBitmap(originalMat, outputBitmap)
                 originalMat.release()
-                outputBitmap
+                Pair(outputBitmap, outputBitmap)
             } catch (e: Exception) {
                 Log.e("YOLOTest", "Error during inference: ${e.message}", e)
                 null
+            } finally {
+                mat.release()
+                preprocessedMat?.release()
             }
         }
     }
+
 
     // Determines the model input size.
     private fun getModelInputSize(): Pair<Int, Int> {

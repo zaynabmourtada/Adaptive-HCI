@@ -228,17 +228,21 @@ class MainActivity : AppCompatActivity() {
         if (isProcessingFrame) return
         val bitmap = viewBinding.viewFinder.bitmap ?: return
         isProcessingFrame = true
-
-        videoProcessor?.processFrame(bitmap) { processedBitmap ->
+        videoProcessor?.processFrame(bitmap) { processedFrames ->
             runOnUiThread {
-                if (processedBitmap != null && isProcessing) {
-                    viewBinding.processedFrameView.setImageBitmap(processedBitmap)
-                    processedVideoRecorder?.recordFrame(processedBitmap)
+                processedFrames?.let { (outputBitmap, videoBitmap) ->
+                    if (isProcessing) {
+                        // Display the output bitmap.
+                        viewBinding.processedFrameView.setImageBitmap(outputBitmap)
+                        // Send the video bitmap to the recorder.
+                        processedVideoRecorder?.recordFrame(videoBitmap)
+                    }
                 }
                 isProcessingFrame = false
             }
         }
     }
+
 
     // Determine an output path for the processed video file.
     private fun getProcessedVideoOutputPath(): String {
