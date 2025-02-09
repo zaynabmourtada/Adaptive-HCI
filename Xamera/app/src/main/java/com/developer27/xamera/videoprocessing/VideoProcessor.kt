@@ -31,7 +31,8 @@ import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.image.TensorImage
 import java.io.File
 import java.util.LinkedList
-import android.graphics.Canvas
+import kotlin.math.max
+import kotlin.math.min
 import android.graphics.Color
 
 // Data class for bounding box information.
@@ -227,22 +228,67 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
-    // Creates a white Bitmap with Drawn Spline Trace (Black)
-    fun exportTraceForInference(width: Int, height: Int): Bitmap {
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        bitmap.eraseColor(Color.WHITE)
-        val mat = Mat()
-        Utils.bitmapToMat(bitmap, mat)
+    // Creates a white, square (28x28) Bitmap that encapsulates the drawn spline trace (with padding).
+    fun exportTraceForInference(): Bitmap {
+        // Ensure there is some trace data.
+        if (smoothDataList.isEmpty()) {
+            // Return a minimal white bitmap if there's nothing to draw.
+            return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
+        }
+
+        // 1. Compute the bounding box of the trace points.
+        var minX = Double.MAX_VALUE
+        var minY = Double.MAX_VALUE
+        var maxX = Double.MIN_VALUE
+        var maxY = Double.MIN_VALUE
+
+        for (pt in smoothDataList) {
+            minX = min(minX, pt.x)
+            minY = min(minY, pt.y)
+            maxX = max(maxX, pt.x)
+            maxY = max(maxY, pt.y)
+        }
+
+        // 2. Define padding (in pixels) around the drawn trace.
+        val padding = 30.0
+        // Compute optimal dimensions.
+        val optimalWidth = max((maxX - minX + 2 * padding).toInt(), 1)
+        val optimalHeight = max((maxY - minY + 2 * padding).toInt(), 1)
+
+        // 3. Determine the square size as the greatest of the optimal dimensions.
+        val squareSize = max(optimalWidth, optimalHeight)
+
+        // 4. Create a white square Mat of the computed dimensions.
+        val mat = Mat(squareSize, squareSize, CvType.CV_8UC4, Scalar(255.0, 255.0, 255.0, 255.0))
+
+        // 5. Compute offsets to center the drawn trace inside the square.
+        val xOffset = (squareSize - optimalWidth) / 2.0
+        val yOffset = (squareSize - optimalHeight) / 2.0
+
+        // 6. Create an adjusted list of points so that the drawing starts at (padding, padding) plus the offsets.
+        val adjustedPoints = smoothDataList.map {
+            Point(it.x - minX + padding + xOffset, it.y - minY + padding + yOffset)
+        }
+
+        // 7. Set up drawing parameters (temporarily override settings).
         val originalColor = Settings.Trace.splineLineColor
         val originalThickness = Settings.Trace.lineThickness
-        Settings.Trace.splineLineColor = Scalar(0.0, 0.0, 0.0)
-        Settings.Trace.lineThickness = 10
-        TraceRenderer.drawSplineCurve(smoothDataList, mat)
+        Settings.Trace.splineLineColor = Scalar(0.0, 0.0, 0.0) // Black
+        Settings.Trace.lineThickness = 40
+
+        // 8. Draw the spline curve using the adjusted points.
+        TraceRenderer.drawSplineCurve(adjustedPoints, mat)
+
+        // 9. Restore the original settings.
         Settings.Trace.splineLineColor = originalColor
         Settings.Trace.lineThickness = originalThickness
-        Utils.matToBitmap(mat, bitmap)
+
+        // 10. Convert the Mat back to a Bitmap.
+        val outputBitmap = Bitmap.createBitmap(squareSize, squareSize, Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(mat, outputBitmap)
         mat.release()
-        return bitmap
+        val scaledBitmap = Bitmap.createScaledBitmap(outputBitmap, 28, 28, true)
+        return scaledBitmap
     }
 
     // Shows a Toast message.

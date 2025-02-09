@@ -190,10 +190,9 @@ class MainActivity : AppCompatActivity() {
 
         // Set up the video recorder with a determined output path.
         val outputPath = getProcessedVideoOutputPath()
-
-        val width = cameraHelper.previewSize?.width ?: 640  // Fallback to 640 if null.
-        val height = cameraHelper.previewSize?.height ?: 480 // Fallback to 480 if null.
-
+        val sampleBitmap = viewBinding.viewFinder.bitmap
+        val width = sampleBitmap?.width ?: 640
+        val height = sampleBitmap?.height ?: 480
         processedVideoRecorder = ProcessedVideoRecorder(width, height, outputPath)
         processedVideoRecorder?.start()
 
@@ -215,12 +214,8 @@ class MainActivity : AppCompatActivity() {
         // Receives BitMap for inference, saves as a jpg for testing
         val outputPath = getProcessedImageOutputPath()
         processedFrameRecorder = ProcessedFrameRecorder(outputPath)
-        val width = cameraHelper.previewSize?.width ?: 640  // Fallback to 640 if null.
-        val height = cameraHelper.previewSize?.height ?: 480 // Fallback to 480 if null.
-        val bitmap = videoProcessor?.exportTraceForInference(width, height)
-        if(bitmap != null){
-            processedFrameRecorder?.save(bitmap)
-        }
+        val bitmap = videoProcessor?.exportTraceForInference()
+        if(bitmap != null){ processedFrameRecorder?.save(bitmap) }
 
         // NEW: Prompt the user to enter a name for the tracking data before saving.
         videoProcessor?.promptSaveLineData()
