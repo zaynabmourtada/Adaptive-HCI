@@ -28,6 +28,7 @@ import com.developer27.xamera.openGL2D.OpenGL2DActivity
 import com.developer27.xamera.openGL3D.OpenGL3DActivity
 import com.developer27.xamera.videoprocessing.ProcessedVideoRecorder
 import com.developer27.xamera.videoprocessing.ProcessedFrameRecorder
+import com.developer27.xamera.videoprocessing.Settings
 import com.developer27.xamera.videoprocessing.VideoProcessor
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.GpuDelegate
@@ -188,15 +189,18 @@ class MainActivity : AppCompatActivity() {
         // Reset tracking data.
         videoProcessor?.clearTrackingData()
 
+        // Dynamically grabs model input size, formats video recorder accordingly
+        val inputTensor = tfliteInterpreter?.getInputTensor(0)
+        val inputShape = inputTensor?.shape()
+        val width = inputShape?.getOrNull(2) ?: 416
+        val height = inputShape?.getOrNull(1) ?: 416
+
         // Set up the video recorder with a determined output path.
         val outputPath = getProcessedVideoOutputPath()
-        val sampleBitmap = viewBinding.viewFinder.bitmap
-        val width = sampleBitmap?.width ?: 640
-        val height = sampleBitmap?.height ?: 480
         processedVideoRecorder = ProcessedVideoRecorder(width, height, outputPath)
         processedVideoRecorder?.start()
 
-        Toast.makeText(this, "Processing + Recording started.", Toast.LENGTH_SHORT).show()
+        //Toast.makeText(this, "Processing + Recording started.", Toast.LENGTH_SHORT).show()
     }
 
     // Stop the processing and recording session.
@@ -214,13 +218,18 @@ class MainActivity : AppCompatActivity() {
         // Receives BitMap for inference, saves as a jpg for testing
         val outputPath = getProcessedImageOutputPath()
         processedFrameRecorder = ProcessedFrameRecorder(outputPath)
-        val bitmap = videoProcessor?.exportTraceForInference()
-        if(bitmap != null){ processedFrameRecorder?.save(bitmap) }
+
+        with(Settings.ExportData) {
+            if (frameIMG) {
+                val bitmap = videoProcessor?.exportTraceForInference()
+                if(bitmap != null){ processedFrameRecorder?.save(bitmap) }
+            }
+        }
 
         // NEW: Prompt the user to enter a name for the tracking data before saving.
         videoProcessor?.promptSaveLineData()
 
-        Toast.makeText(this, "Processing + Recording stopped.", Toast.LENGTH_SHORT).show()
+        //Toast.makeText(this, "Processing + Recording stopped.", Toast.LENGTH_SHORT).show()
     }
 
     // Process a frame from the camera preview using VideoProcessor.
@@ -235,7 +244,11 @@ class MainActivity : AppCompatActivity() {
                         // Display the output bitmap.
                         viewBinding.processedFrameView.setImageBitmap(outputBitmap)
                         // Send the video bitmap to the recorder.
-                        processedVideoRecorder?.recordFrame(videoBitmap)
+                        with(Settings.ExportData) {
+                            if (videoDATA) {
+                                processedVideoRecorder?.recordFrame(videoBitmap)
+                            }
+                        }
                     }
                 }
                 isProcessingFrame = false
@@ -282,7 +295,7 @@ class MainActivity : AppCompatActivity() {
                         // Load the model as a MappedByteBuffer.
                         tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
                         videoProcessor?.setTFLiteModel(tfliteInterpreter!!)
-                        Toast.makeText(this, "TFLite Model loaded: $bestModel", Toast.LENGTH_SHORT).show()
+                        //Toast.makeText(this, "TFLite Model loaded: $bestModel", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
                         Toast.makeText(this, "Error loading TFLite model: ${e.message}", Toast.LENGTH_LONG).show()
                         Log.e("MainActivity", "TFLite Interpreter error", e)

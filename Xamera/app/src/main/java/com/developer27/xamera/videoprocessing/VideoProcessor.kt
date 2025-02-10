@@ -56,6 +56,7 @@ object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
         var current: Mode = Mode.YOLO
+        var enableYOLOinference = false
     }
     object Trace {
         var enableRAWtrace = true
@@ -78,6 +79,10 @@ object Settings {
     object Debug {
         var enableToasts = true
         var enableLogging = true
+    }
+    object ExportData {
+        var frameIMG = false
+        var videoDATA = true
     }
 }
 
@@ -180,6 +185,8 @@ class VideoProcessor(private val context: Context) {
             val origMat = Mat()
             Utils.bitmapToMat(bitmap, origMat)
 
+            Log.e("YOLOTest", "Model Width: ${modelDims.inputWidth}, Model Height: ${modelDims.inputHeight}")
+
             // Apply letterbox: resize and pad to the target dimensions.
             val (letterboxedMat, padOffsets) = YOLOHelper.letterbox(origMat, modelDims.inputWidth, modelDims.inputHeight)
             origMat.release()
@@ -193,34 +200,31 @@ class VideoProcessor(private val context: Context) {
             Utils.matToBitmap(preprocessedMat, letterboxedBitmap)
             preprocessedMat.release()
 
-            // Prepare tensor image for inference.
-            val tensorImage = TensorImage(DataType.FLOAT32).apply { load(letterboxedBitmap) }
-
-            if (tfliteInterpreter == null) {
-                Log.e("YOLOTest", "TFLite Model is NULL! Cannot run inference.")
-                return@withContext null
-            }
-
-            // Allocate output array using the output shape from modelDims.
-            val outputArray = Array(modelDims.outputShape[0]) { Array(modelDims.outputShape[1]) { FloatArray(modelDims.outputShape[2]) } }
-
-            // Run inference.
-            tfliteInterpreter?.run(tensorImage.buffer, outputArray)
-
             // Create a Mat from the original bitmap for drawing bounding boxes.
             val originalMatForDraw = Mat()
             Utils.bitmapToMat(bitmap, originalMatForDraw)
 
-            // Parse output. Pass padOffsets and model input dimensions to adjust coordinates.
-            val (boundingBox, center) = YOLOHelper.parseTFLiteOutputTensor(
-                outputArray, bitmap.width, bitmap.height, padOffsets, modelDims.inputWidth, modelDims.inputHeight
-            )
-
-            // Optionally draw bounding boxes.
-            with(Settings.BoundingBox) {
-                if (enableBoundingBox) YOLOHelper.drawBoundingBoxes(originalMatForDraw, boundingBox)
+            with(Settings.DetectionMode) {
+                if (enableYOLOinference){
+                    // Prepare tensor image for inference.
+                    val tensorImage = TensorImage(DataType.FLOAT32).apply { load(letterboxedBitmap) }
+                    if (tfliteInterpreter == null) {
+                        Log.e("YOLOTest", "TFLite Model is NULL! Cannot run inference.")
+                        return@withContext null
+                    }
+                    // Allocate output array using the output shape from modelDims.
+                    val outputArray = Array(modelDims.outputShape[0]) { Array(modelDims.outputShape[1]) { FloatArray(modelDims.outputShape[2]) } }
+                    // Run inference.
+                    tfliteInterpreter?.run(tensorImage.buffer, outputArray)
+                    // Parse output. Pass padOffsets and model input dimensions to adjust coordinates.
+                    val (boundingBox, center) = YOLOHelper.parseTFLiteOutputTensor(outputArray, bitmap.width, bitmap.height, padOffsets, modelDims.inputWidth, modelDims.inputHeight)
+                    // Optionally draw bounding boxes.
+                    with(Settings.BoundingBox) {
+                        if (enableBoundingBox) YOLOHelper.drawBoundingBoxes(originalMatForDraw, boundingBox)
+                    }
+                    updateTrackingData(center, originalMatForDraw)
+                }
             }
-            updateTrackingData(center, originalMatForDraw)
 
             // Convert the annotated Mat back to a Bitmap.
             val outputBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
