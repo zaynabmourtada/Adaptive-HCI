@@ -56,7 +56,7 @@ object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
         var current: Mode = Mode.YOLO
-        var enableYOLOinference = false
+        var enableYOLOinference = true
     }
     object Trace {
         var enableRAWtrace = true
@@ -82,7 +82,7 @@ object Settings {
     }
     object ExportData {
         var frameIMG = false
-        var videoDATA = true
+        var videoDATA = false
     }
 }
 
