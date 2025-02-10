@@ -1,7 +1,5 @@
 package com.developer27.xamera
 
-// Standard Android imports.
-// Imports from our project.
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -17,17 +15,19 @@ import android.util.SparseIntArray
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
+import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.developer27.xamera.camera.CameraHelper
 import com.developer27.xamera.databinding.ActivityMainBinding
 import com.developer27.xamera.openGL2D.OpenGL2DActivity
 import com.developer27.xamera.openGL3D.OpenGL3DActivity
-import com.developer27.xamera.videoprocessing.ProcessedVideoRecorder
 import com.developer27.xamera.videoprocessing.ProcessedFrameRecorder
+import com.developer27.xamera.videoprocessing.ProcessedVideoRecorder
 import com.developer27.xamera.videoprocessing.Settings
 import com.developer27.xamera.videoprocessing.VideoProcessor
 import org.tensorflow.lite.Interpreter
@@ -42,8 +42,9 @@ import java.nio.channels.FileChannel
  * - Sets up the camera preview and UI controls.
  * - Processes frames via VideoProcessor (which applies OpenCV overlays such as drawn traces).
  * - Records the processed frames to a video file.
- * - When the user stops tracking, the app now prompts the user to enter a name for the tracking data
- *   before saving the drawn line data into a text file.
+ * - When the user stops tracking, the app first prompts the user to name the tracking (line) data file
+ *   (which is saved in Documents/tracking) and then prompts the user to name a second file (which is saved
+ *   in Documents/2d_letter with the content of the hardcoded alphabet).
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var viewBinding: ActivityMainBinding
@@ -64,6 +65,9 @@ class MainActivity : AppCompatActivity() {
     private var isRecording = false
     private var isProcessing = false
     private var isProcessingFrame = false
+
+    //This variable is for inference result
+    private var inferenceResult = ""
 
     // Permissions required by the app.
     private val REQUIRED_PERMISSIONS = arrayOf(
@@ -112,7 +116,7 @@ class MainActivity : AppCompatActivity() {
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
         cameraManager = getSystemService(CAMERA_SERVICE) as CameraManager
 
-        // Initialize the helper classes.
+        // Initialize helper classes.
         cameraHelper = CameraHelper(this, viewBinding, sharedPreferences)
         videoProcessor = VideoProcessor(this)
 
@@ -189,7 +193,7 @@ class MainActivity : AppCompatActivity() {
         // Reset tracking data.
         videoProcessor?.clearTrackingData()
 
-        // Dynamically grabs model input size, formats video recorder accordingly
+        // Dynamically grab model input size, format video recorder accordingly.
         val inputTensor = tfliteInterpreter?.getInputTensor(0)
         val inputShape = inputTensor?.shape()
         val width = inputShape?.getOrNull(2) ?: 416
@@ -199,8 +203,6 @@ class MainActivity : AppCompatActivity() {
         val outputPath = getProcessedVideoOutputPath()
         processedVideoRecorder = ProcessedVideoRecorder(width, height, outputPath)
         processedVideoRecorder?.start()
-
-        //Toast.makeText(this, "Processing + Recording started.", Toast.LENGTH_SHORT).show()
     }
 
     // Stop the processing and recording session.
@@ -215,21 +217,96 @@ class MainActivity : AppCompatActivity() {
         processedVideoRecorder?.stop()
         processedVideoRecorder = null
 
-        // Receives BitMap for inference, saves as a jpg for testing
+        // Save a processed frame as a jpg for testing.
         val outputPath = getProcessedImageOutputPath()
         processedFrameRecorder = ProcessedFrameRecorder(outputPath)
-
         with(Settings.ExportData) {
             if (frameIMG) {
                 val bitmap = videoProcessor?.exportTraceForInference()
-                if(bitmap != null){ processedFrameRecorder?.save(bitmap) }
+                if (bitmap != null) { processedFrameRecorder?.save(bitmap) }
             }
         }
 
-        // NEW: Prompt the user to enter a name for the tracking data before saving.
+        // TODO - Zaynab: Call inference result initialization function
+        intializeInferenceResult()
+
+        // First: Prompt to save the tracking (line) data in Documents/tracking.
         videoProcessor?.promptSaveLineData()
 
-        //Toast.makeText(this, "Processing + Recording stopped.", Toast.LENGTH_SHORT).show()
+        // Then, after a delay, prompt to save the Letter Inference Data.
+        promptSaveLetterInferenceData()
+    }
+
+    // TODO- Zaynab: Intiliaze a logic to initialize the inference from Machine Learning Model
+    private fun intializeInferenceResult(){
+        inferenceResult = "ML - Inference"; // "ML - Inference" is a place holder function
+    }
+
+    /**
+     * Prompts the user to enter a file name for saving the Letter Inference Data.
+     * This displays an AlertDialog where the user can input the desired file name.
+     *
+     * When the user confirms, it calls [saveLetterInferenceData] to write the file.
+     */
+    fun promptSaveLetterInferenceData() {
+        // Create an EditText for the file name input.
+        val editText = EditText(this).apply {
+            hint = "Enter file name"
+        }
+
+        // Build and display an AlertDialog to prompt for the file name.
+        AlertDialog.Builder(this)
+            .setTitle("Save Letter Inference Data")
+            .setMessage("Enter a file name for the Letter Inference Data:")
+            .setView(editText)
+            .setPositiveButton("Save") { _, _ ->
+                val fileName = editText.text.toString().trim()
+                if (fileName.isNotEmpty()) {
+                    // If the file name is provided, save the Letter Inference Data file.
+                    saveLetterInferenceData(fileName)
+                } else {
+                    Toast.makeText(this, "File name cannot be empty.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    /**
+     * Saves a text file containing a hardcoded alphabet into the Documents/2d_letter folder.
+     *
+     * This function uses the public Documents directory (similar to saveLineDataToFile())
+     * but creates/uses a subdirectory named "2d_letter". The file name is built using the
+     * user-provided base name and the current timestamp.
+     *
+     * @param userDataName The base name provided by the user.
+     */
+    private fun saveLetterInferenceData(userDataName: String) {
+        try {
+            // Get the public Documents directory.
+            val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+            // Create a subfolder named "2d_letter" within Documents.
+            val letterDir = File(documentsDir, "2d_letter")
+            if (!letterDir.exists()) {
+                letterDir.mkdirs()
+            }
+            // Create a unique file name using the user-provided name and the current timestamp.
+            val fileName = "${userDataName}_letter_${System.currentTimeMillis()}.txt"
+            val file = File(letterDir, fileName)
+
+            // Define the hardcoded alphabet string.
+            val alphabetData = inferenceResult
+            // Write the alphabet string into the file.
+            file.writeText(alphabetData)
+
+            // Notify the user that the file was saved successfully.
+            Toast.makeText(this, "Letter inference data saved. Check Documents/2d_letter.", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error saving Letter inference data", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // Process a frame from the camera preview using VideoProcessor.
@@ -241,9 +318,7 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 processedFrames?.let { (outputBitmap, videoBitmap) ->
                     if (isProcessing) {
-                        // Display the output bitmap.
                         viewBinding.processedFrameView.setImageBitmap(outputBitmap)
-                        // Send the video bitmap to the recorder.
                         with(Settings.ExportData) {
                             if (videoDATA) {
                                 processedVideoRecorder?.recordFrame(videoBitmap)
@@ -255,7 +330,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-
 
     // Determine an output path for the processed video file.
     private fun getProcessedVideoOutputPath(): String {
@@ -274,10 +348,8 @@ class MainActivity : AppCompatActivity() {
         if (!picturesDir.exists()) {
             picturesDir.mkdirs()
         }
-        // You can choose the file extension based on your preferred format (e.g., .jpg or .png)
         return File(picturesDir, "Processed_${System.currentTimeMillis()}.jpg").absolutePath
     }
-
 
     // Load the best model on a background thread.
     private fun loadBestModelOnStartupThreaded(bestModel: String) {
@@ -286,16 +358,13 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (bestLoadedPath.isNotEmpty()) {
                     try {
-                        // Create a GPU delegate and configure the TFLite interpreter.
                         val gpuDelegate = GpuDelegate()
                         val options = Interpreter.Options().apply {
                             addDelegate(gpuDelegate)
                             setNumThreads(Runtime.getRuntime().availableProcessors())
                         }
-                        // Load the model as a MappedByteBuffer.
                         tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
                         videoProcessor?.setTFLiteModel(tfliteInterpreter!!)
-                        //Toast.makeText(this, "TFLite Model loaded: $bestModel", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
                         Toast.makeText(this, "Error loading TFLite model: ${e.message}", Toast.LENGTH_LONG).show()
                         Log.e("MainActivity", "TFLite Interpreter error", e)
@@ -351,11 +420,22 @@ class MainActivity : AppCompatActivity() {
     // Launch the 3D-only feature activity.
     private fun launch3DOnlyFeature() {
         try {
-            val intent = Intent(this, OpenGL3DActivity::class.java)
-            startActivity(intent)
+            startActivity(Intent(this, OpenGL3DActivity::class.java))
         } catch (e: Exception) {
             Toast.makeText(this, "Error launching 3D feature: ${e.message}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    // Switch between front and back cameras.
+    private var isFrontCamera = false
+    private fun switchCamera() {
+        if (isRecording) {
+            stopProcessingAndRecording()
+        }
+        isFrontCamera = !isFrontCamera
+        cameraHelper.isFrontCamera = isFrontCamera
+        cameraHelper.closeCamera()
+        cameraHelper.openCamera()
     }
 
     override fun onResume() {
@@ -386,17 +466,5 @@ class MainActivity : AppCompatActivity() {
         return REQUIRED_PERMISSIONS.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }
-    }
-
-    // Switch between front and back cameras.
-    private var isFrontCamera = false
-    private fun switchCamera() {
-        if (isRecording) {
-            stopProcessingAndRecording()
-        }
-        isFrontCamera = !isFrontCamera
-        cameraHelper.isFrontCamera = isFrontCamera
-        cameraHelper.closeCamera()
-        cameraHelper.openCamera()
     }
 }

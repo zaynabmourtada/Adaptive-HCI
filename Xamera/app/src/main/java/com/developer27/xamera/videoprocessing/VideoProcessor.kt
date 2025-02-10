@@ -5,6 +5,7 @@ package com.developer27.xamera.videoprocessing
 import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Environment
 import android.text.InputType
 import android.util.Log
@@ -33,7 +34,6 @@ import java.io.File
 import java.util.LinkedList
 import kotlin.math.max
 import kotlin.math.min
-import android.graphics.Color
 
 // Data class for bounding box information.
 data class BoundingBox(
@@ -350,10 +350,6 @@ class VideoProcessor(private val context: Context) {
      * Prompts the user to enter a name for the tracking data, then saves the data with that name.
      */
     fun promptSaveLineData() {
-        if (smoothDataList.isEmpty()) {
-            logCat("No tracking data to save.")
-            return
-        }
         val builder = AlertDialog.Builder(context)
         builder.setTitle("Save Tracking Data")
         builder.setMessage("Enter a name for your tracking data:")
