@@ -631,7 +631,7 @@ object YOLOHelper {
         )
     }
     // Resizes an image while maintaining its aspect ratio and pads it to fit the target dimensions.
-    fun letterbox(src: Mat, targetWidth: Int, targetHeight: Int, padColor: Scalar = Scalar(114.0, 114.0, 114.0)): Pair<Mat, Pair<Int, Int>> {
+    fun letterbox(src: Mat, targetWidth: Int, targetHeight: Int, padColor: Scalar = Scalar(0.0, 0.0, 0.0)): Pair<Mat, Pair<Int, Int>> {
         val srcWidth = src.cols().toDouble()
         val srcHeight = src.rows().toDouble()
         // Compute scaling factor: use the smaller ratio
