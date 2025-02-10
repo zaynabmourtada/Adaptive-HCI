@@ -82,7 +82,9 @@ object Settings {
     }
     object ExportData {
         var frameIMG = false
-        var videoDATA = false
+        var videoDATA = true
+        enum class Mode { MODEL, SCREEN }
+        var current: Mode = Mode.SCREEN
     }
 }
 

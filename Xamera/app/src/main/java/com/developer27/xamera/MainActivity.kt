@@ -193,16 +193,29 @@ class MainActivity : AppCompatActivity() {
         // Reset tracking data.
         videoProcessor?.clearTrackingData()
 
-        // Dynamically grab model input size, format video recorder accordingly.
+        // Retrieve input tensor shape from the TFLite interpreter.
         val inputTensor = tfliteInterpreter?.getInputTensor(0)
         val inputShape = inputTensor?.shape()
-        val width = inputShape?.getOrNull(2) ?: 416
-        val height = inputShape?.getOrNull(1) ?: 416
 
-        // Set up the video recorder with a determined output path.
-        val outputPath = getProcessedVideoOutputPath()
-        processedVideoRecorder = ProcessedVideoRecorder(width, height, outputPath)
-        processedVideoRecorder?.start()
+        // Determine width and height based on the export mode.
+        val (width, height) = when (Settings.ExportData.current) {
+            Settings.ExportData.Mode.SCREEN -> {
+                // Use cameraHelper.previewSize if available; otherwise fallback to 416x416.
+                cameraHelper.videoSize?.let { it.height to it.width } ?: (1920 to 1080)
+            }
+            Settings.ExportData.Mode.MODEL -> {
+                // Use the model's input tensor shape: [1, height, width, channels] is assumed.
+                (inputShape?.getOrNull(2) ?: 416) to (inputShape?.getOrNull(1) ?: 416)
+            }
+        }
+
+        with(Settings.ExportData) {
+            if (videoDATA) {
+                val outputPath = getProcessedVideoOutputPath()
+                processedVideoRecorder = ProcessedVideoRecorder(width, height, outputPath)
+                processedVideoRecorder?.start()
+            }
+        }
     }
 
     // Stop the processing and recording session.
@@ -321,7 +334,7 @@ class MainActivity : AppCompatActivity() {
                         viewBinding.processedFrameView.setImageBitmap(outputBitmap)
                         with(Settings.ExportData) {
                             if (videoDATA) {
-                                processedVideoRecorder?.recordFrame(videoBitmap)
+                                processedVideoRecorder?.recordFrame(outputBitmap)
                             }
                         }
                     }
