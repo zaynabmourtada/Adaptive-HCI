@@ -1,8 +1,6 @@
 venv/
-/YOLOv8/Models/yolo_mobile_env
-/YOLOv8/Tools/yolo_mobile_env
 /YOLOv8/Tools/.vscode
-/YOLOv8/Tools/YOLOvenv
+/YOLOv8/Tools/MYvenv
 /digitEnv
 /10000 DIDA
 venv/
@@ -11,4 +9,3 @@ env/
 */venv/
 */env/
 */.venv/
-/YOLOv8/YOLO-TFLITE/MYvenv

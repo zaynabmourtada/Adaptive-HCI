@@ -220,11 +220,15 @@ class VideoProcessor(private val context: Context) {
                     tfliteInterpreter?.run(tensorImage.buffer, outputArray)
                     // Parse output. Pass padOffsets and model input dimensions to adjust coordinates.
                     val (boundingBox, center) = YOLOHelper.parseTFLiteOutputTensor(outputArray, bitmap.width, bitmap.height, padOffsets, modelDims.inputWidth, modelDims.inputHeight)
-                    // Optionally draw bounding boxes.
-                    with(Settings.BoundingBox) {
-                        if (enableBoundingBox) YOLOHelper.drawBoundingBoxes(originalMatForDraw, boundingBox)
+                    // Draw bounding boxes.
+                    if(boundingBox != null){
+                        with(Settings.BoundingBox) {
+                            if (enableBoundingBox) YOLOHelper.drawBoundingBoxes(originalMatForDraw, boundingBox)
+                        }
                     }
-                    updateTrackingData(center, originalMatForDraw)
+                    if(center != null){
+                        updateTrackingData(center, originalMatForDraw)
+                    }
                 }
             }
 
@@ -540,34 +544,36 @@ object ContourDetection {
 
 // Helper object for YOLO detection using TensorFlow Lite.
 object YOLOHelper {
-    fun parseTFLiteOutputTensor(outputArray: Array<Array<FloatArray>>, originalWidth: Int, originalHeight: Int, padOffsets: Pair<Int, Int>, modelInputWidth: Int, modelInputHeight: Int): Pair<BoundingBox, Point> {
+    fun parseTFLiteOutputTensor(outputArray: Array<Array<FloatArray>>, originalWidth: Int, originalHeight: Int, padOffsets: Pair<Int, Int>, modelInputWidth: Int, modelInputHeight: Int): Pair<BoundingBox?, Point?> {
         val numDetections = outputArray[0][0].size
-        Log.d("YOLOTest", "Total detected objects: $numDetections")
-
-        var bestD = 0
-        var bestX = 0f
-        var bestY = 0f
-        var bestW = 0f
-        var bestH = 0f
-        var bestC = 0f
+        val confidenceThreshold = 0.25  // Set confidence threshold
+        var bestDetectionIndex = -1
+        var bestConfidence = 0f
 
         // Identify the detection with the highest confidence.
         for (i in 0 until numDetections) {
-            val xCenterNorm = outputArray[0][0][i]
-            val yCenterNorm = outputArray[0][1][i]
-            val widthNorm = outputArray[0][2][i]
-            val heightNorm = outputArray[0][3][i]
             val confidence = outputArray[0][4][i]
-            if (confidence > bestC) {
-                bestD = i
-                bestX = xCenterNorm
-                bestY = yCenterNorm
-                bestW = widthNorm
-                bestH = heightNorm
-                bestC = confidence
+
+            // Skip detections with confidence below the threshold
+            if (confidence < confidenceThreshold) continue
+
+            if (confidence > bestConfidence) {
+                bestDetectionIndex = i
+                bestConfidence = confidence
             }
         }
-        Log.d("YOLOTest", "BEST DETECTION $bestD: confidence=${"%.8f".format(bestC)}, x_center=$bestX, y_center=$bestY, width=$bestW, height=$bestH")
+
+        if (bestDetectionIndex == -1) {
+            Log.d("YOLOTest", "No detections above confidence threshold.")
+            return Pair(null, null)
+        }
+
+        // Retrieve the best detection
+        val xCenterNorm = outputArray[0][0][bestDetectionIndex]
+        val yCenterNorm = outputArray[0][1][bestDetectionIndex]
+        val widthNorm = outputArray[0][2][bestDetectionIndex]
+        val heightNorm = outputArray[0][3][bestDetectionIndex]
+
 
         // Compute the scale factor used in letterbox.
         val scale = min(modelInputWidth / originalWidth.toDouble(), modelInputHeight / originalHeight.toDouble())
@@ -577,10 +583,10 @@ object YOLOHelper {
         val padTop = padOffsets.second.toDouble()
 
         // Convert normalized coordinates to letterboxed image coordinates.
-        val xCenterLetterboxed = bestX * modelInputWidth
-        val yCenterLetterboxed = bestY * modelInputHeight
-        val boxWidthLetterboxed = bestW * modelInputWidth
-        val boxHeightLetterboxed = bestH * modelInputHeight
+        val xCenterLetterboxed = xCenterNorm * modelInputWidth
+        val yCenterLetterboxed = yCenterNorm * modelInputHeight
+        val boxWidthLetterboxed = widthNorm * modelInputWidth
+        val boxHeightLetterboxed = heightNorm * modelInputHeight
 
         // Adjust the coordinates: remove the padding and rescale back to the original image.
         val xCenterOriginal = (xCenterLetterboxed - padLeft) / scale
@@ -594,9 +600,7 @@ object YOLOHelper {
         val x2Original = xCenterOriginal + (boxWidthOriginal / 2)
         val y2Original = yCenterOriginal + (boxHeightOriginal / 2)
 
-        Log.d("YOLOTest", "Adjusted BOUNDING BOX: x1=${"%.8f".format(x1Original)}, y1=${"%.8f".format(y1Original)}, x2=${"%.8f".format(x2Original)}, y2=${"%.8f".format(y2Original)}")
-
-        val boundingBox = BoundingBox(x1Original.toFloat(), y1Original.toFloat(), x2Original.toFloat(), y2Original.toFloat(), bestC, 1)
+        val boundingBox = BoundingBox(x1Original.toFloat(), y1Original.toFloat(), x2Original.toFloat(), y2Original.toFloat(), bestConfidence, 1)
         val center = Point(xCenterOriginal, yCenterOriginal)
         return Pair(boundingBox, center)
     }
@@ -655,5 +659,36 @@ object YOLOHelper {
 
         // Return the letterboxed image and the top-left padding offset.
         return Pair(letterboxed, Pair(left, top))
+    }
+    fun calculateIoU(box1: BoundingBox, box2: BoundingBox): Float {
+        val x1 = max(box1.x1, box2.x1)
+        val y1 = max(box1.y1, box2.y1)
+        val x2 = min(box1.x2, box2.x2)
+        val y2 = min(box1.y2, box2.y2)
+
+        val intersectionWidth = max(0f, x2 - x1)
+        val intersectionHeight = max(0f, y2 - y1)
+        val intersectionArea = intersectionWidth * intersectionHeight
+
+        val box1Area = (box1.x2 - box1.x1) * (box1.y2 - box1.y1)
+        val box2Area = (box2.x2 - box2.x1) * (box2.y2 - box2.y1)
+
+        val unionArea = box1Area + box2Area - intersectionArea
+        return if (unionArea > 0) intersectionArea / unionArea else 0f
+    }
+    fun nonMaximumSuppression(detections: List<BoundingBox>, iouThreshold: Float): List<BoundingBox> {
+        // Sort detections by confidence score (highest first)
+        val sortedDetections = detections.sortedByDescending { it.confidence }.toMutableList()
+        val finalDetections = mutableListOf<BoundingBox>()
+
+        while (sortedDetections.isNotEmpty()) {
+            val bestDetection = sortedDetections.removeAt(0) // Take the highest confidence box
+            finalDetections.add(bestDetection)
+
+            // Filter out boxes that have high IoU (overlap) with the best detection
+            sortedDetections.removeAll { calculateIoU(bestDetection, it) > iouThreshold }
+        }
+
+        return finalDetections
     }
 }

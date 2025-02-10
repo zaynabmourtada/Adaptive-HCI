@@ -12,24 +12,24 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
 
 # Paths to model, input video, and output video
-model_path = "F:\\GitHub\\Adaptive-HCI\\YOLOv8\\Models\\5\\weights\\best.pt"  # Path to your YOLO model
-input_video_path = "F:\\GitHub\\Adaptive-HCI\\YOLOv8\\Tools\\0_video\\padded_video.mp4"  # Input video path
+model_path = "F:\\GitHub\\Adaptive-HCI\\YOLOv8\\Models\\8\\weights\\best.pt"  # Path to your YOLO model
+input_video_path = "F:\\GitHub\\Adaptive-HCI\\YOLOv8\\Tools\\0_video\\yoloV6.mp4"  # Input video path
 output_video_path = "F:\\GitHub\\Adaptive-HCI\\YOLOv8\\Tools\\0_video\\proc_video.mp4"  # Output video path
 
 # Load YOLO model with the specified device
 model = YOLO(model_path).to(device)
 
 # Automatically detect expected input size
-expected_size = model.overrides.get("imgsz", 640)  # Get imgsz if available, else default to 640
+expected_size = model.overrides.get("imgsz", 416)  # Get imgsz if available, else default to 640
 print(f"Model expected image size: {expected_size}x{expected_size}")
 
 # Function to process a batch of frames
 def process_batch(frames, original_sizes):
     # Resize all frames for YOLO in one step
-    resized_frames = [cv2.resize(frame, (expected_size, expected_size)) for frame in frames]
+    #resized_frames = [cv2.resize(frame, (expected_size, expected_size)) for frame in frames]
 
     # Run batch inference (YOLO processes multiple images at once)
-    results = model.predict(resized_frames, imgsz=expected_size, device=device, verbose=False)
+    results = model.predict(frames, imgsz=expected_size, device=device, verbose=False)
 
     processed_frames = []
     for i, (result, frame) in enumerate(zip(results, frames)):
