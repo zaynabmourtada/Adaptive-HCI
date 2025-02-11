@@ -55,8 +55,14 @@ data class ModelDimensions(
 object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
-        var current: Mode = Mode.YOLO
-        var enableYOLOinference = true
+        var current: Mode = Mode.CONTOUR
+        var enableYOLOinference = false
+    }
+    object ExportData {
+        var frameIMG = true
+        var videoDATA = false
+        enum class Mode { MODEL, SCREEN }
+        var current: Mode = Mode.SCREEN
     }
     object Trace {
         var enableRAWtrace = true
@@ -79,12 +85,6 @@ object Settings {
     object Debug {
         var enableToasts = true
         var enableLogging = true
-    }
-    object ExportData {
-        var frameIMG = false
-        var videoDATA = true
-        enum class Mode { MODEL, SCREEN }
-        var current: Mode = Mode.SCREEN
     }
 }
 
