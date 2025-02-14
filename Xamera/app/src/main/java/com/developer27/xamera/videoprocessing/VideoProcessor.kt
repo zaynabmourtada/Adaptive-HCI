@@ -2,14 +2,11 @@
 
 package com.developer27.xamera.videoprocessing
 
-import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Environment
-import android.text.InputType
 import android.util.Log
-import android.widget.EditText
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +28,10 @@ import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.image.TensorImage
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.LinkedList
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 
@@ -55,14 +55,8 @@ data class ModelDimensions(
 object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
-        var current: Mode = Mode.CONTOUR
-        var enableYOLOinference = false
-    }
-    object ExportData {
-        var frameIMG = true
-        var videoDATA = false
-        enum class Mode { MODEL, SCREEN }
-        var current: Mode = Mode.SCREEN
+        var current: Mode = Mode.YOLO
+        var enableYOLOinference = true
     }
     object Trace {
         var enableRAWtrace = true
@@ -85,6 +79,10 @@ object Settings {
     object Debug {
         var enableToasts = true
         var enableLogging = true
+    }
+    object ExportData {
+        var frameIMG = false
+        var videoDATA = false
     }
 }
 
@@ -220,15 +218,11 @@ class VideoProcessor(private val context: Context) {
                     tfliteInterpreter?.run(tensorImage.buffer, outputArray)
                     // Parse output. Pass padOffsets and model input dimensions to adjust coordinates.
                     val (boundingBox, center) = YOLOHelper.parseTFLiteOutputTensor(outputArray, bitmap.width, bitmap.height, padOffsets, modelDims.inputWidth, modelDims.inputHeight)
-                    // Draw bounding boxes.
-                    if(boundingBox != null){
-                        with(Settings.BoundingBox) {
-                            if (enableBoundingBox) YOLOHelper.drawBoundingBoxes(originalMatForDraw, boundingBox)
-                        }
+                    // Optionally draw bounding boxes.
+                    with(Settings.BoundingBox) {
+                        if (enableBoundingBox) YOLOHelper.drawBoundingBoxes(originalMatForDraw, boundingBox)
                     }
-                    if(center != null){
-                        updateTrackingData(center, originalMatForDraw)
-                    }
+                    updateTrackingData(center, originalMatForDraw)
                 }
             }
 
@@ -350,41 +344,14 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
-    //-----------------------------------------------------------------------------------------------------
-
     /**
-     * Prompts the user to enter a name for the tracking data, then saves the data with that name.
-     */
-    fun promptSaveLineData() {
-        val builder = AlertDialog.Builder(context)
-        builder.setTitle("Save Tracking Data")
-        builder.setMessage("Enter a name for your tracking data:")
-        val input = EditText(context)
-        input.inputType = InputType.TYPE_CLASS_TEXT
-        builder.setView(input)
-        builder.setPositiveButton("Save") { _, _ ->
-            val userProvidedName = input.text.toString().trim()
-            if (userProvidedName.isEmpty()) {
-                Toast.makeText(context, "Please enter a valid name.", Toast.LENGTH_SHORT).show()
-            } else {
-                saveLineDataToFile(userProvidedName)
-            }
-        }
-        builder.setNegativeButton("Cancel") { dialog, _ ->
-            dialog.cancel()
-        }
-        builder.show()
-    }
-
-    /**
-     * Saves the current (smoothed) tracking data—the points that form the drawn line—into a text file.
-     * The file name incorporates the user-provided name and a timestamp.
-     * The file is saved in the public Documents/tracking folder.
+     * Automatically saves the current (smoothed) tracking data—the points that form the drawn line—into a text file.
+     * The file name incorporates the current date and time, and the file is saved in the public Documents/tracking folder.
      *
      * IMPORTANT: To write to the public Documents folder, you may need to declare and request the
      * WRITE_EXTERNAL_STORAGE permission in your AndroidManifest.xml and at runtime.
      */
-    private fun saveLineDataToFile(userDataName: String) {
+    fun autoSaveLineData() {
         try {
             // Get the public Documents directory.
             val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
@@ -393,17 +360,19 @@ class VideoProcessor(private val context: Context) {
             if (!trackingDir.exists()) {
                 trackingDir.mkdirs()
             }
-            // Create a unique file name using the user-provided name and the current timestamp.
-            val fileName = "${userDataName}_tracking_line_${System.currentTimeMillis()}.txt"
+            // Generate a timestamp for a unique file name.
+            val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+            val currentDate = dateFormat.format(Date())
+            val fileName = "TrackingData_$currentDate.txt"
             val file = File(trackingDir, fileName)
 
-            // Convert each point to a string ("x,y") and join them with newlines.
+            // Convert each tracking point to a string ("x,y") and join them with newlines.
             val dataString = smoothDataList.joinToString(separator = "\n") { point ->
                 "${point.x},${point.y}"
             }
             file.writeText(dataString)
             logCat("Tracking data saved to ${file.absolutePath}")
-            Toast.makeText(context, "Tracking data saved. Run Xamera AR to view it.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Tracking data saved to ${file.absolutePath}", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             logCat("Error saving tracking data: ${e.message}", e)
             Toast.makeText(context, "Error saving tracking data", Toast.LENGTH_SHORT).show()
@@ -544,36 +513,34 @@ object ContourDetection {
 
 // Helper object for YOLO detection using TensorFlow Lite.
 object YOLOHelper {
-    fun parseTFLiteOutputTensor(outputArray: Array<Array<FloatArray>>, originalWidth: Int, originalHeight: Int, padOffsets: Pair<Int, Int>, modelInputWidth: Int, modelInputHeight: Int): Pair<BoundingBox?, Point?> {
+    fun parseTFLiteOutputTensor(outputArray: Array<Array<FloatArray>>, originalWidth: Int, originalHeight: Int, padOffsets: Pair<Int, Int>, modelInputWidth: Int, modelInputHeight: Int): Pair<BoundingBox, Point> {
         val numDetections = outputArray[0][0].size
-        val confidenceThreshold = 0.25  // Set confidence threshold
-        var bestDetectionIndex = -1
-        var bestConfidence = 0f
+        Log.d("YOLOTest", "Total detected objects: $numDetections")
+
+        var bestD = 0
+        var bestX = 0f
+        var bestY = 0f
+        var bestW = 0f
+        var bestH = 0f
+        var bestC = 0f
 
         // Identify the detection with the highest confidence.
         for (i in 0 until numDetections) {
+            val xCenterNorm = outputArray[0][0][i]
+            val yCenterNorm = outputArray[0][1][i]
+            val widthNorm = outputArray[0][2][i]
+            val heightNorm = outputArray[0][3][i]
             val confidence = outputArray[0][4][i]
-
-            // Skip detections with confidence below the threshold
-            if (confidence < confidenceThreshold) continue
-
-            if (confidence > bestConfidence) {
-                bestDetectionIndex = i
-                bestConfidence = confidence
+            if (confidence > bestC) {
+                bestD = i
+                bestX = xCenterNorm
+                bestY = yCenterNorm
+                bestW = widthNorm
+                bestH = heightNorm
+                bestC = confidence
             }
         }
-
-        if (bestDetectionIndex == -1) {
-            Log.d("YOLOTest", "No detections above confidence threshold.")
-            return Pair(null, null)
-        }
-
-        // Retrieve the best detection
-        val xCenterNorm = outputArray[0][0][bestDetectionIndex]
-        val yCenterNorm = outputArray[0][1][bestDetectionIndex]
-        val widthNorm = outputArray[0][2][bestDetectionIndex]
-        val heightNorm = outputArray[0][3][bestDetectionIndex]
-
+        Log.d("YOLOTest", "BEST DETECTION $bestD: confidence=${"%.8f".format(bestC)}, x_center=$bestX, y_center=$bestY, width=$bestW, height=$bestH")
 
         // Compute the scale factor used in letterbox.
         val scale = min(modelInputWidth / originalWidth.toDouble(), modelInputHeight / originalHeight.toDouble())
@@ -583,10 +550,10 @@ object YOLOHelper {
         val padTop = padOffsets.second.toDouble()
 
         // Convert normalized coordinates to letterboxed image coordinates.
-        val xCenterLetterboxed = xCenterNorm * modelInputWidth
-        val yCenterLetterboxed = yCenterNorm * modelInputHeight
-        val boxWidthLetterboxed = widthNorm * modelInputWidth
-        val boxHeightLetterboxed = heightNorm * modelInputHeight
+        val xCenterLetterboxed = bestX * modelInputWidth
+        val yCenterLetterboxed = bestY * modelInputHeight
+        val boxWidthLetterboxed = bestW * modelInputWidth
+        val boxHeightLetterboxed = bestH * modelInputHeight
 
         // Adjust the coordinates: remove the padding and rescale back to the original image.
         val xCenterOriginal = (xCenterLetterboxed - padLeft) / scale
@@ -600,7 +567,9 @@ object YOLOHelper {
         val x2Original = xCenterOriginal + (boxWidthOriginal / 2)
         val y2Original = yCenterOriginal + (boxHeightOriginal / 2)
 
-        val boundingBox = BoundingBox(x1Original.toFloat(), y1Original.toFloat(), x2Original.toFloat(), y2Original.toFloat(), bestConfidence, 1)
+        Log.d("YOLOTest", "Adjusted BOUNDING BOX: x1=${"%.8f".format(x1Original)}, y1=${"%.8f".format(y1Original)}, x2=${"%.8f".format(x2Original)}, y2=${"%.8f".format(y2Original)}")
+
+        val boundingBox = BoundingBox(x1Original.toFloat(), y1Original.toFloat(), x2Original.toFloat(), y2Original.toFloat(), bestC, 1)
         val center = Point(xCenterOriginal, yCenterOriginal)
         return Pair(boundingBox, center)
     }
@@ -659,36 +628,5 @@ object YOLOHelper {
 
         // Return the letterboxed image and the top-left padding offset.
         return Pair(letterboxed, Pair(left, top))
-    }
-    fun calculateIoU(box1: BoundingBox, box2: BoundingBox): Float {
-        val x1 = max(box1.x1, box2.x1)
-        val y1 = max(box1.y1, box2.y1)
-        val x2 = min(box1.x2, box2.x2)
-        val y2 = min(box1.y2, box2.y2)
-
-        val intersectionWidth = max(0f, x2 - x1)
-        val intersectionHeight = max(0f, y2 - y1)
-        val intersectionArea = intersectionWidth * intersectionHeight
-
-        val box1Area = (box1.x2 - box1.x1) * (box1.y2 - box1.y1)
-        val box2Area = (box2.x2 - box2.x1) * (box2.y2 - box2.y1)
-
-        val unionArea = box1Area + box2Area - intersectionArea
-        return if (unionArea > 0) intersectionArea / unionArea else 0f
-    }
-    fun nonMaximumSuppression(detections: List<BoundingBox>, iouThreshold: Float): List<BoundingBox> {
-        // Sort detections by confidence score (highest first)
-        val sortedDetections = detections.sortedByDescending { it.confidence }.toMutableList()
-        val finalDetections = mutableListOf<BoundingBox>()
-
-        while (sortedDetections.isNotEmpty()) {
-            val bestDetection = sortedDetections.removeAt(0) // Take the highest confidence box
-            finalDetections.add(bestDetection)
-
-            // Filter out boxes that have high IoU (overlap) with the best detection
-            sortedDetections.removeAll { calculateIoU(bestDetection, it) > iouThreshold }
-        }
-
-        return finalDetections
     }
 }

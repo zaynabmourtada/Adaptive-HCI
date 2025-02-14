@@ -15,11 +15,9 @@ import android.util.SparseIntArray
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
-import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.developer27.xamera.camera.CameraHelper
@@ -36,15 +34,18 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * MainActivity:
  * - Sets up the camera preview and UI controls.
  * - Processes frames via VideoProcessor (which applies OpenCV overlays such as drawn traces).
  * - Records the processed frames to a video file.
- * - When the user stops tracking, the app first prompts the user to name the tracking (line) data file
- *   (which is saved in Documents/tracking) and then prompts the user to name a second file (which is saved
- *   in Documents/2d_letter with the content of the hardcoded alphabet).
+ * - When the user stops tracking, the app first saves the tracking (line) data file
+ *   (which is saved in Documents/tracking) and then automatically saves the Letter Inference Data
+ *   in Documents/2d_letter with a timestamp.
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var viewBinding: ActivityMainBinding
@@ -66,7 +67,7 @@ class MainActivity : AppCompatActivity() {
     private var isProcessing = false
     private var isProcessingFrame = false
 
-    //This variable is for inference result
+    // This variable is for inference result
     private var inferenceResult = ""
 
     // Permissions required by the app.
@@ -109,21 +110,17 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Inflate the layout using view binding.
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
 
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
         cameraManager = getSystemService(CAMERA_SERVICE) as CameraManager
 
-        // Initialize helper classes.
         cameraHelper = CameraHelper(this, viewBinding, sharedPreferences)
         videoProcessor = VideoProcessor(this)
 
-        // Hide the processed frame view until processing starts.
         viewBinding.processedFrameView.visibility = View.GONE
 
-        // Register permission launcher for Camera and Audio.
         requestPermissionLauncher =
             registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
                 val camGranted = permissions[Manifest.permission.CAMERA] ?: false
@@ -139,7 +136,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-        // Open camera if permissions are granted.
         if (allPermissionsGranted()) {
             if (viewBinding.viewFinder.isAvailable) {
                 cameraHelper.openCamera()
@@ -150,7 +146,6 @@ class MainActivity : AppCompatActivity() {
             requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
         }
 
-        // Set up button click listeners.
         viewBinding.startProcessingButton.setOnClickListener {
             if (isRecording) {
                 stopProcessingAndRecording()
@@ -171,7 +166,6 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java))
         }
 
-        // Load the TensorFlow Lite model on a separate thread.
         loadBestModelOnStartupThreaded("YOLOv3_float32.tflite")
         cameraHelper.setupZoomControls()
         sharedPreferences.registerOnSharedPreferenceChangeListener { _, key ->
@@ -181,7 +175,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Start the processing and recording session.
     private fun startProcessingAndRecording() {
         isRecording = true
         isProcessing = true
@@ -190,36 +183,18 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.getColorStateList(this, R.color.red)
         viewBinding.processedFrameView.visibility = View.VISIBLE
 
-        // Reset tracking data.
         videoProcessor?.clearTrackingData()
 
-        // Retrieve input tensor shape from the TFLite interpreter.
         val inputTensor = tfliteInterpreter?.getInputTensor(0)
         val inputShape = inputTensor?.shape()
+        val width = inputShape?.getOrNull(2) ?: 416
+        val height = inputShape?.getOrNull(1) ?: 416
 
-        // Determine width and height based on the export mode.
-        val (width, height) = when (Settings.ExportData.current) {
-            Settings.ExportData.Mode.SCREEN -> {
-                // Use cameraHelper.previewSize if available; otherwise fallback to 416x416.
-                cameraHelper.videoSize?.let { it.height to it.width } ?: (1920 to 1080)
-            }
-            Settings.ExportData.Mode.MODEL -> {
-                // Use the model's input tensor shape: [1, height, width, channels] is assumed.
-                (inputShape?.getOrNull(2) ?: 416) to (inputShape?.getOrNull(1) ?: 416)
-            }
-        }
-
-        // Save video
-        with(Settings.ExportData) {
-            if (videoDATA) {
-                val outputPath = getProcessedVideoOutputPath()
-                processedVideoRecorder = ProcessedVideoRecorder(width, height, outputPath)
-                processedVideoRecorder?.start()
-            }
-        }
+        val outputPath = getProcessedVideoOutputPath()
+        processedVideoRecorder = ProcessedVideoRecorder(width, height, outputPath)
+        processedVideoRecorder?.start()
     }
 
-    // Stop the processing and recording session.
     private fun stopProcessingAndRecording() {
         isRecording = false
         isProcessing = false
@@ -231,7 +206,6 @@ class MainActivity : AppCompatActivity() {
         processedVideoRecorder?.stop()
         processedVideoRecorder = null
 
-        // Save a processed frame as a jpg for testing.
         val outputPath = getProcessedImageOutputPath()
         processedFrameRecorder = ProcessedFrameRecorder(outputPath)
         with(Settings.ExportData) {
@@ -241,89 +215,41 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // TODO - Zaynab: Call inference result initialization function
         intializeInferenceResult()
 
-        // First: Prompt to save the tracking (line) data in Documents/tracking.
-        videoProcessor?.promptSaveLineData()
+        // Save tracking data with .xmr extension.
+        videoProcessor?.autoSaveLineData()
 
-        // Then, after a delay, prompt to save the Letter Inference Data.
-        promptSaveLetterInferenceData()
+        // Automatically save Letter Inference Data with .xmr extension.
+        autoSaveLetterInferenceData()
     }
 
-    // TODO- Zaynab: Intiliaze a logic to initialize the inference from Machine Learning Model
     private fun intializeInferenceResult(){
-        inferenceResult = "ML - Inference"; // "ML - Inference" is a place holder function
+        inferenceResult = "ML - Inference"
     }
 
     /**
-     * Prompts the user to enter a file name for saving the Letter Inference Data.
-     * This displays an AlertDialog where the user can input the desired file name.
-     *
-     * When the user confirms, it calls [saveLetterInferenceData] to write the file.
+     * Automatically saves the Letter Inference Data with the current date and time in the file name.
+     * The file is saved in the Documents/2d_letter folder with a .xmr extension.
      */
-    fun promptSaveLetterInferenceData() {
-        // Create an EditText for the file name input.
-        val editText = EditText(this).apply {
-            hint = "Enter file name"
-        }
-
-        // Build and display an AlertDialog to prompt for the file name.
-        AlertDialog.Builder(this)
-            .setTitle("Save Letter Inference Data")
-            .setMessage("Enter a file name for the Letter Inference Data:")
-            .setView(editText)
-            .setPositiveButton("Save") { _, _ ->
-                val fileName = editText.text.toString().trim()
-                if (fileName.isNotEmpty()) {
-                    // If the file name is provided, save the Letter Inference Data file.
-                    saveLetterInferenceData(fileName)
-                } else {
-                    Toast.makeText(this, "File name cannot be empty.", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("Cancel") { dialog, _ ->
-                dialog.dismiss()
-            }
-            .setCancelable(false)
-            .show()
-    }
-
-    /**
-     * Saves a text file containing a hardcoded alphabet into the Documents/2d_letter folder.
-     *
-     * This function uses the public Documents directory (similar to saveLineDataToFile())
-     * but creates/uses a subdirectory named "2d_letter". The file name is built using the
-     * user-provided base name and the current timestamp.
-     *
-     * @param userDataName The base name provided by the user.
-     */
-    private fun saveLetterInferenceData(userDataName: String) {
+    private fun autoSaveLetterInferenceData() {
         try {
-            // Get the public Documents directory.
             val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-            // Create a subfolder named "2d_letter" within Documents.
             val letterDir = File(documentsDir, "2d_letter")
             if (!letterDir.exists()) {
                 letterDir.mkdirs()
             }
-            // Create a unique file name using the user-provided name and the current timestamp.
-            val fileName = "${userDataName}_letter_${System.currentTimeMillis()}.txt"
+            val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+            val currentDate = dateFormat.format(Date())
+            val fileName = "LetterInferenceData_$currentDate.txt"
             val file = File(letterDir, fileName)
-
-            // Define the hardcoded alphabet string.
-            val alphabetData = inferenceResult
-            // Write the alphabet string into the file.
-            file.writeText(alphabetData)
-
-            // Notify the user that the file was saved successfully.
-            Toast.makeText(this, "Letter inference data saved. Check Documents/2d_letter.", Toast.LENGTH_LONG).show()
+            file.writeText(inferenceResult)
+            Toast.makeText(this, "Letter inference data saved as $fileName in Documents/2d_letter.", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             Toast.makeText(this, "Error saving Letter inference data", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // Process a frame from the camera preview using VideoProcessor.
     private fun processFrameWithVideoProcessor() {
         if (isProcessingFrame) return
         val bitmap = viewBinding.viewFinder.bitmap ?: return
@@ -335,7 +261,7 @@ class MainActivity : AppCompatActivity() {
                         viewBinding.processedFrameView.setImageBitmap(outputBitmap)
                         with(Settings.ExportData) {
                             if (videoDATA) {
-                                processedVideoRecorder?.recordFrame(outputBitmap)
+                                processedVideoRecorder?.recordFrame(videoBitmap)
                             }
                         }
                     }
@@ -345,7 +271,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Determine an output path for the processed video file.
     private fun getProcessedVideoOutputPath(): String {
         @Suppress("DEPRECATION")
         val moviesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
@@ -355,7 +280,6 @@ class MainActivity : AppCompatActivity() {
         return File(moviesDir, "Processed_${System.currentTimeMillis()}.mp4").absolutePath
     }
 
-    // Determine an output path for the processed image file.
     private fun getProcessedImageOutputPath(): String {
         @Suppress("DEPRECATION")
         val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
@@ -365,7 +289,6 @@ class MainActivity : AppCompatActivity() {
         return File(picturesDir, "Processed_${System.currentTimeMillis()}.jpg").absolutePath
     }
 
-    // Load the best model on a background thread.
     private fun loadBestModelOnStartupThreaded(bestModel: String) {
         Thread {
             val bestLoadedPath = copyAssetModelBlocking(bestModel)
@@ -390,7 +313,6 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    // Load the model file into a MappedByteBuffer.
     private fun loadMappedFile(modelPath: String): MappedByteBuffer {
         val file = File(modelPath)
         val fileInputStream = file.inputStream()
@@ -398,7 +320,6 @@ class MainActivity : AppCompatActivity() {
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, file.length())
     }
 
-    // Copy the model from the assets folder to the device's internal storage.
     private fun copyAssetModelBlocking(assetName: String): String {
         return try {
             val outFile = File(filesDir, assetName)
@@ -422,7 +343,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Launch the 2D-only feature activity.
     private fun launch2DOnlyFeature() {
         try {
             startActivity(Intent(this, OpenGL2DActivity::class.java))
@@ -431,7 +351,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Launch the 3D-only feature activity.
     private fun launch3DOnlyFeature() {
         try {
             startActivity(Intent(this, OpenGL3DActivity::class.java))
@@ -440,7 +359,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Switch between front and back cameras.
     private var isFrontCamera = false
     private fun switchCamera() {
         if (isRecording) {
@@ -475,7 +393,6 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
-    // Check that all required permissions are granted.
     private fun allPermissionsGranted(): Boolean {
         return REQUIRED_PERMISSIONS.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
