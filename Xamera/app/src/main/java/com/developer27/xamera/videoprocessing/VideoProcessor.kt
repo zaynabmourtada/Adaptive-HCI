@@ -2,14 +2,11 @@
 
 package com.developer27.xamera.videoprocessing
 
-import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Environment
-import android.text.InputType
 import android.util.Log
-import android.widget.EditText
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +28,10 @@ import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.image.TensorImage
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.LinkedList
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 
@@ -130,11 +130,9 @@ class VideoProcessor(private val context: Context) {
             val result: Pair<Bitmap, Bitmap>? = try {
                 when (Settings.DetectionMode.current) {
                     Settings.DetectionMode.Mode.CONTOUR -> {
-                        // processFrameInternalCONTOUR now returns a Pair<Bitmap, Bitmap>?
                         processFrameInternalCONTOUR(bitmap)
                     }
                     Settings.DetectionMode.Mode.YOLO -> {
-                        // processFrameInternalYOLO now returns a Pair<Bitmap, Bitmap>?
                         processFrameInternalYOLO(bitmap)
                     }
                 }
@@ -152,7 +150,6 @@ class VideoProcessor(private val context: Context) {
         var preprocessedMat: Mat? = null
         return try {
             Utils.bitmapToMat(bitmap, originalMat)
-
             preprocessedMat = Preprocessing.preprocessFrame(originalMat)
             val videoBitmap = Bitmap.createBitmap(preprocessedMat.cols(), preprocessedMat.rows(), Bitmap.Config.ARGB_8888)
             Utils.matToBitmap(preprocessedMat, videoBitmap)
@@ -178,47 +175,35 @@ class VideoProcessor(private val context: Context) {
     // Processes a frame using YOLO - Returns a Pair containing outputBitmap and letterboxedBitmap.
     private suspend fun processFrameInternalYOLO(bitmap: Bitmap): Pair<Bitmap, Bitmap>? {
         return withContext(Dispatchers.IO) {
-            // Retrieve model dimensions (input size and output shape) in one go.
-            val modelDims = getModelDimensions()  // e.g., inputWidth = 416, inputHeight = 416, outputShape = [1, 5, 3549]
-
-            // Convert original bitmap to a Mat.
+            val modelDims = getModelDimensions()
             val origMat = Mat()
             Utils.bitmapToMat(bitmap, origMat)
 
             Log.e("YOLOTest", "Model Width: ${modelDims.inputWidth}, Model Height: ${modelDims.inputHeight}")
 
-            // Apply letterbox: resize and pad to the target dimensions.
             val (letterboxedMat, padOffsets) = YOLOHelper.letterbox(origMat, modelDims.inputWidth, modelDims.inputHeight)
             origMat.release()
 
-            // Preprocess the letterboxed image.
             val preprocessedMat = Preprocessing.preprocessFrame(letterboxedMat)
             letterboxedMat.release()
 
-            // Convert the preprocessed Mat back to a Bitmap.
             val letterboxedBitmap = Bitmap.createBitmap(preprocessedMat.cols(), preprocessedMat.rows(), Bitmap.Config.ARGB_8888)
             Utils.matToBitmap(preprocessedMat, letterboxedBitmap)
             preprocessedMat.release()
 
-            // Create a Mat from the original bitmap for drawing bounding boxes.
             val originalMatForDraw = Mat()
             Utils.bitmapToMat(bitmap, originalMatForDraw)
 
             with(Settings.DetectionMode) {
                 if (enableYOLOinference){
-                    // Prepare tensor image for inference.
                     val tensorImage = TensorImage(DataType.FLOAT32).apply { load(letterboxedBitmap) }
                     if (tfliteInterpreter == null) {
                         Log.e("YOLOTest", "TFLite Model is NULL! Cannot run inference.")
                         return@withContext null
                     }
-                    // Allocate output array using the output shape from modelDims.
                     val outputArray = Array(modelDims.outputShape[0]) { Array(modelDims.outputShape[1]) { FloatArray(modelDims.outputShape[2]) } }
-                    // Run inference.
                     tfliteInterpreter?.run(tensorImage.buffer, outputArray)
-                    // Parse output. Pass padOffsets and model input dimensions to adjust coordinates.
                     val (boundingBox, center) = YOLOHelper.parseTFLiteOutputTensor(outputArray, bitmap.width, bitmap.height, padOffsets, modelDims.inputWidth, modelDims.inputHeight)
-                    // Optionally draw bounding boxes.
                     with(Settings.BoundingBox) {
                         if (enableBoundingBox) YOLOHelper.drawBoundingBoxes(originalMatForDraw, boundingBox)
                     }
@@ -226,30 +211,22 @@ class VideoProcessor(private val context: Context) {
                 }
             }
 
-            // Convert the annotated Mat back to a Bitmap.
             val outputBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
             Utils.matToBitmap(originalMatForDraw, outputBitmap)
             originalMatForDraw.release()
 
-            // - First: the outputBitmap (original image with drawn bounding boxes)
-            // - Second: the letterboxedBitmap (the preprocessed input used for inference)
             Pair(outputBitmap, letterboxedBitmap)
         }
     }
 
     // Dynamically retrieves the model input size.
     private fun getModelDimensions(): ModelDimensions {
-        // Retrieve input tensor shape.
         val inputTensor = tfliteInterpreter?.getInputTensor(0)
         val inputShape = inputTensor?.shape()
-        // Typically, the input tensor shape is [1, height, width, channels].
         val height = inputShape?.getOrNull(1) ?: 416
         val width = inputShape?.getOrNull(2) ?: 416
-
-        // Retrieve output tensor shape.
         val outputTensor = tfliteInterpreter?.getOutputTensor(0)
         val outputShape: List<Int> = outputTensor?.shape()?.toList() ?: listOf(1, 5, 3549)
-
         return ModelDimensions(inputWidth = width, inputHeight = height, outputShape = outputShape)
     }
 
@@ -268,60 +245,36 @@ class VideoProcessor(private val context: Context) {
 
     // Creates a white, square (28x28) Bitmap that encapsulates the drawn spline trace (with padding).
     fun exportTraceForInference(): Bitmap {
-        // Ensure there is some trace data.
         if (smoothDataList.isEmpty()) {
-            // Return a minimal white bitmap if there's nothing to draw.
             return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
         }
-
-        // 1. Compute the bounding box of the trace points.
         var minX = Double.MAX_VALUE
         var minY = Double.MAX_VALUE
         var maxX = Double.MIN_VALUE
         var maxY = Double.MIN_VALUE
-
         for (pt in smoothDataList) {
             minX = min(minX, pt.x)
             minY = min(minY, pt.y)
             maxX = max(maxX, pt.x)
             maxY = max(maxY, pt.y)
         }
-
-        // 2. Define padding (in pixels) around the drawn trace.
         val padding = 30.0
-        // Compute optimal dimensions.
         val optimalWidth = max((maxX - minX + 2 * padding).toInt(), 1)
         val optimalHeight = max((maxY - minY + 2 * padding).toInt(), 1)
-
-        // 3. Determine the square size as the greatest of the optimal dimensions.
         val squareSize = max(optimalWidth, optimalHeight)
-
-        // 4. Create a white square Mat of the computed dimensions.
         val mat = Mat(squareSize, squareSize, CvType.CV_8UC4, Scalar(255.0, 255.0, 255.0, 255.0))
-
-        // 5. Compute offsets to center the drawn trace inside the square.
         val xOffset = (squareSize - optimalWidth) / 2.0
         val yOffset = (squareSize - optimalHeight) / 2.0
-
-        // 6. Create an adjusted list of points so that the drawing starts at (padding, padding) plus the offsets.
         val adjustedPoints = smoothDataList.map {
             Point(it.x - minX + padding + xOffset, it.y - minY + padding + yOffset)
         }
-
-        // 7. Set up drawing parameters (temporarily override settings).
         val originalColor = Settings.Trace.splineLineColor
         val originalThickness = Settings.Trace.lineThickness
         Settings.Trace.splineLineColor = Scalar(0.0, 0.0, 0.0) // Black
         Settings.Trace.lineThickness = 40
-
-        // 8. Draw the spline curve using the adjusted points.
         TraceRenderer.drawSplineCurve(adjustedPoints, mat)
-
-        // 9. Restore the original settings.
         Settings.Trace.splineLineColor = originalColor
         Settings.Trace.lineThickness = originalThickness
-
-        // 10. Convert the Mat back to a Bitmap.
         val outputBitmap = Bitmap.createBitmap(squareSize, squareSize, Bitmap.Config.ARGB_8888)
         Utils.matToBitmap(mat, outputBitmap)
         mat.release()
@@ -344,60 +297,31 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
-    //-----------------------------------------------------------------------------------------------------
-
     /**
-     * Prompts the user to enter a name for the tracking data, then saves the data with that name.
-     */
-    fun promptSaveLineData() {
-        val builder = AlertDialog.Builder(context)
-        builder.setTitle("Save Tracking Data")
-        builder.setMessage("Enter a name for your tracking data:")
-        val input = EditText(context)
-        input.inputType = InputType.TYPE_CLASS_TEXT
-        builder.setView(input)
-        builder.setPositiveButton("Save") { _, _ ->
-            val userProvidedName = input.text.toString().trim()
-            if (userProvidedName.isEmpty()) {
-                Toast.makeText(context, "Please enter a valid name.", Toast.LENGTH_SHORT).show()
-            } else {
-                saveLineDataToFile(userProvidedName)
-            }
-        }
-        builder.setNegativeButton("Cancel") { dialog, _ ->
-            dialog.cancel()
-        }
-        builder.show()
-    }
-
-    /**
-     * Saves the current (smoothed) tracking data—the points that form the drawn line—into a text file.
-     * The file name incorporates the user-provided name and a timestamp.
-     * The file is saved in the public Documents/tracking folder.
+     * Automatically saves the current (smoothed) tracking data—the points that form the drawn line—into a text file.
+     * The file name incorporates the current date and time, and the file is saved in the public Documents/tracking folder.
+     * The file is saved with a .xmr extension.
      *
      * IMPORTANT: To write to the public Documents folder, you may need to declare and request the
      * WRITE_EXTERNAL_STORAGE permission in your AndroidManifest.xml and at runtime.
      */
-    private fun saveLineDataToFile(userDataName: String) {
+    fun autoSaveLineData() {
         try {
-            // Get the public Documents directory.
             val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-            // Create a subfolder named "tracking" within Documents.
             val trackingDir = File(documentsDir, "tracking")
             if (!trackingDir.exists()) {
                 trackingDir.mkdirs()
             }
-            // Create a unique file name using the user-provided name and the current timestamp.
-            val fileName = "${userDataName}_tracking_line_${System.currentTimeMillis()}.txt"
+            val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+            val currentDate = dateFormat.format(Date())
+            val fileName = "TrackingData_$currentDate.txt"
             val file = File(trackingDir, fileName)
-
-            // Convert each point to a string ("x,y") and join them with newlines.
             val dataString = smoothDataList.joinToString(separator = "\n") { point ->
                 "${point.x},${point.y}"
             }
             file.writeText(dataString)
             logCat("Tracking data saved to ${file.absolutePath}")
-            Toast.makeText(context, "Tracking data saved. Run Xamera AR to view it.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Tracking data saved to ${file.absolutePath}", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             logCat("Error saving tracking data: ${e.message}", e)
             Toast.makeText(context, "Error saving tracking data", Toast.LENGTH_SHORT).show()
@@ -549,7 +473,6 @@ object YOLOHelper {
         var bestH = 0f
         var bestC = 0f
 
-        // Identify the detection with the highest confidence.
         for (i in 0 until numDetections) {
             val xCenterNorm = outputArray[0][0][i]
             val yCenterNorm = outputArray[0][1][i]
@@ -567,33 +490,22 @@ object YOLOHelper {
         }
         Log.d("YOLOTest", "BEST DETECTION $bestD: confidence=${"%.8f".format(bestC)}, x_center=$bestX, y_center=$bestY, width=$bestW, height=$bestH")
 
-        // Compute the scale factor used in letterbox.
         val scale = min(modelInputWidth / originalWidth.toDouble(), modelInputHeight / originalHeight.toDouble())
-
-        // Get the padding (left, top) added by letterbox.
         val padLeft = padOffsets.first.toDouble()
         val padTop = padOffsets.second.toDouble()
-
-        // Convert normalized coordinates to letterboxed image coordinates.
         val xCenterLetterboxed = bestX * modelInputWidth
         val yCenterLetterboxed = bestY * modelInputHeight
         val boxWidthLetterboxed = bestW * modelInputWidth
         val boxHeightLetterboxed = bestH * modelInputHeight
-
-        // Adjust the coordinates: remove the padding and rescale back to the original image.
         val xCenterOriginal = (xCenterLetterboxed - padLeft) / scale
         val yCenterOriginal = (yCenterLetterboxed - padTop) / scale
         val boxWidthOriginal = boxWidthLetterboxed / scale
         val boxHeightOriginal = boxHeightLetterboxed / scale
-
-        // Compute bounding box corners in original image coordinates.
         val x1Original = xCenterOriginal - (boxWidthOriginal / 2)
         val y1Original = yCenterOriginal - (boxHeightOriginal / 2)
         val x2Original = xCenterOriginal + (boxWidthOriginal / 2)
         val y2Original = yCenterOriginal + (boxHeightOriginal / 2)
-
         Log.d("YOLOTest", "Adjusted BOUNDING BOX: x1=${"%.8f".format(x1Original)}, y1=${"%.8f".format(y1Original)}, x2=${"%.8f".format(x2Original)}, y2=${"%.8f".format(y2Original)}")
-
         val boundingBox = BoundingBox(x1Original.toFloat(), y1Original.toFloat(), x2Original.toFloat(), y2Original.toFloat(), bestC, 1)
         val center = Point(xCenterOriginal, yCenterOriginal)
         return Pair(boundingBox, center)
@@ -626,32 +538,22 @@ object YOLOHelper {
             thickness
         )
     }
-    // Resizes an image while maintaining its aspect ratio and pads it to fit the target dimensions.
     fun letterbox(src: Mat, targetWidth: Int, targetHeight: Int, padColor: Scalar = Scalar(0.0, 0.0, 0.0)): Pair<Mat, Pair<Int, Int>> {
         val srcWidth = src.cols().toDouble()
         val srcHeight = src.rows().toDouble()
-        // Compute scaling factor: use the smaller ratio
         val scale = min(targetWidth / srcWidth, targetHeight / srcHeight)
         val newWidth = (srcWidth * scale).toInt()
         val newHeight = (srcHeight * scale).toInt()
-
-        // Resize the source image
         val resized = Mat()
         Imgproc.resize(src, resized, Size(newWidth.toDouble(), newHeight.toDouble()))
-
-        // Compute padding needed to reach target dimensions
         val padWidth = targetWidth - newWidth
         val padHeight = targetHeight - newHeight
         val top = padHeight / 2
         val bottom = padHeight - top
         val left = padWidth / 2
         val right = padWidth - left
-
-        // Create the final letterboxed image with padding
         val letterboxed = Mat()
         Core.copyMakeBorder(resized, letterboxed, top, bottom, left, right, Core.BORDER_CONSTANT, padColor)
-
-        // Return the letterboxed image and the top-left padding offset.
         return Pair(letterboxed, Pair(left, top))
     }
 }
