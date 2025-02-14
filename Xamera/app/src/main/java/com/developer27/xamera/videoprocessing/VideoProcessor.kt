@@ -2,14 +2,11 @@
 
 package com.developer27.xamera.videoprocessing
 
-import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Environment
-import android.text.InputType
 import android.util.Log
-import android.widget.EditText
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +28,10 @@ import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.image.TensorImage
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.LinkedList
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 
@@ -344,41 +344,14 @@ class VideoProcessor(private val context: Context) {
         }
     }
 
-    //-----------------------------------------------------------------------------------------------------
-
     /**
-     * Prompts the user to enter a name for the tracking data, then saves the data with that name.
-     */
-    fun promptSaveLineData() {
-        val builder = AlertDialog.Builder(context)
-        builder.setTitle("Save Tracking Data")
-        builder.setMessage("Enter a name for your tracking data:")
-        val input = EditText(context)
-        input.inputType = InputType.TYPE_CLASS_TEXT
-        builder.setView(input)
-        builder.setPositiveButton("Save") { _, _ ->
-            val userProvidedName = input.text.toString().trim()
-            if (userProvidedName.isEmpty()) {
-                Toast.makeText(context, "Please enter a valid name.", Toast.LENGTH_SHORT).show()
-            } else {
-                saveLineDataToFile(userProvidedName)
-            }
-        }
-        builder.setNegativeButton("Cancel") { dialog, _ ->
-            dialog.cancel()
-        }
-        builder.show()
-    }
-
-    /**
-     * Saves the current (smoothed) tracking data—the points that form the drawn line—into a text file.
-     * The file name incorporates the user-provided name and a timestamp.
-     * The file is saved in the public Documents/tracking folder.
+     * Automatically saves the current (smoothed) tracking data—the points that form the drawn line—into a text file.
+     * The file name incorporates the current date and time, and the file is saved in the public Documents/tracking folder.
      *
      * IMPORTANT: To write to the public Documents folder, you may need to declare and request the
      * WRITE_EXTERNAL_STORAGE permission in your AndroidManifest.xml and at runtime.
      */
-    private fun saveLineDataToFile(userDataName: String) {
+    fun autoSaveLineData() {
         try {
             // Get the public Documents directory.
             val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
@@ -387,17 +360,19 @@ class VideoProcessor(private val context: Context) {
             if (!trackingDir.exists()) {
                 trackingDir.mkdirs()
             }
-            // Create a unique file name using the user-provided name and the current timestamp.
-            val fileName = "${userDataName}_tracking_line_${System.currentTimeMillis()}.txt"
+            // Generate a timestamp for a unique file name.
+            val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+            val currentDate = dateFormat.format(Date())
+            val fileName = "TrackingData_$currentDate.txt"
             val file = File(trackingDir, fileName)
 
-            // Convert each point to a string ("x,y") and join them with newlines.
+            // Convert each tracking point to a string ("x,y") and join them with newlines.
             val dataString = smoothDataList.joinToString(separator = "\n") { point ->
                 "${point.x},${point.y}"
             }
             file.writeText(dataString)
             logCat("Tracking data saved to ${file.absolutePath}")
-            Toast.makeText(context, "Tracking data saved. Run Xamera AR to view it.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Tracking data saved to ${file.absolutePath}", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             logCat("Error saving tracking data: ${e.message}", e)
             Toast.makeText(context, "Error saving tracking data", Toast.LENGTH_SHORT).show()
