@@ -76,9 +76,7 @@ dependencies {
         exclude(group = "org.bytedeco", module = "libc++_shared")
     }
 
-    // Unity (aar lib files in /lib)
     //implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
-    implementation(files("libs/unityLibrary-release.aar"))
     implementation(files("libs/ar-app-release.aar"))
 
     implementation("androidx.games:games-activity:3.0.5")
@@ -90,7 +88,6 @@ dependencies {
     implementation("com.google.ai.edge.litert:litert:1.1.0") // Core TFLite runtime
     implementation("com.google.ai.edge.litert:litert-gpu:1.1.0") // GPU acceleration
     implementation("com.google.ai.edge.litert:litert-support:1.1.0") // Support library
-
 
     // CameraX
     val cameraxVersion = "1.2.2"
