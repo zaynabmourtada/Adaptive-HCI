@@ -163,7 +163,12 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         viewBinding.unityButton.setOnClickListener {
-            startActivity(Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java))
+            viewBinding.unityButton.setOnClickListener {
+                intializeInferenceResult()
+                val intent = Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java)
+                intent.putExtra("LETTER_KEY", inferenceResult)
+                startActivity(intent)
+            }
         }
 
         loadBestModelOnStartupThreaded("YOLOv3_float32.tflite")
