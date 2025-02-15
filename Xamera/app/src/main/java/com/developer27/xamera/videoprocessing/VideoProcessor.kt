@@ -5,7 +5,6 @@ package com.developer27.xamera.videoprocessing
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.os.Environment
 import android.util.Log
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
@@ -27,11 +26,7 @@ import org.opencv.video.KalmanFilter
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.image.TensorImage
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.LinkedList
-import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 
@@ -345,38 +340,11 @@ class VideoProcessor(private val context: Context) {
     }
 
     /**
-     * Automatically saves the current (smoothed) tracking data—the points that form the drawn line—into a text file.
-     * The file name incorporates the current date and time, and the file is saved in the public Documents/tracking folder.
-     *
-     * IMPORTANT: To write to the public Documents folder, you may need to declare and request the
-     * WRITE_EXTERNAL_STORAGE permission in your AndroidManifest.xml and at runtime.
+     * Returns the tracking coordinates as a semicolon-separated string.
+     * Each point is formatted as "x,y,0.0".
      */
-    fun autoSaveLineData() {
-        try {
-            // Get the public Documents directory.
-            val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-            // Create a subfolder named "tracking" within Documents.
-            val trackingDir = File(documentsDir, "tracking")
-            if (!trackingDir.exists()) {
-                trackingDir.mkdirs()
-            }
-            // Generate a timestamp for a unique file name.
-            val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-            val currentDate = dateFormat.format(Date())
-            val fileName = "TrackingData_$currentDate.txt"
-            val file = File(trackingDir, fileName)
-
-            // Convert each tracking point to a string ("x,y") and join them with newlines.
-            val dataString = smoothDataList.joinToString(separator = "\n") { point ->
-                "${point.x},${point.y}"
-            }
-            file.writeText(dataString)
-            logCat("Tracking data saved to ${file.absolutePath}")
-            Toast.makeText(context, "Tracking data saved to ${file.absolutePath}", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            logCat("Error saving tracking data: ${e.message}", e)
-            Toast.makeText(context, "Error saving tracking data", Toast.LENGTH_SHORT).show()
-        }
+    fun getTrackingCoordinatesString(): String {
+        return smoothDataList.joinToString(separator = ";") { "${it.x},${it.y},0.0" }
     }
 }
 

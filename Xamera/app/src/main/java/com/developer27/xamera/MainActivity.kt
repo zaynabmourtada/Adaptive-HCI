@@ -22,8 +22,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.developer27.xamera.camera.CameraHelper
 import com.developer27.xamera.databinding.ActivityMainBinding
-import com.developer27.xamera.openGL2D.OpenGL2DActivity
-import com.developer27.xamera.openGL3D.OpenGL3DActivity
 import com.developer27.xamera.videoprocessing.ProcessedFrameRecorder
 import com.developer27.xamera.videoprocessing.ProcessedVideoRecorder
 import com.developer27.xamera.videoprocessing.Settings
@@ -34,9 +32,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * MainActivity:
@@ -67,8 +62,11 @@ class MainActivity : AppCompatActivity() {
     private var isProcessing = false
     private var isProcessingFrame = false
 
-    // This variable is for inference result
+    // This variable is for inference result.
     private var inferenceResult = ""
+
+    // New: Stores the tracking coordinates received from VideoProcessor.
+    private var trackingCoordinates: String = ""
 
     // Permissions required by the app.
     private val REQUIRED_PERMISSIONS = arrayOf(
@@ -154,21 +152,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
         viewBinding.switchCameraButton.setOnClickListener { switchCamera() }
-        viewBinding.twoDOnlyButton.setOnClickListener { launch2DOnlyFeature() }
-        viewBinding.threeDOnlyButton.setOnClickListener { launch3DOnlyFeature() }
         viewBinding.aboutButton.setOnClickListener {
             startActivity(Intent(this, AboutXameraActivity::class.java))
         }
         viewBinding.settingsButton.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
-        }
-        viewBinding.unityButton.setOnClickListener {
-            viewBinding.unityButton.setOnClickListener {
-                intializeInferenceResult()
-                val intent = Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java)
-                intent.putExtra("LETTER_KEY", inferenceResult)
-                startActivity(intent)
-            }
         }
 
         loadBestModelOnStartupThreaded("YOLOv3_float32.tflite")
@@ -220,39 +208,29 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        //Initialize the inference results
         intializeInferenceResult()
 
-        // Save tracking data with .xmr extension.
-        videoProcessor?.autoSaveLineData()
+        // Retrieve the tracking coordinates from VideoProcessor.
+        trackingCoordinates = videoProcessor?.getTrackingCoordinatesString() ?: ""
 
-        // Automatically save Letter Inference Data with .xmr extension.
-        autoSaveLetterInferenceData()
+        // Start XameraAR Activity when the user stops processing
+        val intent = Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java)
+        // Pass the letter (or inference result) for the 2D Letter Cube.
+        intent.putExtra("LETTER_KEY", inferenceResult)
+        // Use trackingCoordinates if available; otherwise fallback to a default coordinate string.
+        val pathCoordinates = if (trackingCoordinates.isNotEmpty()) {
+            trackingCoordinates
+        } else {
+            "0.0,0.0,0.0;5.0,10.0,-5.0;-5.0,15.0,10.0;20.0,-5.0,5.0;-10.0,0.0,-10.0;10.0,-15.0,15.0;0.0,20.0,-5.0"
+        }
+        intent.putExtra("PATH_COORDINATES", pathCoordinates)
+        startActivity(intent)
     }
 
+    // TODO - Zaynab Mourtada: Implement the ML Inference logic here
     private fun intializeInferenceResult(){
         inferenceResult = "ML - Inference"
-    }
-
-    /**
-     * Automatically saves the Letter Inference Data with the current date and time in the file name.
-     * The file is saved in the Documents/2d_letter folder with a .xmr extension.
-     */
-    private fun autoSaveLetterInferenceData() {
-        try {
-            val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-            val letterDir = File(documentsDir, "2d_letter")
-            if (!letterDir.exists()) {
-                letterDir.mkdirs()
-            }
-            val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-            val currentDate = dateFormat.format(Date())
-            val fileName = "LetterInferenceData_$currentDate.txt"
-            val file = File(letterDir, fileName)
-            file.writeText(inferenceResult)
-            Toast.makeText(this, "Letter inference data saved as $fileName in Documents/2d_letter.", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error saving Letter inference data", Toast.LENGTH_SHORT).show()
-        }
     }
 
     private fun processFrameWithVideoProcessor() {
@@ -345,22 +323,6 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e("MainActivity", "Error copying asset $assetName: ${e.message}")
             ""
-        }
-    }
-
-    private fun launch2DOnlyFeature() {
-        try {
-            startActivity(Intent(this, OpenGL2DActivity::class.java))
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error launching 2D feature: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun launch3DOnlyFeature() {
-        try {
-            startActivity(Intent(this, OpenGL3DActivity::class.java))
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error launching 3D feature: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 

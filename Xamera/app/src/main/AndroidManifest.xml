@@ -45,17 +45,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <activity android:name=".openGL2D.OpenGL2DActivity" />
-        <activity android:name=".openGL3D.OpenGL3DActivity" />
         <activity android:name=".AboutXameraActivity" />
         <activity android:name=".SettingsActivity" />
-
-        <activity android:name="com.unity3d.player.UnityPlayerGameActivity"
-            tools:node="replace"
-            android:configChanges="orientation|screenSize" />
-
-        <!-- Integrated AR Activity from the exported AR library -->
         <activity
             android:name="com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity"
             android:exported="true"
