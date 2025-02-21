@@ -28,6 +28,7 @@ import com.developer27.xamera.videoprocessing.Settings
 import com.developer27.xamera.videoprocessing.VideoProcessor
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.GpuDelegate
+import org.tensorflow.lite.nnapi.NnApiDelegate
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.MappedByteBuffer
@@ -159,7 +160,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        loadBestModelOnStartupThreaded("YOLOv3_float32.tflite")
+        loadYOLOtfLiteModelOnStartupThreaded()
         cameraHelper.setupZoomControls()
         sharedPreferences.registerOnSharedPreferenceChangeListener { _, key ->
             if (key == "shutter_speed") {
@@ -272,25 +273,55 @@ class MainActivity : AppCompatActivity() {
         return File(picturesDir, "Processed_${System.currentTimeMillis()}.jpg").absolutePath
     }
 
-    private fun loadBestModelOnStartupThreaded(bestModel: String) {
+    // Loads the TFlite Model
+    // First sets number of threads for CPU fallback
+    // Second checks if NNAPI is avail (TPU/NPU ~ Google Pixel 8)
+    // Third checks if GpuDelegate is avail (MotoGPlay etc)
+    // If both are unavail, CPU is used for inference
+    private fun loadYOLOtfLiteModelOnStartupThreaded() {
+        val yoloTFLiteModel = "YOLOv3_float32.tflite"
         Thread {
-            val bestLoadedPath = copyAssetModelBlocking(bestModel)
+            val bestLoadedPath = copyAssetModelBlocking(yoloTFLiteModel)
             runOnUiThread {
                 if (bestLoadedPath.isNotEmpty()) {
                     try {
-                        val gpuDelegate = GpuDelegate()
                         val options = Interpreter.Options().apply {
-                            addDelegate(gpuDelegate)
+                            // Use all available cores for CPU fallback
                             setNumThreads(Runtime.getRuntime().availableProcessors())
                         }
+
+                        var delegateAdded = false
+
+                        // Attempt to add NNAPI delegate (ideal for Pixel 8's NAPPI/TPU/NPU)
+                        try {
+                            val nnApiDelegate = NnApiDelegate()
+                            options.addDelegate(nnApiDelegate)
+                            delegateAdded = true
+                            Log.d("MainActivity", "NNAPI delegate added successfully.")
+                        } catch (e: Exception) {
+                            Log.d("MainActivity", "NNAPI delegate unavailable, falling back to GPU delegate.", e)
+                        }
+
+                        // If NNAPI wasn't added, try the GPU delegate instead.
+                        if (!delegateAdded) {
+                            try {
+                                val gpuDelegate = GpuDelegate()
+                                options.addDelegate(gpuDelegate)
+                                Log.d("MainActivity", "GPU delegate added successfully.")
+                            } catch (e: Exception) {
+                                Log.d("MainActivity", "GPU delegate unavailable, will use CPU only.", e)
+                            }
+                        }
+
+                        // Initialize the interpreter with the best options
                         tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
                         videoProcessor?.setTFLiteModel(tfliteInterpreter!!)
                     } catch (e: Exception) {
                         Toast.makeText(this, "Error loading TFLite model: ${e.message}", Toast.LENGTH_LONG).show()
-                        Log.e("MainActivity", "TFLite Interpreter error", e)
+                        Log.d("MainActivity", "TFLite Interpreter error", e)
                     }
                 } else {
-                    Toast.makeText(this, "Failed to copy or load $bestModel", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Failed to copy or load $yoloTFLiteModel", Toast.LENGTH_SHORT).show()
                 }
             }
         }.start()
