@@ -43,9 +43,8 @@ void emitSymbol(const char* binaryPattern) {
 void generateOOKSignal() {
   //emitPilotGap();                     // Emit pilot gap
   //emitSymbol("11110000");        // User_1
-  emitSymbol("10101010");         // User_2
+  emitSymbol("10101010");          // User_2
 }
-
 void setup() {
   pinMode(indexFingerLED, OUTPUT);
   calculateTiming();
@@ -54,4 +53,3 @@ void setup() {
 void loop() {
   generateOOKSignal();  // Continuously generate OOK signal
 }
-

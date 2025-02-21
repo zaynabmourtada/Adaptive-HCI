@@ -1,29 +1,18 @@
 import os
-import shutil
+# Define the folder path
+folder_path = "Xamera Dataset/9_converted"  # Change this to the folder containing images of 0s
 
-# Define dataset path
-dataset_path = "C:/Users/zayna/OneDrive/Documents/University/Senior Design/adaptive_code/Adaptive-HCI/Inference/Xamera Dataset"
-output_path = os.path.join(dataset_path, "Sorted_Dataset")  # New structured dataset folder
+# Get all files in the folder
+files = sorted(os.listdir(folder_path))  # Sorting ensures order
 
-# Create digit folders (0-9) if they don't exist
-for i in range(10):
-    digit_folder = os.path.join(output_path, str(i))
-    os.makedirs(digit_folder, exist_ok=True)
+# Loop through and rename files
+for index, file_name in enumerate(files, start=1):
+    file_ext = os.path.splitext(file_name)[1]  # Get the file extension
+    new_name = f"9_{index}{file_ext}"  # Rename format: 0_1, 0_2, 0_3...
+    old_path = os.path.join(folder_path, file_name)
+    new_path = os.path.join(folder_path, new_name)
 
-# Move and rename images
-for img_file in os.listdir(dataset_path):
-    if img_file.endswith(".png"):
-        digit_label = input(f"Enter the digit for {img_file}: ")  # Ask user for confirmation
-        
-        # Define destination folder
-        dest_folder = os.path.join(output_path, digit_label)
-        os.makedirs(dest_folder, exist_ok=True)  # Ensure folder exists
-        
-        # Move image to correct folder
-        src_path = os.path.join(dataset_path, img_file)
-        dest_path = os.path.join(dest_folder, img_file)  # Keep original filename
-        
-        shutil.move(src_path, dest_path)
-        print(f"Moved {img_file} to {dest_folder}")
+    os.rename(old_path, new_path)
+    print(f"Renamed: {file_name} -> {new_name}")
 
-print(f"✅ Dataset sorted into folders like DIDA at: {output_path}")
+print("Renaming complete!")

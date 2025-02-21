@@ -4,10 +4,30 @@ import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
 import os
-from torch.utils.data import DataLoader, random_split
-from torchvision.datasets import ImageFolder
+from torch.utils.data import DataLoader, random_split, ConcatDataset
+from torchvision.datasets import ImageFolder, MNIST
 import torch.nn.functional as F
+import torchvision.transforms.functional as TF
 
+def invert_mnist(img):
+        return TF.invert(img)
+    
+mnist_transform = transforms.Compose([
+        transforms.Grayscale(num_output_channels=1),
+        transforms.Resize((28, 28)),
+        transforms.Lambda(invert_mnist), 
+        transforms.ToTensor(),
+        transforms.Normalize((0.5,), (0.5,))
+    ])
+
+common_transform = transforms.Compose([
+        transforms.Grayscale(num_output_channels=1),
+        transforms.Resize((28, 28)),
+        transforms.RandomRotation(10),
+        transforms.RandomAffine(degrees=5, shear=5, scale=(0.9, 1.1)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5,), (0.5,))
+    ])
 
 class ImprovedDigitRecognizer(nn.Module):
     def __init__(self):
@@ -53,17 +73,17 @@ def train_model(model, train_loader, optimizer, criterion, device):
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    transform = transforms.Compose([
-        transforms.Grayscale(num_output_channels=1),
-        transforms.Resize((28, 28)),
-        transforms.RandomRotation(10),
-        transforms.RandomAffine(degrees=5, shear=5, scale=(0.9, 1.1)),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,))
-    ])
-
+    # Load DIDA dataset
     dataset_path = "/home/zaynabmo/inference_project/digit_model/10000 DIDA"
-    full_dataset = ImageFolder(root=dataset_path, transform=transform)
+    dida_dataset = ImageFolder(root=dataset_path, transform=common_transform)
+
+    # Load MNIST dataset
+    mnist_dataset = MNIST(root="./data", train=True, transform=mnist_transform, download=True)
+
+    # Combine both datasets
+    full_dataset = ConcatDataset([mnist_dataset, dida_dataset])
+
+
 
     train_size = int(0.7 * len(full_dataset))
     val_size = int(0.1 * len(full_dataset))
@@ -85,16 +105,14 @@ def main():
                 correct += (output.argmax(1)==labels).sum().item()
         print(f"Validation Loss: {val_loss:.4f}, Accuracy: {100 * correct / len(val_loader.dataset):.4f}")
 
-    test_dataset_path = os.path.join(os.getcwd(), 'test_dataset.pth')
-    test_indices = test_dataset.indices if hasattr(test_dataset, 'indices') else list(range(len(test_dataset)))
-    torch.save(test_indices, test_dataset_path)
-
+    #test_dataset_path = os.path.join(os.getcwd(), 'test_dataset.pth')
+    #test_indices = test_dataset.indices if hasattr(test_dataset, 'indices') else list(range(len(test_dataset)))
+    #torch.save(test_indices, test_dataset_path)
 
     train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True, drop_last=False)
 
     model = ImprovedDigitRecognizer().to(device)
     optimizer = optim.Adam(model.parameters(), lr=0.001)  
-
     criterion = nn.CrossEntropyLoss()
 
     train_model(model, train_loader, optimizer, criterion, device)

@@ -1,39 +1,20 @@
 import torch
 import torchvision.transforms as transforms
-from torchvision.datasets import ImageFolder
+from torchvision.datasets import ImageFolder, MNIST
 import numpy as np
-import matplotlib.pyplot as plt
 import os
+import sys
 from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(script_dir)
 
-class ImprovedDigitRecognizer(torch.nn.Module):
-    def __init__(self):
-        super(ImprovedDigitRecognizer, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=2)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=5, stride=1, padding=2)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-        self.fc1 = nn.Linear(3*3*128, 256)
-        self.fc2 = nn.Linear(256, 10)
-        self.dropout = nn.Dropout(0.3)
+from train_digit_recognizer import ImprovedDigitRecognizer, mnist_transform, common_transform
 
-
-    def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.max_pool2d(x, 2)
-        x = F.relu(self.conv2(x))
-        x = F.max_pool2d(x, 2)
-        x = F.relu(self.conv3(x))
-        x = F.max_pool2d(x, 2)
-        x = x.view(-1, 3*3*128)
-        x = F.relu(self.fc1(x))
-        x = self.dropout(x)
-        x = self.fc2(x)
-        return x
-
-def test_model(model, test_loader, device):
+def test_model(model, test_loader, dataset_name, device):
     model.eval()
     correct = 0
     total = 0
@@ -56,14 +37,14 @@ def test_model(model, test_loader, device):
                 sample_predictions.extend(predicted.cpu().numpy())
 
     accuracy = 100 * correct / total
-    print(f"Test Accuracy: {accuracy:.2f}%\n")
+    print(f"Test Accuracy on {dataset_name}: {accuracy:.2f}%\n")
 
     show_sample_images(sample_images[:10], sample_labels[:10], sample_predictions[:10])
 
 def show_sample_images(images, labels, predictions):
     fig, axes = plt.subplots(2, 5, figsize=(10, 5))
     for i, ax in enumerate(axes.flat):
-        img = images[i].squeeze()  
+        img = images[i].squeeze()
         ax.imshow(img, cmap="gray")
         ax.set_title(f"Label: {labels[i]}\nPred: {predictions[i]}")
         ax.axis("off")
@@ -72,32 +53,20 @@ def show_sample_images(images, labels, predictions):
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    test_dataset_path = os.path.join(script_dir, "test_dataset.pth")
+    mnist_test_dataset = MNIST(root="./data", train=False, transform=mnist_transform, download=True)
 
-    if os.path.exists(test_dataset_path):
-        test_indices = torch.load(test_dataset_path)  
-        print("Test dataset indices loaded successfully!")
-    else:
-        print("Error: Test dataset file not found!")
+    dida_path = r"C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Inference\10000 DIDA"
+    if not os.path.exists(dida_path):
+        print(f"Error: Dataset path not found: {dida_path}")
         return
     
-    transform = transforms.Compose([
-        transforms.Grayscale(num_output_channels=1),
-        transforms.Resize((28, 28)),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,))
-    ])
+    dida_test_dataset = ImageFolder(root=dida_path, transform=common_transform)
 
-    dataset_path = os.path.join(script_dir, "10000 DIDA")  
-    full_dataset = ImageFolder(root=dataset_path, transform=transform)
-
-    if max(test_indices) >= len(full_dataset):
-        print("Error: Test indices exceed dataset size!")
-        return
-    
-    test_dataset = torch.utils.data.Subset(full_dataset, test_indices)
-    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+    datasets = {
+        "MNIST": mnist_test_dataset,
+        "DIDA": dida_test_dataset,
+        "Xamera": ImageFolder(root="Xamera Dataset", transform=common_transform)  
+    }
 
     model_path = os.path.join(script_dir, "digit_recognizer.pth")
     model = ImprovedDigitRecognizer().to(device)
@@ -106,10 +75,12 @@ def main():
         model.load_state_dict(torch.load(model_path, map_location=device))
         print("Model loaded successfully!")
     else:
-        print("Error: Model file not found!")
+        print("Error: Model file not found! Ensure digit_recognizer.pth exists.")
         return
 
-    test_model(model, test_loader, device)
+    for name, dataset in datasets.items():
+        test_loader = DataLoader(dataset, batch_size=64, shuffle=False)
+        test_model(model, test_loader, name, device)
 
 if __name__ == "__main__":
     main()
