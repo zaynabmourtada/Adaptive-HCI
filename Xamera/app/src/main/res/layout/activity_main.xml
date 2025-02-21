@@ -131,44 +131,6 @@
             android:text="-"
             android:textColor="@android:color/black"
             android:textSize="24sp" />
-
-        <!-- 2D Only Button -->
-        <Button
-            android:id="@+id/twoDOnlyButton"
-            android:layout_width="60dp"
-            android:layout_height="60dp"
-            android:layout_marginBottom="16dp"
-            android:backgroundTint="@color/white"
-            android:elevation="2dp"
-            android:text="2D"
-            android:textColor="@android:color/black"
-            android:textSize="9sp" />
-
-        <!-- 3D Only Button -->
-        <Button
-            android:id="@+id/threeDOnlyButton"
-            android:layout_width="60dp"
-            android:layout_height="60dp"
-            android:layout_marginBottom="16dp"
-            android:backgroundTint="@color/white"
-            android:elevation="2dp"
-            android:text="3D"
-            android:textColor="@android:color/black"
-            android:textSize="9sp" />
-
-        <!-- Unity Only Button -->
-        <Button
-            android:id="@+id/unityButton"
-            android:layout_width="60dp"
-            android:layout_height="60dp"
-            android:backgroundTint="@color/white"
-            android:elevation="2dp"
-            android:fontFamily="sans-serif"
-            android:text="AR"
-            android:textAppearance="@style/TextAppearance.AppCompat.Body1"
-            android:textColor="@color/black"
-            android:textSize="9sp"
-            app:iconPadding="1dp" />
     </LinearLayout>
 
     <LinearLayout

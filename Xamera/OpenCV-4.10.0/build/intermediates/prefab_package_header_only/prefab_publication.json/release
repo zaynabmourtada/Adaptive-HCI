@@ -1,5 +1,9 @@
 {
+<<<<<<< HEAD
   "installationFolder": "C:\\Users\\zayna\\OneDrive\\Documents\\University\\Senior Design\\adaptive_code\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\prefab_package\\release\\prefab",
+=======
+  "installationFolder": "C:\\Users\\deniz\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\prefab_package\\release\\prefab",
+>>>>>>> 5237314a2360e0eab778cd8a8c33e568580a47df
   "gradlePath": ":OpenCV-4.10.0",
   "packageInfo": {
     "packageName": "OpenCV-4.10.0",
@@ -8,7 +12,11 @@
     "modules": [
       {
         "moduleName": "opencv_jni_shared",
+<<<<<<< HEAD
         "moduleHeaders": "C:\\Users\\zayna\\OneDrive\\Documents\\University\\Senior Design\\adaptive_code\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\native\\jni\\include",
+=======
+        "moduleHeaders": "C:\\Users\\deniz\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\native\\jni\\include",
+>>>>>>> 5237314a2360e0eab778cd8a8c33e568580a47df
         "moduleExportLibraries": [],
         "abis": []
       }

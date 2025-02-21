@@ -1,7 +1,5 @@
 package com.developer27.xamera
 
-// Standard Android imports.
-// Imports from our project.
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -24,10 +22,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.developer27.xamera.camera.CameraHelper
 import com.developer27.xamera.databinding.ActivityMainBinding
-import com.developer27.xamera.openGL2D.OpenGL2DActivity
-import com.developer27.xamera.openGL3D.OpenGL3DActivity
-import com.developer27.xamera.videoprocessing.ProcessedVideoRecorder
 import com.developer27.xamera.videoprocessing.ProcessedFrameRecorder
+import com.developer27.xamera.videoprocessing.ProcessedVideoRecorder
+import com.developer27.xamera.videoprocessing.Settings
 import com.developer27.xamera.videoprocessing.VideoProcessor
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.GpuDelegate
@@ -41,8 +38,9 @@ import java.nio.channels.FileChannel
  * - Sets up the camera preview and UI controls.
  * - Processes frames via VideoProcessor (which applies OpenCV overlays such as drawn traces).
  * - Records the processed frames to a video file.
- * - When the user stops tracking, the app now prompts the user to enter a name for the tracking data
- *   before saving the drawn line data into a text file.
+ * - When the user stops tracking, the app first saves the tracking (line) data file
+ *   (which is saved in Documents/tracking) and then automatically saves the Letter Inference Data
+ *   in Documents/2d_letter with a timestamp.
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var viewBinding: ActivityMainBinding
@@ -63,6 +61,12 @@ class MainActivity : AppCompatActivity() {
     private var isRecording = false
     private var isProcessing = false
     private var isProcessingFrame = false
+
+    // This variable is for inference result.
+    private var inferenceResult = ""
+
+    // New: Stores the tracking coordinates received from VideoProcessor.
+    private var trackingCoordinates: String = ""
 
     // Permissions required by the app.
     private val REQUIRED_PERMISSIONS = arrayOf(
@@ -104,21 +108,17 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Inflate the layout using view binding.
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
 
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
         cameraManager = getSystemService(CAMERA_SERVICE) as CameraManager
 
-        // Initialize the helper classes.
         cameraHelper = CameraHelper(this, viewBinding, sharedPreferences)
         videoProcessor = VideoProcessor(this)
 
-        // Hide the processed frame view until processing starts.
         viewBinding.processedFrameView.visibility = View.GONE
 
-        // Register permission launcher for Camera and Audio.
         requestPermissionLauncher =
             registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
                 val camGranted = permissions[Manifest.permission.CAMERA] ?: false
@@ -134,7 +134,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-        // Open camera if permissions are granted.
         if (allPermissionsGranted()) {
             if (viewBinding.viewFinder.isAvailable) {
                 cameraHelper.openCamera()
@@ -145,7 +144,6 @@ class MainActivity : AppCompatActivity() {
             requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
         }
 
-        // Set up button click listeners.
         viewBinding.startProcessingButton.setOnClickListener {
             if (isRecording) {
                 stopProcessingAndRecording()
@@ -154,19 +152,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
         viewBinding.switchCameraButton.setOnClickListener { switchCamera() }
-        viewBinding.twoDOnlyButton.setOnClickListener { launch2DOnlyFeature() }
-        viewBinding.threeDOnlyButton.setOnClickListener { launch3DOnlyFeature() }
         viewBinding.aboutButton.setOnClickListener {
             startActivity(Intent(this, AboutXameraActivity::class.java))
         }
         viewBinding.settingsButton.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        viewBinding.unityButton.setOnClickListener {
-            startActivity(Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java))
-        }
 
-        // Load the TensorFlow Lite model on a separate thread.
         loadBestModelOnStartupThreaded("YOLOv3_float32.tflite")
         cameraHelper.setupZoomControls()
         sharedPreferences.registerOnSharedPreferenceChangeListener { _, key ->
@@ -176,7 +168,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Start the processing and recording session.
     private fun startProcessingAndRecording() {
         isRecording = true
         isProcessing = true
@@ -185,21 +176,18 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.getColorStateList(this, R.color.red)
         viewBinding.processedFrameView.visibility = View.VISIBLE
 
-        // Reset tracking data.
         videoProcessor?.clearTrackingData()
 
-        // Set up the video recorder with a determined output path.
+        val inputTensor = tfliteInterpreter?.getInputTensor(0)
+        val inputShape = inputTensor?.shape()
+        val width = inputShape?.getOrNull(2) ?: 416
+        val height = inputShape?.getOrNull(1) ?: 416
+
         val outputPath = getProcessedVideoOutputPath()
-        val sampleBitmap = viewBinding.viewFinder.bitmap
-        val width = sampleBitmap?.width ?: 640
-        val height = sampleBitmap?.height ?: 480
         processedVideoRecorder = ProcessedVideoRecorder(width, height, outputPath)
         processedVideoRecorder?.start()
-
-        Toast.makeText(this, "Processing + Recording started.", Toast.LENGTH_SHORT).show()
     }
 
-    // Stop the processing and recording session.
     private fun stopProcessingAndRecording() {
         isRecording = false
         isProcessing = false
@@ -211,36 +199,61 @@ class MainActivity : AppCompatActivity() {
         processedVideoRecorder?.stop()
         processedVideoRecorder = null
 
-        // Receives BitMap for inference, saves as a jpg for testing
         val outputPath = getProcessedImageOutputPath()
         processedFrameRecorder = ProcessedFrameRecorder(outputPath)
-        val bitmap = videoProcessor?.exportTraceForInference()
-        if(bitmap != null){ processedFrameRecorder?.save(bitmap) }
+        with(Settings.ExportData) {
+            if (frameIMG) {
+                val bitmap = videoProcessor?.exportTraceForInference()
+                if (bitmap != null) { processedFrameRecorder?.save(bitmap) }
+            }
+        }
 
-        // NEW: Prompt the user to enter a name for the tracking data before saving.
-        videoProcessor?.promptSaveLineData()
+        //Initialize the inference results
+        intializeInferenceResult()
 
-        Toast.makeText(this, "Processing + Recording stopped.", Toast.LENGTH_SHORT).show()
+        // Retrieve the tracking coordinates from VideoProcessor.
+        trackingCoordinates = videoProcessor?.getTrackingCoordinatesString() ?: ""
+
+        // Start XameraAR Activity when the user stops processing
+        val intent = Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java)
+        // Pass the letter (or inference result) for the 2D Letter Cube.
+        intent.putExtra("LETTER_KEY", inferenceResult)
+        // Use trackingCoordinates if available; otherwise fallback to a default coordinate string.
+        val pathCoordinates = if (trackingCoordinates.isNotEmpty()) {
+            trackingCoordinates
+        } else {
+            "0.0,0.0,0.0;5.0,10.0,-5.0;-5.0,15.0,10.0;20.0,-5.0,5.0;-10.0,0.0,-10.0;10.0,-15.0,15.0;0.0,20.0,-5.0"
+        }
+        intent.putExtra("PATH_COORDINATES", pathCoordinates)
+        startActivity(intent)
     }
 
-    // Process a frame from the camera preview using VideoProcessor.
+    // TODO - Zaynab Mourtada: Implement the ML Inference logic here
+    private fun intializeInferenceResult(){
+        inferenceResult = "ML - Inference"
+    }
+
     private fun processFrameWithVideoProcessor() {
         if (isProcessingFrame) return
         val bitmap = viewBinding.viewFinder.bitmap ?: return
         isProcessingFrame = true
-
-        videoProcessor?.processFrame(bitmap) { processedBitmap ->
+        videoProcessor?.processFrame(bitmap) { processedFrames ->
             runOnUiThread {
-                if (processedBitmap != null && isProcessing) {
-                    viewBinding.processedFrameView.setImageBitmap(processedBitmap)
-                    processedVideoRecorder?.recordFrame(processedBitmap)
+                processedFrames?.let { (outputBitmap, videoBitmap) ->
+                    if (isProcessing) {
+                        viewBinding.processedFrameView.setImageBitmap(outputBitmap)
+                        with(Settings.ExportData) {
+                            if (videoDATA) {
+                                processedVideoRecorder?.recordFrame(videoBitmap)
+                            }
+                        }
+                    }
                 }
                 isProcessingFrame = false
             }
         }
     }
 
-    // Determine an output path for the processed video file.
     private fun getProcessedVideoOutputPath(): String {
         @Suppress("DEPRECATION")
         val moviesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
@@ -250,35 +263,28 @@ class MainActivity : AppCompatActivity() {
         return File(moviesDir, "Processed_${System.currentTimeMillis()}.mp4").absolutePath
     }
 
-    // Determine an output path for the processed image file.
     private fun getProcessedImageOutputPath(): String {
         @Suppress("DEPRECATION")
         val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
         if (!picturesDir.exists()) {
             picturesDir.mkdirs()
         }
-        // You can choose the file extension based on your preferred format (e.g., .jpg or .png)
         return File(picturesDir, "Processed_${System.currentTimeMillis()}.jpg").absolutePath
     }
 
-
-    // Load the best model on a background thread.
     private fun loadBestModelOnStartupThreaded(bestModel: String) {
         Thread {
             val bestLoadedPath = copyAssetModelBlocking(bestModel)
             runOnUiThread {
                 if (bestLoadedPath.isNotEmpty()) {
                     try {
-                        // Create a GPU delegate and configure the TFLite interpreter.
                         val gpuDelegate = GpuDelegate()
                         val options = Interpreter.Options().apply {
                             addDelegate(gpuDelegate)
                             setNumThreads(Runtime.getRuntime().availableProcessors())
                         }
-                        // Load the model as a MappedByteBuffer.
                         tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
                         videoProcessor?.setTFLiteModel(tfliteInterpreter!!)
-                        Toast.makeText(this, "TFLite Model loaded: $bestModel", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
                         Toast.makeText(this, "Error loading TFLite model: ${e.message}", Toast.LENGTH_LONG).show()
                         Log.e("MainActivity", "TFLite Interpreter error", e)
@@ -290,7 +296,6 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    // Load the model file into a MappedByteBuffer.
     private fun loadMappedFile(modelPath: String): MappedByteBuffer {
         val file = File(modelPath)
         val fileInputStream = file.inputStream()
@@ -298,7 +303,6 @@ class MainActivity : AppCompatActivity() {
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, file.length())
     }
 
-    // Copy the model from the assets folder to the device's internal storage.
     private fun copyAssetModelBlocking(assetName: String): String {
         return try {
             val outFile = File(filesDir, assetName)
@@ -322,23 +326,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Launch the 2D-only feature activity.
-    private fun launch2DOnlyFeature() {
-        try {
-            startActivity(Intent(this, OpenGL2DActivity::class.java))
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error launching 2D feature: ${e.message}", Toast.LENGTH_SHORT).show()
+    private var isFrontCamera = false
+    private fun switchCamera() {
+        if (isRecording) {
+            stopProcessingAndRecording()
         }
-    }
-
-    // Launch the 3D-only feature activity.
-    private fun launch3DOnlyFeature() {
-        try {
-            val intent = Intent(this, OpenGL3DActivity::class.java)
-            startActivity(intent)
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error launching 3D feature: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
+        isFrontCamera = !isFrontCamera
+        cameraHelper.isFrontCamera = isFrontCamera
+        cameraHelper.closeCamera()
+        cameraHelper.openCamera()
     }
 
     override fun onResume() {
@@ -364,22 +360,9 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
-    // Check that all required permissions are granted.
     private fun allPermissionsGranted(): Boolean {
         return REQUIRED_PERMISSIONS.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }
-    }
-
-    // Switch between front and back cameras.
-    private var isFrontCamera = false
-    private fun switchCamera() {
-        if (isRecording) {
-            stopProcessingAndRecording()
-        }
-        isFrontCamera = !isFrontCamera
-        cameraHelper.isFrontCamera = isFrontCamera
-        cameraHelper.closeCamera()
-        cameraHelper.openCamera()
     }
 }

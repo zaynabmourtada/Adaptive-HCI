@@ -20,7 +20,7 @@
 
     <uses-feature android:glEsVersion="0x00020000" android:required="true" />
 
-    <!-- To use ARCore-->
+    <!-- To use ARCore -->
     <uses-feature
         android:name="android.hardware.camera.ar"
         android:required="false" />
@@ -36,6 +36,7 @@
         android:theme="@style/Theme.Xamera"
         tools:targetApi="31"
         tools:replace="android:allowBackup, android:icon, android:theme">
+
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -44,14 +45,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".openGL2D.OpenGL2DActivity" />
-        <activity android:name=".openGL3D.OpenGL3DActivity" />
         <activity android:name=".AboutXameraActivity" />
         <activity android:name=".SettingsActivity" />
-        <activity android:name="com.unity3d.player.UnityPlayerGameActivity"
-            tools:node="replace"
-            android:configChanges="orientation|screenSize" />
-        <!-- Integrated AR Activity from the exported AR library -->
         <activity
             android:name="com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity"
             android:exported="true"
@@ -59,8 +54,7 @@
             android:theme="@style/Theme.AppCompat.NoActionBar"
             android:launchMode="singleTask"
             android:screenOrientation="fullSensor"
-            android:resizeableActivity="false"
-            tools:node="replace">
+            android:resizeableActivity="false">
             <!-- No launcher intent-filter -->
         </activity>
 
