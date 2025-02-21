@@ -30,7 +30,14 @@ import java.util.LinkedList
 import kotlin.math.max
 import kotlin.math.min
 
-// Data class for bounding box information.
+data class DetectionResult(
+    val xCenter: Float,
+    val yCenter: Float,
+    val width: Float,
+    val height: Float,
+    val confidence: Float
+)
+
 data class BoundingBox(
     val x1: Float,
     val y1: Float,
@@ -52,6 +59,10 @@ object Settings {
         enum class Mode { CONTOUR, YOLO }
         var current: Mode = Mode.YOLO
         var enableYOLOinference = true
+    }
+    object Inference{
+        var confidenceThreshold: Float = 0.5f
+        var iouThreshold: Float = 0.5f
     }
     object Trace {
         var enableRAWtrace = true
@@ -155,8 +166,17 @@ class VideoProcessor(private val context: Context) {
             val (center, processedMat) = ContourDetection.processContourDetection(preprocessedMat)
             Imgproc.cvtColor(processedMat, processedMat, Imgproc.COLOR_GRAY2BGR)
             if (center != null) {
-                updateTrackingData(center, processedMat)
+                rawDataList.add(center)
+                val (fx, fy) = KalmanHelper.applyKalmanFilter(center)
+                smoothDataList.add(Point(fx, fy))
+                if (rawDataList.size > Settings.Trace.lineLimit) rawDataList.pollFirst()
+                if (smoothDataList.size > Settings.Trace.lineLimit) smoothDataList.pollFirst()
+                with(Settings.Trace) {
+                    if (enableRAWtrace) TraceRenderer.drawRawTrace(smoothDataList, processedMat)
+                    if (enableSPLINEtrace) TraceRenderer.drawSplineCurve(smoothDataList, processedMat)
+                }
             }
+
             val outputBitmap = Bitmap.createBitmap(processedMat.cols(), processedMat.rows(), Bitmap.Config.ARGB_8888)
             Utils.matToBitmap(processedMat, outputBitmap)
 
@@ -211,21 +231,39 @@ class VideoProcessor(private val context: Context) {
                     val outputArray = Array(modelDims.outputShape[0]) { Array(modelDims.outputShape[1]) { FloatArray(modelDims.outputShape[2]) } }
                     // Run inference.
                     tfliteInterpreter?.run(tensorImage.buffer, outputArray)
-                    // Parse output. Pass padOffsets and model input dimensions to adjust coordinates.
-                    val (boundingBox, center) = YOLOHelper.parseTFLiteOutputTensor(outputArray, bitmap.width, bitmap.height, padOffsets, modelDims.inputWidth, modelDims.inputHeight)
-                    // Optionally draw bounding boxes.
-                    with(Settings.BoundingBox) {
-                        if (enableBoundingBox) YOLOHelper.drawBoundingBoxes(originalMatForDraw, boundingBox)
+                    // Finds Best Detection
+                    val detectionResult = YOLOHelper.parseTFLite(outputArray)
+                    // Based on Detection, scale to Output Screen and output Center and Bounding Box
+                    detectionResult?.let { detection ->
+                        // Rescale detection to original image space.
+                        val (boundingBox, center) = YOLOHelper.rescaleInferencedCoordinates(
+                            detection, bitmap.width, bitmap.height, padOffsets,
+                            modelDims.inputWidth, modelDims.inputHeight
+                        )
+                        if (Settings.BoundingBox.enableBoundingBox) {
+                            YOLOHelper.drawBoundingBoxes(originalMatForDraw, boundingBox)
+                        }
+                        // Update tracking data.
+                        rawDataList.add(center)
+                        val (fx, fy) = KalmanHelper.applyKalmanFilter(center)
+                        smoothDataList.add(Point(fx, fy))
+                        // Keep the list sizes within the specified limits.
+                        while (rawDataList.size > Settings.Trace.lineLimit) rawDataList.pollFirst()
+                        while (smoothDataList.size > Settings.Trace.lineLimit) smoothDataList.pollFirst()
                     }
-                    updateTrackingData(center, originalMatForDraw)
+
+                    // Always render the trace lines even if no new detection was added.
+                    with(Settings.Trace) {
+                        if (enableRAWtrace) TraceRenderer.drawRawTrace(smoothDataList, originalMatForDraw)
+                        if (enableSPLINEtrace) TraceRenderer.drawSplineCurve(smoothDataList, originalMatForDraw)
+                    }
+
                 }
             }
-
             // Convert the annotated Mat back to a Bitmap.
             val outputBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
             Utils.matToBitmap(originalMatForDraw, outputBitmap)
             originalMatForDraw.release()
-
             // - First: the outputBitmap (original image with drawn bounding boxes)
             // - Second: the letterboxedBitmap (the preprocessed input used for inference)
             Pair(outputBitmap, letterboxedBitmap)
@@ -248,16 +286,18 @@ class VideoProcessor(private val context: Context) {
         return ModelDimensions(inputWidth = width, inputHeight = height, outputShape = outputShape)
     }
 
-    // Updates tracking data and draws traces on the image.
-    private fun updateTrackingData(point: Point, mat: Mat) {
-        rawDataList.add(point)
-        val (fx, fy) = KalmanHelper.applyKalmanFilter(point)
-        smoothDataList.add(Point(fx, fy))
-        if (rawDataList.size > Settings.Trace.lineLimit) rawDataList.pollFirst()
-        if (smoothDataList.size > Settings.Trace.lineLimit) smoothDataList.pollFirst()
-        with(Settings.Trace) {
-            if (enableRAWtrace) TraceRenderer.drawRawTrace(smoothDataList, mat)
-            if (enableSPLINEtrace) TraceRenderer.drawSplineCurve(smoothDataList, mat)
+    // Shows a Toast message.
+    private fun showToast(msg: String) {
+        if (Settings.Debug.enableToasts) {
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Logs messages to Logcat.
+    private fun logCat(message: String, throwable: Throwable? = null) {
+        if (Settings.Debug.enableLogging) {
+            if (throwable != null) Log.e("VideoProcessor", message, throwable)
+            else Log.d("VideoProcessor", message)
         }
     }
 
@@ -322,21 +362,6 @@ class VideoProcessor(private val context: Context) {
         mat.release()
         val scaledBitmap = Bitmap.createScaledBitmap(outputBitmap, 28, 28, true)
         return scaledBitmap
-    }
-
-    // Shows a Toast message.
-    private fun showToast(msg: String) {
-        if (Settings.Debug.enableToasts) {
-            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // Logs messages to Logcat.
-    private fun logCat(message: String, throwable: Throwable? = null) {
-        if (Settings.Debug.enableLogging) {
-            if (throwable != null) Log.e("VideoProcessor", message, throwable)
-            else Log.d("VideoProcessor", message)
-        }
     }
 
     /**
@@ -481,49 +506,97 @@ object ContourDetection {
 
 // Helper object for YOLO detection using TensorFlow Lite.
 object YOLOHelper {
-    fun parseTFLiteOutputTensor(outputArray: Array<Array<FloatArray>>, originalWidth: Int, originalHeight: Int, padOffsets: Pair<Int, Int>, modelInputWidth: Int, modelInputHeight: Int): Pair<BoundingBox, Point> {
-        val numDetections = outputArray[0][0].size
+    // Finds the best detection (highest confidence) from the TFLite output.
+    fun parseTFLite(rawOutput: Array<Array<FloatArray>>): DetectionResult? {
+        val numDetections = rawOutput[0][0].size
         Log.d("YOLOTest", "Total detected objects: $numDetections")
 
-        var bestD = 0
-        var bestX = 0f
-        var bestY = 0f
-        var bestW = 0f
-        var bestH = 0f
-        var bestC = 0f
-
-        // Identify the detection with the highest confidence.
+        // Step 1: Parse detections and filter by confidence.
+        val detections = mutableListOf<DetectionResult>()
         for (i in 0 until numDetections) {
-            val xCenterNorm = outputArray[0][0][i]
-            val yCenterNorm = outputArray[0][1][i]
-            val widthNorm = outputArray[0][2][i]
-            val heightNorm = outputArray[0][3][i]
-            val confidence = outputArray[0][4][i]
-            if (confidence > bestC) {
-                bestD = i
-                bestX = xCenterNorm
-                bestY = yCenterNorm
-                bestW = widthNorm
-                bestH = heightNorm
-                bestC = confidence
+            val xCenter = rawOutput[0][0][i]
+            val yCenter = rawOutput[0][1][i]
+            val width = rawOutput[0][2][i]
+            val height = rawOutput[0][3][i]
+            val confidence = rawOutput[0][4][i]
+            if (confidence >= Settings.Inference.confidenceThreshold) {
+                detections.add(DetectionResult(xCenter, yCenter, width, height, confidence))
             }
         }
-        Log.d("YOLOTest", "BEST DETECTION $bestD: confidence=${"%.8f".format(bestC)}, x_center=$bestX, y_center=$bestY, width=$bestW, height=$bestH")
+        if (detections.isEmpty()) {
+            Log.d("YOLOTest", "No detections above confidence threshold: $Settings.Inference.confidenceThreshold")
+            return null
+        }
 
-        // Compute the scale factor used in letterbox.
+        // Step 2: Convert detections to bounding boxes.
+        val detectionBoxes = detections.map { it to detectionToBox(it) }.toMutableList()
+        // Sort by confidence (highest first).
+        detectionBoxes.sortByDescending { it.first.confidence }
+
+        // Step 3: Apply NMS.
+        val nmsDetections = mutableListOf<DetectionResult>()
+        while (detectionBoxes.isNotEmpty()) {
+            val current = detectionBoxes.removeAt(0)
+            nmsDetections.add(current.first)
+            detectionBoxes.removeAll { other ->
+                computeIoU(current.second, other.second) > Settings.Inference.iouThreshold
+            }
+        }
+
+        // Step 4: Choose the detection with the highest confidence from the remaining.
+        val bestDetection = nmsDetections.maxByOrNull { it.confidence }
+        bestDetection?.let { d ->
+            Log.d(
+                "YOLOTest",
+                "BEST DETECTION: confidence=${"%.8f".format(d.confidence)}, x_center=${d.xCenter}, y_center=${d.yCenter}, width=${d.width}, height=${d.height}"
+            )
+        }
+        return bestDetection
+    }
+
+    // Helper: Convert a detection to a bounding box in normalized coordinates.
+    private fun detectionToBox(d: DetectionResult): BoundingBox {
+        val x1 = d.xCenter - d.width / 2
+        val y1 = d.yCenter - d.height / 2
+        val x2 = d.xCenter + d.width / 2
+        val y2 = d.yCenter + d.height / 2
+        return BoundingBox(x1, y1, x2, y2, d.confidence, 1)
+    }
+
+    // Helper: Compute IoU between two normalized bounding boxes.
+    private fun computeIoU(boxA: BoundingBox, boxB: BoundingBox): Float {
+        val x1 = max(boxA.x1, boxB.x1)
+        val y1 = max(boxA.y1, boxB.y1)
+        val x2 = min(boxA.x2, boxB.x2)
+        val y2 = min(boxA.y2, boxB.y2)
+
+        val intersectionWidth = max(0f, x2 - x1)
+        val intersectionHeight = max(0f, y2 - y1)
+        val intersectionArea = intersectionWidth * intersectionHeight
+
+        val areaA = (boxA.x2 - boxA.x1) * (boxA.y2 - boxA.y1)
+        val areaB = (boxB.x2 - boxB.x1) * (boxB.y2 - boxB.y1)
+        val unionArea = areaA + areaB - intersectionArea
+
+        return if (unionArea > 0f) intersectionArea / unionArea else 0f
+    }
+
+    // Takes the raw detection and rescales its coordinates to the original image.
+    fun rescaleInferencedCoordinates(detection: DetectionResult, originalWidth: Int, originalHeight: Int, padOffsets: Pair<Int, Int>, modelInputWidth: Int, modelInputHeight: Int): Pair<BoundingBox, Point> {
+        // Compute the scale factor used in the letterbox transformation.
         val scale = min(modelInputWidth / originalWidth.toDouble(), modelInputHeight / originalHeight.toDouble())
 
-        // Get the padding (left, top) added by letterbox.
+        // Get the padding applied during letterboxing.
         val padLeft = padOffsets.first.toDouble()
         val padTop = padOffsets.second.toDouble()
 
         // Convert normalized coordinates to letterboxed image coordinates.
-        val xCenterLetterboxed = bestX * modelInputWidth
-        val yCenterLetterboxed = bestY * modelInputHeight
-        val boxWidthLetterboxed = bestW * modelInputWidth
-        val boxHeightLetterboxed = bestH * modelInputHeight
+        val xCenterLetterboxed = detection.xCenter * modelInputWidth
+        val yCenterLetterboxed = detection.yCenter * modelInputHeight
+        val boxWidthLetterboxed = detection.width * modelInputWidth
+        val boxHeightLetterboxed = detection.height * modelInputHeight
 
-        // Adjust the coordinates: remove the padding and rescale back to the original image.
+        // Remove padding and rescale back to original image coordinates.
         val xCenterOriginal = (xCenterLetterboxed - padLeft) / scale
         val yCenterOriginal = (yCenterLetterboxed - padTop) / scale
         val boxWidthOriginal = boxWidthLetterboxed / scale
@@ -537,10 +610,19 @@ object YOLOHelper {
 
         Log.d("YOLOTest", "Adjusted BOUNDING BOX: x1=${"%.8f".format(x1Original)}, y1=${"%.8f".format(y1Original)}, x2=${"%.8f".format(x2Original)}, y2=${"%.8f".format(y2Original)}")
 
-        val boundingBox = BoundingBox(x1Original.toFloat(), y1Original.toFloat(), x2Original.toFloat(), y2Original.toFloat(), bestC, 1)
+        // Create the bounding box and center point objects.
+        val boundingBox = BoundingBox(
+            x1Original.toFloat(),
+            y1Original.toFloat(),
+            x2Original.toFloat(),
+            y2Original.toFloat(),
+            detection.confidence,
+            1 // Class index (or whatever label you're using)
+        )
         val center = Point(xCenterOriginal, yCenterOriginal)
         return Pair(boundingBox, center)
     }
+
     fun drawBoundingBoxes(mat: Mat, box: BoundingBox) {
         val topLeft = Point(box.x1.toDouble(), box.y1.toDouble())
         val bottomRight = Point(box.x2.toDouble(), box.y2.toDouble())
