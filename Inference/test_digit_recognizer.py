@@ -62,13 +62,22 @@ def main():
     
     dida_test_dataset = ImageFolder(root=dida_path, transform=common_transform)
 
+    #xamera_transform = transforms.Compose([transforms.Grayscale(num_output_channels=1), transforms.ToTensor()])
+    xamera_transform = transforms.Compose([
+    transforms.Grayscale(num_output_channels=1),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,))
+])
+    xamera_path = r"C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Inference\Xamera Dataset"
+    xamera_test_dataset = ImageFolder(root=xamera_path, transform=xamera_transform)
+
     datasets = {
         "MNIST": mnist_test_dataset,
         "DIDA": dida_test_dataset,
-        "Xamera": ImageFolder(root="Xamera Dataset", transform=common_transform)  
+        "Xamera": xamera_test_dataset,
     }
 
-    model_path = os.path.join(script_dir, "digit_recognizer.pth")
+    model_path = os.path.join(script_dir, "digit_recognizer_finetuned.pth")
     model = ImprovedDigitRecognizer().to(device)
 
     if os.path.exists(model_path):
