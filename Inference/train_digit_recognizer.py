@@ -172,7 +172,7 @@ def main():
 
     # Save the fine-tuned model
     fine_tune_model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "digit_recognizer_finetuned.pth")
-    torch.save(model.state_dict(), fine_tune_model_path)
+    torch.save(model, fine_tune_model_path)
     print(f"Fine-Tuned Model saved at {fine_tune_model_path}")
 
 if __name__ == "__main__":
