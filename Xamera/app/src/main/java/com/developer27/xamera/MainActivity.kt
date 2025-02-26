@@ -160,7 +160,10 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        loadYOLOtfLiteModelOnStartupThreaded()
+        // Loads in both the ML models
+        loadTFLiteModelOnStartupThreaded("YOLOv3_float32.tflite")
+        loadTFLiteModelOnStartupThreaded("DigitRecog_float32.tflite")
+
         cameraHelper.setupZoomControls()
         sharedPreferences.registerOnSharedPreferenceChangeListener { _, key ->
             if (key == "shutter_speed") {
@@ -278,10 +281,9 @@ class MainActivity : AppCompatActivity() {
     // Second checks if NNAPI is avail (TPU/NPU ~ Google Pixel 8)
     // Third checks if GpuDelegate is avail (MotoGPlay etc)
     // If both are unavail, CPU is used for inference
-    private fun loadYOLOtfLiteModelOnStartupThreaded() {
-        val yoloTFLiteModel = "YOLOv3_float32.tflite"
+    private fun loadTFLiteModelOnStartupThreaded(modelName: String) {
         Thread {
-            val bestLoadedPath = copyAssetModelBlocking(yoloTFLiteModel)
+            val bestLoadedPath = copyAssetModelBlocking(modelName)
             runOnUiThread {
                 if (bestLoadedPath.isNotEmpty()) {
                     try {
@@ -292,7 +294,7 @@ class MainActivity : AppCompatActivity() {
 
                         var delegateAdded = false
 
-                        // Attempt to add NNAPI delegate (ideal for Pixel 8's NAPPI/TPU/NPU)
+                        // Attempt to add NNAPI delegate
                         try {
                             val nnApiDelegate = NnApiDelegate()
                             options.addDelegate(nnApiDelegate)
@@ -315,13 +317,17 @@ class MainActivity : AppCompatActivity() {
 
                         // Initialize the interpreter with the best options
                         tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
-                        videoProcessor?.setTFLiteModel(tfliteInterpreter!!)
+                        when (modelName) {
+                            "YOLOv3_float32.tflite" -> videoProcessor?.setYOLOmodel(tfliteInterpreter!!)
+                            "DigitRecog_float32.tflite" -> videoProcessor?.setDigitModel(tfliteInterpreter!!)
+                            else -> Log.d("MainActivity", "No model processing method defined for $modelName")
+                        }
                     } catch (e: Exception) {
                         Toast.makeText(this, "Error loading TFLite model: ${e.message}", Toast.LENGTH_LONG).show()
                         Log.d("MainActivity", "TFLite Interpreter error", e)
                     }
                 } else {
-                    Toast.makeText(this, "Failed to copy or load $yoloTFLiteModel", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Failed to copy or load $modelName", Toast.LENGTH_SHORT).show()
                 }
             }
         }.start()

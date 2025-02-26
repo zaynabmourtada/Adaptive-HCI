@@ -1,16 +1,5 @@
 {
-<<<<<<< HEAD
-<<<<<<< HEAD
-  "installationFolder": "C:\\Users\\deniz\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\prefab_package\\release\\prefab",
-=======
-  "installationFolder": "C:\\Users\\zayna\\OneDrive\\Documents\\University\\Senior Design\\adaptive_code\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\prefab_package\\release\\prefab",
->>>>>>> cdbcf6d6 (Optimized digit recognizer model)
-=======
-  "installationFolder": "C:\\Users\\zayna\\OneDrive\\Documents\\University\\Senior Design\\adaptive_code\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\prefab_package\\release\\prefab",
-=======
-  "installationFolder": "C:\\Users\\deniz\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\prefab_package\\release\\prefab",
->>>>>>> 5237314a2360e0eab778cd8a8c33e568580a47df
->>>>>>> b30fb2755adf83f8cf45879c28ddc5fea58150ba
+  "installationFolder": "F:\\GitHub\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\prefab_package\\release\\prefab",
   "gradlePath": ":OpenCV-4.10.0",
   "packageInfo": {
     "packageName": "OpenCV-4.10.0",
@@ -19,18 +8,7 @@
     "modules": [
       {
         "moduleName": "opencv_jni_shared",
-<<<<<<< HEAD
-<<<<<<< HEAD
-        "moduleHeaders": "C:\\Users\\deniz\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\native\\jni\\include",
-=======
-        "moduleHeaders": "C:\\Users\\zayna\\OneDrive\\Documents\\University\\Senior Design\\adaptive_code\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\native\\jni\\include",
->>>>>>> cdbcf6d6 (Optimized digit recognizer model)
-=======
-        "moduleHeaders": "C:\\Users\\zayna\\OneDrive\\Documents\\University\\Senior Design\\adaptive_code\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\native\\jni\\include",
-=======
-        "moduleHeaders": "C:\\Users\\deniz\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\native\\jni\\include",
->>>>>>> 5237314a2360e0eab778cd8a8c33e568580a47df
->>>>>>> b30fb2755adf83f8cf45879c28ddc5fea58150ba
+        "moduleHeaders": "F:\\GitHub\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\native\\jni\\include",
         "moduleExportLibraries": [],
         "abis": []
       }

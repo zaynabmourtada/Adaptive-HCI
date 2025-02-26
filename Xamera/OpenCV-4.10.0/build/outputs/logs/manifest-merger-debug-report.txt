@@ -1,42 +1,17 @@
 -- Merging decision tree log ---
 manifest
-<<<<<<< HEAD
-ADDED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:1-4:12
-INJECTED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:1-4:12
+ADDED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:1-4:12
+INJECTED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:1-4:12
 	package
-		ADDED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:3:7-27
-		INJECTED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
+		ADDED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:3:7-27
+		INJECTED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
 	xmlns:android
-		ADDED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:11-69
+		ADDED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:11-69
 uses-sdk
-INJECTED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml reason: use-sdk injection requested
-INJECTED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
-INJECTED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
+INJECTED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
+INJECTED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
 	android:targetSdkVersion
-		INJECTED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
+		INJECTED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
 	android:minSdkVersion
-		INJECTED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
-=======
-ADDED from C:\Users\deniz\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:1-4:12
-INJECTED from C:\Users\deniz\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:1-4:12
-	package
-		ADDED from C:\Users\deniz\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:3:7-27
-		INJECTED from C:\Users\deniz\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
-		ADDED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:3:7-27
-		INJECTED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
-	xmlns:android
-		ADDED from C:\Users\deniz\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:11-69
-		ADDED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml:2:11-69
-uses-sdk
-INJECTED from C:\Users\deniz\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml reason: use-sdk injection requested
-INJECTED from C:\Users\deniz\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
-INJECTED from C:\Users\deniz\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
-INJECTED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml reason: use-sdk injection requested
-INJECTED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
-INJECTED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
-	android:targetSdkVersion
-		INJECTED from C:\Users\deniz\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
-		INJECTED from C:\Users\zayna\OneDrive\Documents\University\Senior Design\adaptive_code\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
-	android:minSdkVersion
-		INJECTED from C:\Users\deniz\AndroidStudioProjects\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
->>>>>>> 5237314a2360e0eab778cd8a8c33e568580a47df
+		INJECTED from F:\GitHub\Adaptive-HCI\Xamera\OpenCV-4.10.0\java\AndroidManifest.xml
