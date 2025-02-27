@@ -94,8 +94,7 @@ object Settings {
 
 // Main VideoProcessor class.
 class VideoProcessor(private val context: Context) {
-    private var tfliteInterpreter_YOLO: Interpreter? = null
-    private var tfliteInterpreter_DIGIT: Interpreter? = null
+    private var tfliteInterpreter: Interpreter? = null
     // List to store raw tracking points.
     private val rawDataList = LinkedList<Point>()
     // List to store smoothed tracking points.
@@ -118,13 +117,8 @@ class VideoProcessor(private val context: Context) {
     }
 
     // Sets the TFLite model.
-    fun setYOLOmodel(model: Interpreter) {
-        synchronized(this) { tfliteInterpreter_YOLO = model }
-        logCat("TFLite Model set in VideoProcessor successfully!")
-    }
-
-    fun setDigitModel(model: Interpreter) {
-        synchronized(this) { tfliteInterpreter_DIGIT = model }
+    fun setInterpreter(model: Interpreter) {
+        synchronized(this) { tfliteInterpreter = model }
         logCat("TFLite Model set in VideoProcessor successfully!")
     }
 
@@ -223,14 +217,14 @@ class VideoProcessor(private val context: Context) {
                 if (enableYOLOinference) {
                     // Prepare tensor image for inference.
                     val tensorImage = TensorImage(DataType.FLOAT32).apply { load(letterboxedBitmap) }
-                    if (tfliteInterpreter_YOLO == null) {
+                    if (tfliteInterpreter == null) {
                         Log.e("YOLOTest", "TFLite Model is NULL! Cannot run inference.")
                         return@withContext null
                     }
                     // Allocate output array using the output shape from modelDims.
                     val outputArray = Array(modelDims.outputShape[0]) { Array(modelDims.outputShape[1]) { FloatArray(modelDims.outputShape[2]) } }
                     // Run inference.
-                    tfliteInterpreter_YOLO?.run(tensorImage.buffer, outputArray)
+                    tfliteInterpreter?.run(tensorImage.buffer, outputArray)
                     // Finds Best Detection
                     val detectionResult = YOLOHelper.parseTFLite(outputArray)
                     // Based on Detection, scale to Output Screen and output Center and Bounding Box
@@ -272,14 +266,14 @@ class VideoProcessor(private val context: Context) {
     // Dynamically retrieves the model input size.
     private fun getModelDimensions(): ModelDimensions {
         // Retrieve input tensor shape.
-        val inputTensor = tfliteInterpreter_YOLO?.getInputTensor(0)
+        val inputTensor = tfliteInterpreter?.getInputTensor(0)
         val inputShape = inputTensor?.shape()
         // Typically, the input tensor shape is [1, height, width, channels].
         val height = inputShape?.getOrNull(1) ?: 416
         val width = inputShape?.getOrNull(2) ?: 416
 
         // Retrieve output tensor shape.
-        val outputTensor = tfliteInterpreter_YOLO?.getOutputTensor(0)
+        val outputTensor = tfliteInterpreter?.getOutputTensor(0)
         val outputShape: List<Int> = outputTensor?.shape()?.toList() ?: listOf(1, 5, 3549)
 
         return ModelDimensions(inputWidth = width, inputHeight = height, outputShape = outputShape)
