@@ -219,13 +219,10 @@ class MainActivity : AppCompatActivity() {
         videoProcessor?.clearTrackingData()
 
         if (Settings.ExportData.videoDATA) {
-            val inputTensor = tfliteInterpreter?.getInputTensor(0)
-            val inputShape = inputTensor?.shape()
-            val width = inputShape?.getOrNull(2) ?: 416
-            val height = inputShape?.getOrNull(1) ?: 416
-
+            val modelDims = videoProcessor?.getModelDimensions()
+            val width = modelDims?.inputWidth ?: 416
+            val height = modelDims?.inputWidth ?: 416
             val outputPath = getProcessedVideoOutputPath()
-
             processedVideoRecorder = ProcessedVideoRecorder(width, height, outputPath)
             processedVideoRecorder?.start()
         }
@@ -298,13 +295,12 @@ class MainActivity : AppCompatActivity() {
         // Prepare output array assuming 10 classes (digits 0-9).
         val outputArray = Array(1) { FloatArray(10) }
 
-        val digitInterpreter = videoProcessor?.getDigitInterpreter()
-        if (digitInterpreter == null) {
+        if (tfliteInterpreter == null) {
             Log.e("MainActivity", "Digit model interpreter not set")
             return "Error"
         }
         // Run inference.
-        digitInterpreter.run(inputBuffer, outputArray)
+        tfliteInterpreter?.run(inputBuffer, outputArray)
 
         // Determine the predicted digit.
         val predictedDigit = outputArray[0].indices.maxByOrNull { outputArray[0][it] } ?: -1
@@ -428,12 +424,16 @@ class MainActivity : AppCompatActivity() {
                         }
 
                         // Initialize the interpreter with the best options.
-                        tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
                         when (modelName) {
-                            "YOLOv3_float32.tflite" -> videoProcessor?.setYOLOmodel(tfliteInterpreter!!)
-                            "DigitRecog_float32.tflite" -> videoProcessor?.setDigitModel(tfliteInterpreter!!)
+                            "YOLOv3_float32.tflite" -> {
+                                videoProcessor?.setInterpreter(Interpreter(loadMappedFile(bestLoadedPath), options))
+                            }
+                            "DigitRecog_float32.tflite" -> {
+                                tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
+                            }
                             else -> Log.d("MainActivity", "No model processing method defined for $modelName")
                         }
+
                     } catch (e: Exception) {
                         Toast.makeText(this, "Error loading TFLite model: ${e.message}", Toast.LENGTH_LONG).show()
                         Log.d("MainActivity", "TFLite Interpreter error", e)

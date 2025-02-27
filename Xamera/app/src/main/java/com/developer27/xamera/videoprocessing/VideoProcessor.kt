@@ -58,7 +58,7 @@ object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
         var current: Mode = Mode.YOLO
-        var enableYOLOinference = false
+        var enableYOLOinference = true
     }
     object Inference {
         var confidenceThreshold: Float = 0.5f
@@ -95,7 +95,6 @@ object Settings {
 // Main VideoProcessor class.
 class VideoProcessor(private val context: Context) {
     private var tfliteInterpreter: Interpreter? = null
-    private var tfliteInterpreterDIGIT: Interpreter? = null
     private val rawDataList = LinkedList<Point>()
     private val smoothDataList = LinkedList<Point>()
 
@@ -115,16 +114,9 @@ class VideoProcessor(private val context: Context) {
     }
 
     // Sets the TFLite model.
-    fun setYOLOmodel(model: Interpreter) {
+    fun setInterpreter(model: Interpreter) {
         synchronized(this) { tfliteInterpreter = model }
         logCat("TFLite Model set in VideoProcessor successfully!")
-    }
-    fun setDigitModel(model: Interpreter) {
-        synchronized(this) { tfliteInterpreterDIGIT = model }
-        logCat("TFLite Model set in VideoProcessor successfully!")
-    }
-    fun getDigitInterpreter(): Interpreter? {
-        return tfliteInterpreterDIGIT
     }
 
     // Clears tracking data.
@@ -221,7 +213,7 @@ class VideoProcessor(private val context: Context) {
     }
 
     // Dynamically retrieves the model input size.
-    private fun getModelDimensions(): ModelDimensions {
+    fun getModelDimensions(): ModelDimensions {
         // Retrieve input tensor shape.
         val inputTensor = tfliteInterpreter?.getInputTensor(0)
         val inputShape = inputTensor?.shape()
@@ -450,7 +442,6 @@ object YOLOHelper {
     fun parseTFLite(rawOutput: Array<Array<FloatArray>>): DetectionResult? {
         val numDetections = rawOutput[0][0].size
         Log.d("YOLOTest", "Total detected objects: $numDetections")
-
         // Step 1: Parse detections and filter by confidence.
         val detections = mutableListOf<DetectionResult>()
         for (i in 0 until numDetections) {
@@ -467,12 +458,10 @@ object YOLOHelper {
             Log.d("YOLOTest", "No detections above confidence threshold: ${Settings.Inference.confidenceThreshold}")
             return null
         }
-
         // Step 2: Convert detections to bounding boxes.
         val detectionBoxes = detections.map { it to detectionToBox(it) }.toMutableList()
         // Sort by confidence (highest first).
         detectionBoxes.sortByDescending { it.first.confidence }
-
         // Step 3: Apply NMS.
         val nmsDetections = mutableListOf<DetectionResult>()
         while (detectionBoxes.isNotEmpty()) {
@@ -482,7 +471,6 @@ object YOLOHelper {
                 computeIoU(current.second, other.second) > Settings.Inference.iouThreshold
             }
         }
-
         // Step 4: Choose the detection with the highest confidence from the remaining.
         val bestDetection = nmsDetections.maxByOrNull { it.confidence }
         bestDetection?.let { d ->
@@ -505,45 +493,36 @@ object YOLOHelper {
         val y1 = max(boxA.y1, boxB.y1)
         val x2 = min(boxA.x2, boxB.x2)
         val y2 = min(boxA.y2, boxB.y2)
-
         val intersectionWidth = max(0f, x2 - x1)
         val intersectionHeight = max(0f, y2 - y1)
         val intersectionArea = intersectionWidth * intersectionHeight
-
         val areaA = (boxA.x2 - boxA.x1) * (boxA.y2 - boxA.y1)
         val areaB = (boxB.x2 - boxB.x1) * (boxB.y2 - boxB.y1)
         val unionArea = areaA + areaB - intersectionArea
-
         return if (unionArea > 0f) intersectionArea / unionArea else 0f
     }
     fun rescaleInferencedCoordinates(detection: DetectionResult, originalWidth: Int, originalHeight: Int, padOffsets: Pair<Int, Int>, modelInputWidth: Int, modelInputHeight: Int): Pair<BoundingBox, Point> {
         // Compute the scale factor used in the letterbox transformation.
         val scale = min(modelInputWidth / originalWidth.toDouble(), modelInputHeight / originalHeight.toDouble())
-
         // Get the padding applied during letterboxing.
         val padLeft = padOffsets.first.toDouble()
         val padTop = padOffsets.second.toDouble()
-
         // Convert normalized coordinates to letterboxed image coordinates.
         val xCenterLetterboxed = detection.xCenter * modelInputWidth
         val yCenterLetterboxed = detection.yCenter * modelInputHeight
         val boxWidthLetterboxed = detection.width * modelInputWidth
         val boxHeightLetterboxed = detection.height * modelInputHeight
-
         // Remove padding and rescale back to original image coordinates.
         val xCenterOriginal = (xCenterLetterboxed - padLeft) / scale
         val yCenterOriginal = (yCenterLetterboxed - padTop) / scale
         val boxWidthOriginal = boxWidthLetterboxed / scale
         val boxHeightOriginal = boxHeightLetterboxed / scale
-
         // Compute bounding box corners in original image coordinates.
         val x1Original = xCenterOriginal - (boxWidthOriginal / 2)
         val y1Original = yCenterOriginal - (boxHeightOriginal / 2)
         val x2Original = xCenterOriginal + (boxWidthOriginal / 2)
         val y2Original = yCenterOriginal + (boxHeightOriginal / 2)
-
         Log.d("YOLOTest", "Adjusted BOUNDING BOX: x1=${"%.8f".format(x1Original)}, y1=${"%.8f".format(y1Original)}, x2=${"%.8f".format(x2Original)}, y2=${"%.8f".format(y2Original)}")
-
         // Create the bounding box and center point objects.
         val boundingBox = BoundingBox(
             x1Original.toFloat(),
