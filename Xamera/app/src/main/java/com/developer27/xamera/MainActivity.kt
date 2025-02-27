@@ -72,7 +72,7 @@ class MainActivity : AppCompatActivity() {
 
     // Declare these as member variables or inside onCreate before setting the listener.
     var isLetterSelected = true
-    var isDigitSelected = !isLetterSelected
+    var isDigitSelected = !isLetterSelected  // Inverse of letter selection
 
     // Permissions required by the app.
     private val REQUIRED_PERMISSIONS = arrayOf(
@@ -241,7 +241,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Initialize the inference results.
-        intializeInferenceResult()
+        initializeInferenceResult()
 
         // Retrieve the tracking coordinates from VideoProcessor.
         trackingCoordinates = videoProcessor?.getTrackingCoordinatesString() ?: ""
@@ -260,9 +260,18 @@ class MainActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-    // TODO - Zaynab Mourtada: Implement the ML Inference logic here
-    private fun intializeInferenceResult() {
-        inferenceResult = "ML - Inference"
+    // TODO - Soham Naik: Implement the ML Inference logic here
+    private fun initializeInferenceResult() {
+        if (isLetterSelected) {
+            // Inference logic for letters
+            inferenceResult = "ML - Inference: Letters"
+        } else if (isDigitSelected) {
+            // Inference logic for digits
+            inferenceResult = "ML - Inference: Digits"
+        } else {
+            // Fallback or default inference result if neither condition is true
+            inferenceResult = "ML - Inference: Unknown selection"
+        }
     }
 
     private fun processFrameWithVideoProcessor() {
