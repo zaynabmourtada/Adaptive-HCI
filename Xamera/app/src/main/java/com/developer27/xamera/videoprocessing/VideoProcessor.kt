@@ -60,7 +60,7 @@ object Settings {
         var current: Mode = Mode.YOLO
         var enableYOLOinference = true
     }
-    object Inference{
+    object Inference {
         var confidenceThreshold: Float = 0.5f
         var iouThreshold: Float = 0.5f
     }
@@ -135,14 +135,8 @@ class VideoProcessor(private val context: Context) {
         CoroutineScope(Dispatchers.Default).launch {
             val result: Pair<Bitmap, Bitmap>? = try {
                 when (Settings.DetectionMode.current) {
-                    Settings.DetectionMode.Mode.CONTOUR -> {
-                        // processFrameInternalCONTOUR now returns a Pair<Bitmap, Bitmap>?
-                        processFrameInternalCONTOUR(bitmap)
-                    }
-                    Settings.DetectionMode.Mode.YOLO -> {
-                        // processFrameInternalYOLO now returns a Pair<Bitmap, Bitmap>?
-                        processFrameInternalYOLO(bitmap)
-                    }
+                    Settings.DetectionMode.Mode.CONTOUR -> processFrameInternalCONTOUR(bitmap)
+                    Settings.DetectionMode.Mode.YOLO -> processFrameInternalYOLO(bitmap)
                 }
             } catch (e: Exception) {
                 logCat("Error processing frame: ${e.message}", e)
@@ -220,7 +214,7 @@ class VideoProcessor(private val context: Context) {
             Utils.bitmapToMat(bitmap, originalMatForDraw)
 
             with(Settings.DetectionMode) {
-                if (enableYOLOinference){
+                if (enableYOLOinference) {
                     // Prepare tensor image for inference.
                     val tensorImage = TensorImage(DataType.FLOAT32).apply { load(letterboxedBitmap) }
                     if (tfliteInterpreter == null) {
@@ -257,7 +251,6 @@ class VideoProcessor(private val context: Context) {
                         if (enableRAWtrace) TraceRenderer.drawRawTrace(smoothDataList, originalMatForDraw)
                         if (enableSPLINEtrace) TraceRenderer.drawSplineCurve(smoothDataList, originalMatForDraw)
                     }
-
                 }
             }
             // Convert the annotated Mat back to a Bitmap.
@@ -370,6 +363,10 @@ class VideoProcessor(private val context: Context) {
      */
     fun getTrackingCoordinatesString(): String {
         return smoothDataList.joinToString(separator = ";") { "${it.x},${it.y},0.0" }
+    }
+
+    fun getDigitInterpreter(): Interpreter? {
+        return tfliteInterpreter_DIGIT
     }
 }
 
@@ -524,7 +521,7 @@ object YOLOHelper {
             }
         }
         if (detections.isEmpty()) {
-            Log.d("YOLOTest", "No detections above confidence threshold: $Settings.Inference.confidenceThreshold")
+            Log.d("YOLOTest", "No detections above confidence threshold: ${Settings.Inference.confidenceThreshold}")
             return null
         }
 
@@ -582,7 +579,14 @@ object YOLOHelper {
     }
 
     // Takes the raw detection and rescales its coordinates to the original image.
-    fun rescaleInferencedCoordinates(detection: DetectionResult, originalWidth: Int, originalHeight: Int, padOffsets: Pair<Int, Int>, modelInputWidth: Int, modelInputHeight: Int): Pair<BoundingBox, Point> {
+    fun rescaleInferencedCoordinates(
+        detection: DetectionResult,
+        originalWidth: Int,
+        originalHeight: Int,
+        padOffsets: Pair<Int, Int>,
+        modelInputWidth: Int,
+        modelInputHeight: Int
+    ): Pair<BoundingBox, Point> {
         // Compute the scale factor used in the letterbox transformation.
         val scale = min(modelInputWidth / originalWidth.toDouble(), modelInputHeight / originalHeight.toDouble())
 
@@ -627,7 +631,7 @@ object YOLOHelper {
         val topLeft = Point(box.x1.toDouble(), box.y1.toDouble())
         val bottomRight = Point(box.x2.toDouble(), box.y2.toDouble())
         Imgproc.rectangle(mat, topLeft, bottomRight, Settings.BoundingBox.boxColor, Settings.BoundingBox.boxThickness)
-        val label = "User_1 (${"%.2f".format(box.confidence * 100)}%)"
+        val label = "User_1 (${("%.2f".format(box.confidence * 100))}%)"
         val fontScale = 0.6
         val thickness = 1
         val baseline = IntArray(1)
