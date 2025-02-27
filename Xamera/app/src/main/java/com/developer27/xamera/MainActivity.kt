@@ -354,11 +354,7 @@ class MainActivity : AppCompatActivity() {
 
                         // Initialize the interpreter with the best options.
                         tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
-                        when (modelName) {
-                            "YOLOv3_float32.tflite" -> videoProcessor?.setYOLOmodel(tfliteInterpreter!!)
-                            "DigitRecog_float32.tflite" -> videoProcessor?.setDigitModel(tfliteInterpreter!!)
-                            else -> Log.d("MainActivity", "No model processing method defined for $modelName")
-                        }
+                        videoProcessor?.setInterpreter(tfliteInterpreter!!)
                     } catch (e: Exception) {
                         Toast.makeText(this, "Error loading TFLite model: ${e.message}", Toast.LENGTH_LONG).show()
                         Log.d("MainActivity", "TFLite Interpreter error", e)
