@@ -352,12 +352,12 @@ class MainActivity : AppCompatActivity() {
         isProcessingFrame = true
         videoProcessor?.processFrame(bitmap) { processedFrames ->
             runOnUiThread {
-                processedFrames?.let { (outputBitmap, processedBitmap) ->
+                processedFrames?.let { (outputBitmap, preprocessedBitmap) ->
                     if (isProcessing) {
                         viewBinding.processedFrameView.setImageBitmap(outputBitmap)
                         with(Settings.ExportData) {
                             if (videoDATA) {
-                                processedVideoRecorder?.recordFrame(processedBitmap)
+                                processedVideoRecorder?.recordFrame(preprocessedBitmap)
                             }
                         }
                     }

@@ -57,8 +57,8 @@ data class ModelDimensions(
 object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
-        var current: Mode = Mode.CONTOUR
-        var enableYOLOinference = false
+        var current: Mode = Mode.YOLO
+        var enableYOLOinference = true
     }
     object Inference {
         var confidenceThreshold: Float = 0.5f
@@ -74,7 +74,7 @@ object Settings {
         var lineThickness = 4
     }
     object BoundingBox {
-        var enableBoundingBox = false
+        var enableBoundingBox = true
         var boxColor = Scalar(0.0, 255.0, 0.0)
         var boxThickness = 2
     }
@@ -155,23 +155,14 @@ class VideoProcessor(private val context: Context) {
         return try {
             val (preprocessedMat, preprocessedBitmap) = Preprocessing.preprocessFrame(bitmap)
             val (center, contourMat) = ContourDetection.processContourDetection(preprocessedMat)
-            if (center != null) {
-                rawDataList.add(center)
-                val (fx, fy) = KalmanHelper.applyKalmanFilter(center)
-                smoothDataList.add(Point(fx, fy))
-                if (rawDataList.size > Settings.Trace.lineLimit) rawDataList.pollFirst()
-                if (smoothDataList.size > Settings.Trace.lineLimit) smoothDataList.pollFirst()
-                with(Settings.Trace) {
-                    if (enableRAWtrace) TraceRenderer.drawRawTrace(smoothDataList, contourMat)
-                    if (enableSPLINEtrace) TraceRenderer.drawSplineCurve(smoothDataList, contourMat)
-                }
-            }
-            val outputBitmap = Bitmap.createBitmap(contourMat.cols(), contourMat.rows(), Bitmap.Config.ARGB_8888).apply {
-                Utils.matToBitmap(contourMat, this)
-            }
+            TraceRenderer.traceProcess(center, rawDataList, smoothDataList, contourMat)
+
+            val contourBitmap = Bitmap.createBitmap(contourMat.cols(), contourMat.rows(), Bitmap.Config.ARGB_8888
+            ).apply { Utils.matToBitmap(contourMat, this) }
+
             preprocessedMat.release()
             contourMat.release()
-            return Pair(outputBitmap, preprocessedBitmap)
+            Pair(contourBitmap, preprocessedBitmap)
         } catch (e: Exception) {
             logCat("Error processing frame: ${e.message}", e)
             null
@@ -184,6 +175,9 @@ class VideoProcessor(private val context: Context) {
             // Retrieve model dimensions (input size and output shape) in one go.
             val modelDims = getModelDimensions()  // e.g., inputWidth = 416, inputHeight = 416, outputShape = [1, 5, 3549]
             Log.e("YOLOTest", "Model Width: ${modelDims.inputWidth}, Model Height: ${modelDims.inputHeight}")
+
+            // removing pre processing on YOLO
+            //val (_, preprocessedBitmap) = Preprocessing.preprocessFrame(bitmap)
 
             // Apply letterbox: resize and pad to the target dimensions.
             val (letterboxedBitmap, padOffsets) = YOLOHelper.createLetterboxedBitmap(bitmap, modelDims.inputWidth, modelDims.inputHeight)
@@ -344,6 +338,19 @@ class VideoProcessor(private val context: Context) {
 
 // Helper object to draw raw and spline traces.
 object TraceRenderer {
+    fun traceProcess(center: Point?, rawDataList: LinkedList<Point>, smoothDataList: LinkedList<Point>, contourMat: Mat) {
+        center?.let { detectedCenter ->
+            rawDataList.add(detectedCenter)
+            val (fx, fy) = KalmanHelper.applyKalmanFilter(detectedCenter)
+            smoothDataList.add(Point(fx, fy))
+            if (rawDataList.size > Settings.Trace.lineLimit) rawDataList.pollFirst()
+            if (smoothDataList.size > Settings.Trace.lineLimit) smoothDataList.pollFirst()
+            with(Settings.Trace) {
+                if (enableRAWtrace) drawRawTrace(smoothDataList, contourMat)
+                if (enableSPLINEtrace) drawSplineCurve(smoothDataList, contourMat)
+            }
+        }
+    }
     fun drawRawTrace(data: List<Point>, image: Mat) {
         for (i in 1 until data.size) {
             Imgproc.line(image, data[i - 1], data[i], Settings.Trace.originalLineColor, Settings.Trace.lineThickness)
