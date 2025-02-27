@@ -57,8 +57,8 @@ data class ModelDimensions(
 object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
-        var current: Mode = Mode.YOLO
-        var enableYOLOinference = true
+        var current: Mode = Mode.CONTOUR
+        var enableYOLOinference = false
     }
     object Inference {
         var confidenceThreshold: Float = 0.5f
@@ -96,11 +96,8 @@ object Settings {
 class VideoProcessor(private val context: Context) {
     private var tfliteInterpreter_YOLO: Interpreter? = null
     private var tfliteInterpreter_DIGIT: Interpreter? = null
-    // List to store raw tracking points.
     private val rawDataList = LinkedList<Point>()
-    // List to store smoothed tracking points.
     private val smoothDataList = LinkedList<Point>()
-    private var frameCount = 0
 
     init {
         initOpenCV()
@@ -122,15 +119,16 @@ class VideoProcessor(private val context: Context) {
         synchronized(this) { tfliteInterpreter_YOLO = model }
         logCat("TFLite Model set in VideoProcessor successfully!")
     }
-
     fun setDigitModel(model: Interpreter) {
         synchronized(this) { tfliteInterpreter_DIGIT = model }
         logCat("TFLite Model set in VideoProcessor successfully!")
     }
+    fun getDigitInterpreter(): Interpreter? {
+        return tfliteInterpreter_DIGIT
+    }
 
     // Clears tracking data.
     fun clearTrackingData() {
-        frameCount = 0
         rawDataList.clear()
         smoothDataList.clear()
         showToast("Tracking data reset.")
@@ -154,16 +152,17 @@ class VideoProcessor(private val context: Context) {
 
     // Processes a frame using Contour Detection - Returns a Pair containing outputBitmap and videoBitmap.
     private fun processFrameInternalCONTOUR(bitmap: Bitmap): Pair<Bitmap, Bitmap>? {
-        val originalMat = Mat()
-        var preprocessedMat: Mat? = null
         return try {
-            Utils.bitmapToMat(bitmap, originalMat)
+            val originalMat = Mat().also { Utils.bitmapToMat(bitmap, it) }
+            val preprocessedMat = Preprocessing.preprocessFrame(originalMat)
+            originalMat.release()
 
-            preprocessedMat = Preprocessing.preprocessFrame(originalMat)
-            val videoBitmap = Bitmap.createBitmap(preprocessedMat.cols(), preprocessedMat.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(preprocessedMat, videoBitmap)
-
+            val videoBitmap = Bitmap.createBitmap(preprocessedMat.cols(), preprocessedMat.rows(), Bitmap.Config.ARGB_8888).apply {
+                Utils.matToBitmap(preprocessedMat, this)
+            }
             val (center, processedMat) = ContourDetection.processContourDetection(preprocessedMat)
+            preprocessedMat.release()
+
             Imgproc.cvtColor(processedMat, processedMat, Imgproc.COLOR_GRAY2BGR)
             if (center != null) {
                 rawDataList.add(center)
@@ -176,17 +175,14 @@ class VideoProcessor(private val context: Context) {
                     if (enableSPLINEtrace) TraceRenderer.drawSplineCurve(smoothDataList, processedMat)
                 }
             }
-
-            val outputBitmap = Bitmap.createBitmap(processedMat.cols(), processedMat.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(processedMat, outputBitmap)
-
+            val outputBitmap = Bitmap.createBitmap(processedMat.cols(), processedMat.rows(), Bitmap.Config.ARGB_8888).apply {
+                Utils.matToBitmap(processedMat, this)
+                processedMat.rows()
+            }
             Pair(outputBitmap, videoBitmap)
         } catch (e: Exception) {
             logCat("Error processing frame: ${e.message}", e)
             null
-        } finally {
-            originalMat.release()
-            preprocessedMat?.release()
         }
     }
 
@@ -195,30 +191,11 @@ class VideoProcessor(private val context: Context) {
         return withContext(Dispatchers.IO) {
             // Retrieve model dimensions (input size and output shape) in one go.
             val modelDims = getModelDimensions()  // e.g., inputWidth = 416, inputHeight = 416, outputShape = [1, 5, 3549]
-
-            // Convert original bitmap to a Mat.
-            val origMat = Mat()
-            Utils.bitmapToMat(bitmap, origMat)
-
             Log.e("YOLOTest", "Model Width: ${modelDims.inputWidth}, Model Height: ${modelDims.inputHeight}")
-
             // Apply letterbox: resize and pad to the target dimensions.
-            val (letterboxedMat, padOffsets) = YOLOHelper.letterbox(origMat, modelDims.inputWidth, modelDims.inputHeight)
-            origMat.release()
-
-            // Preprocess the letterboxed image.
-            val preprocessedMat = Preprocessing.preprocessFrame(letterboxedMat)
-            letterboxedMat.release()
-
-            // Convert the preprocessed Mat back to a Bitmap.
-            val letterboxedBitmap = Bitmap.createBitmap(preprocessedMat.cols(), preprocessedMat.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(preprocessedMat, letterboxedBitmap)
-            preprocessedMat.release()
-
+            val (letterboxedBitmap, padOffsets) = YOLOHelper.createLetterboxedBitmap(bitmap, modelDims.inputWidth, modelDims.inputHeight)
             // Create a Mat from the original bitmap for drawing bounding boxes.
-            val originalMatForDraw = Mat()
-            Utils.bitmapToMat(bitmap, originalMatForDraw)
-
+            val originalMatForDraw = Mat().also { Utils.bitmapToMat(bitmap, it) }
             with(Settings.DetectionMode) {
                 if (enableYOLOinference) {
                     // Prepare tensor image for inference.
@@ -260,11 +237,12 @@ class VideoProcessor(private val context: Context) {
                 }
             }
             // Convert the annotated Mat back to a Bitmap.
-            val outputBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(originalMatForDraw, outputBitmap)
-            originalMatForDraw.release()
+            val outputBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888).apply {
+                Utils.matToBitmap(originalMatForDraw, this)
+                originalMatForDraw.release()
+            }
             // - First: the outputBitmap (original image with drawn bounding boxes)
-            // - Second: the letterboxedBitmap (the preprocessed input used for inference)
+            // - Second: the letterboxedBitmap (the preprocessed input used for YOLO training)
             Pair(outputBitmap, letterboxedBitmap)
         }
     }
@@ -277,11 +255,9 @@ class VideoProcessor(private val context: Context) {
         // Typically, the input tensor shape is [1, height, width, channels].
         val height = inputShape?.getOrNull(1) ?: 416
         val width = inputShape?.getOrNull(2) ?: 416
-
         // Retrieve output tensor shape.
         val outputTensor = tfliteInterpreter_YOLO?.getOutputTensor(0)
         val outputShape: List<Int> = outputTensor?.shape()?.toList() ?: listOf(1, 5, 3549)
-
         return ModelDimensions(inputWidth = width, inputHeight = height, outputShape = outputShape)
     }
 
@@ -356,9 +332,10 @@ class VideoProcessor(private val context: Context) {
         Settings.Trace.lineThickness = originalThickness
 
         // 10. Convert the Mat back to a Bitmap.
-        val outputBitmap = Bitmap.createBitmap(squareSize, squareSize, Bitmap.Config.ARGB_8888)
-        Utils.matToBitmap(mat, outputBitmap)
-        mat.release()
+        val outputBitmap = Bitmap.createBitmap(squareSize, squareSize, Bitmap.Config.ARGB_8888).apply {
+            Utils.matToBitmap(mat, this)
+            mat.release()
+        }
         val scaledBitmap = Bitmap.createScaledBitmap(outputBitmap, 28, 28, true)
         return scaledBitmap
     }
@@ -369,10 +346,6 @@ class VideoProcessor(private val context: Context) {
      */
     fun getTrackingCoordinatesString(): String {
         return smoothDataList.joinToString(separator = ";") { "${it.x},${it.y},0.0" }
-    }
-
-    fun getDigitInterpreter(): Interpreter? {
-        return tfliteInterpreter_DIGIT
     }
 }
 
@@ -585,14 +558,7 @@ object YOLOHelper {
     }
 
     // Takes the raw detection and rescales its coordinates to the original image.
-    fun rescaleInferencedCoordinates(
-        detection: DetectionResult,
-        originalWidth: Int,
-        originalHeight: Int,
-        padOffsets: Pair<Int, Int>,
-        modelInputWidth: Int,
-        modelInputHeight: Int
-    ): Pair<BoundingBox, Point> {
+    fun rescaleInferencedCoordinates(detection: DetectionResult, originalWidth: Int, originalHeight: Int, padOffsets: Pair<Int, Int>, modelInputWidth: Int, modelInputHeight: Int): Pair<BoundingBox, Point> {
         // Compute the scale factor used in the letterbox transformation.
         val scale = min(modelInputWidth / originalWidth.toDouble(), modelInputHeight / originalHeight.toDouble())
 
@@ -662,31 +628,29 @@ object YOLOHelper {
         )
     }
     // Resizes an image while maintaining its aspect ratio and pads it to fit the target dimensions.
-    fun letterbox(src: Mat, targetWidth: Int, targetHeight: Int, padColor: Scalar = Scalar(0.0, 0.0, 0.0)): Pair<Mat, Pair<Int, Int>> {
-        val srcWidth = src.cols().toDouble()
-        val srcHeight = src.rows().toDouble()
+    fun createLetterboxedBitmap(srcBitmap: Bitmap, targetWidth: Int, targetHeight: Int, padColor: Scalar = Scalar(0.0, 0.0, 0.0)): Pair<Bitmap, Pair<Int, Int>> {
+        val srcMat = Mat().also { Utils.bitmapToMat(srcBitmap, it) }
+        val (srcWidth, srcHeight) = (srcMat.cols().toDouble()) to (srcMat.rows().toDouble())
         // Compute scaling factor: use the smaller ratio
         val scale = min(targetWidth / srcWidth, targetHeight / srcHeight)
-        val newWidth = (srcWidth * scale).toInt()
-        val newHeight = (srcHeight * scale).toInt()
-
+        val (newWidth, newHeight) = (srcWidth * scale).toInt() to (srcHeight * scale).toInt()
         // Resize the source image
-        val resized = Mat()
-        Imgproc.resize(src, resized, Size(newWidth.toDouble(), newHeight.toDouble()))
-
+        val resized = Mat().also { Imgproc.resize(srcMat, it, Size(newWidth.toDouble(), newHeight.toDouble())) }
+        srcMat.release()
         // Compute padding needed to reach target dimensions
-        val padWidth = targetWidth - newWidth
-        val padHeight = targetHeight - newHeight
-        val top = padHeight / 2
-        val bottom = padHeight - top
-        val left = padWidth / 2
-        val right = padWidth - left
-
+        val (padWidth, padHeight) = (targetWidth - newWidth) to (targetHeight - newHeight)
+        fun computePadding(total: Int) = total / 2 to (total - total / 2)
+        val (top, bottom) = computePadding(padHeight)
+        val (left, right) = computePadding(padWidth)
         // Create the final letterboxed image with padding
-        val letterboxed = Mat()
-        Core.copyMakeBorder(resized, letterboxed, top, bottom, left, right, Core.BORDER_CONSTANT, padColor)
-
+        val letterboxed = Mat().also {Core.copyMakeBorder(resized, it, top, bottom, left, right, Core.BORDER_CONSTANT, padColor)}
+        resized.release()
+        // Convert the letterboxed Mat back to a Bitmap.
+        val outputBitmap = Bitmap.createBitmap(letterboxed.cols(), letterboxed.rows(), srcBitmap.config).apply {
+            Utils.matToBitmap(letterboxed, this)
+            letterboxed.release()
+        }
         // Return the letterboxed image and the top-left padding offset.
-        return Pair(letterboxed, Pair(left, top))
+        return Pair(outputBitmap, Pair(left, top))
     }
 }
