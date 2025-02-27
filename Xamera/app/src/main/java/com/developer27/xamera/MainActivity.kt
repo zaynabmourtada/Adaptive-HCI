@@ -296,13 +296,12 @@ class MainActivity : AppCompatActivity() {
         // Prepare output array assuming 10 classes (digits 0-9).
         val outputArray = Array(1) { FloatArray(10) }
 
-        val digitInterpreter = videoProcessor?.getDigitInterpreter()
-        if (digitInterpreter == null) {
+        if (tfliteInterpreter == null) {
             Log.e("MainActivity", "Digit model interpreter not set")
             return "Error"
         }
         // Run inference.
-        digitInterpreter.run(inputBuffer, outputArray)
+        tfliteInterpreter?.run(inputBuffer, outputArray)
 
         // Determine the predicted digit.
         val predictedDigit = outputArray[0].indices.maxByOrNull { outputArray[0][it] } ?: -1

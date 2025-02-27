@@ -364,10 +364,6 @@ class VideoProcessor(private val context: Context) {
     fun getTrackingCoordinatesString(): String {
         return smoothDataList.joinToString(separator = ";") { "${it.x},${it.y},0.0" }
     }
-
-    fun getDigitInterpreter(): Interpreter? {
-        return tfliteInterpreter_DIGIT
-    }
 }
 
 // Helper object to draw raw and spline traces.
