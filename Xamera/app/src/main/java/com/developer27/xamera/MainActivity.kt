@@ -5,7 +5,12 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraManager
 import android.os.Bundle
@@ -34,6 +39,10 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
+import org.tensorflow.lite.support.image.TensorImage
+import org.tensorflow.lite.DataType
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * MainActivity:
@@ -267,11 +276,75 @@ class MainActivity : AppCompatActivity() {
             inferenceResult = "ML - Inference: Letters"
         } else if (isDigitSelected) {
             // Inference logic for digits
-            inferenceResult = "ML - Inference: Digits"
-        } else {
-            // Fallback or default inference result if neither condition is true
-            inferenceResult = "ML - Inference: Unknown selection"
+            inferenceResult = runDigitRecognitionInference()
         }
+    }
+
+    // Run the digit inference using the exported trace bitmap.
+    private fun runDigitRecognitionInference(): String {
+        // Get the 28x28 trace image.
+        val digitBitmap = videoProcessor?.exportTraceForInference()
+        if (digitBitmap == null) {
+            Log.e("MainActivity", "No digit image available for inference")
+            return "Error"
+        }
+        // Convert the image to grayscale (but keep ARGB_8888 config).
+        val grayBitmap = convertToGrayscale(digitBitmap)
+        // Convert the grayscale bitmap into a ByteBuffer containing 784 floats.
+        val inputBuffer = convertBitmapToGrayscaleByteBuffer(grayBitmap)
+
+        // Prepare output array assuming 10 classes (digits 0-9).
+        val outputArray = Array(1) { FloatArray(10) }
+
+        val digitInterpreter = videoProcessor?.getDigitInterpreter()
+        if (digitInterpreter == null) {
+            Log.e("MainActivity", "Digit model interpreter not set")
+            return "Error"
+        }
+        // Run inference.
+        digitInterpreter.run(inputBuffer, outputArray)
+
+        // Determine the predicted digit.
+        val predictedDigit = outputArray[0].indices.maxByOrNull { outputArray[0][it] } ?: -1
+        Log.d("MainActivity", "Digit model predicted: $predictedDigit")
+        return predictedDigit.toString()
+    }
+
+    /**
+     * Converts a bitmap to grayscale while preserving the ARGB_8888 configuration.
+     */
+    private fun convertToGrayscale(bitmap: Bitmap): Bitmap {
+        val grayscaleBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(grayscaleBitmap)
+        val paint = Paint()
+        val colorMatrix = ColorMatrix().apply { setSaturation(0f) }
+        val filter = ColorMatrixColorFilter(colorMatrix)
+        paint.colorFilter = filter
+        canvas.drawBitmap(bitmap, 0f, 0f, paint)
+        return grayscaleBitmap
+    }
+
+    /**
+     * Converts a 28x28 ARGB_8888 bitmap (with grayscale values) into a ByteBuffer
+     * of shape [1, 28, 28, 1] (784 floats). Each pixel’s red channel is used.
+     */
+    private fun convertBitmapToGrayscaleByteBuffer(bitmap: Bitmap): ByteBuffer {
+        val inputSize = bitmap.width * bitmap.height // should be 28*28 = 784
+        val byteBuffer = ByteBuffer.allocateDirect(inputSize * 4) // float size = 4 bytes
+        byteBuffer.order(ByteOrder.nativeOrder())
+
+        val intValues = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(intValues, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+
+        // Extract the red channel from each pixel (since in grayscale, R=G=B).
+        for (pixel in intValues) {
+            // Extract red component from ARGB.
+            val r = (pixel shr 16 and 0xFF).toFloat()
+            // Normalize the value to [0, 1]. Adjust normalization as per your model's training.
+            val normalized = r / 255.0f
+            byteBuffer.putFloat(normalized)
+        }
+        return byteBuffer
     }
 
     private fun processFrameWithVideoProcessor() {

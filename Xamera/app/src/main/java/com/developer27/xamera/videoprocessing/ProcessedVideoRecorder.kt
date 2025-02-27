@@ -9,7 +9,6 @@ import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.util.Log
 import android.view.Surface
-import java.lang.RuntimeException
 
 /**
  * A helper class that encodes processed Bitmap frames to an H.264 video
@@ -19,11 +18,14 @@ import java.lang.RuntimeException
  * In some cases you may need to use an EGL-based InputSurface.
  */
 class ProcessedVideoRecorder(
+    // Fixed resolution values known to work with MediaCodec (e.g., 416x416).
     private val width: Int,
     private val height: Int,
     private val outputPath: String,
     private val frameRate: Int = 30,
-    private val bitRate: Int = 2_000_000
+    // Instead of a fixed bit rate, compute one based on resolution.
+    // For example, a multiplier of 5 gives: bitRate = width * height * 5.
+    private val bitRateMultiplier: Int = 5
 ) {
 
     companion object {
@@ -42,11 +44,15 @@ class ProcessedVideoRecorder(
      * Call this method when you wish to start recording.
      */
     fun start() {
-        // Configure the video format.
+        // Configure the video format with fixed resolution and computed bit rate.
         val format = MediaFormat.createVideoFormat(MIME_TYPE, width, height)
-        format.setInteger(MediaFormat.KEY_COLOR_FORMAT,
-            MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-        format.setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
+        format.setInteger(
+            MediaFormat.KEY_COLOR_FORMAT,
+            MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
+        )
+        // Dynamically compute bit rate.
+        val calculatedBitRate = width * height * bitRateMultiplier
+        format.setInteger(MediaFormat.KEY_BIT_RATE, calculatedBitRate)
         format.setInteger(MediaFormat.KEY_FRAME_RATE, frameRate)
         format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1) // I-Frame every second
 
@@ -57,16 +63,15 @@ class ProcessedVideoRecorder(
         }
 
         mediaCodec?.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        // Create the input surface that we'll draw our processed frames into.
+        // Create the input surface for drawing processed frames.
         inputSurface = mediaCodec?.createInputSurface()
         mediaCodec?.start()
 
-        // Create the MediaMuxer to write the output file.
-        // (The output folder here should be one of the device’s default movie folders.)
+        // Create the MediaMuxer to write the output MP4 file.
         mediaMuxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         muxerStarted = false
         frameCount = 0
-        Log.d(TAG, "Recorder started, output: $outputPath")
+        Log.d(TAG, "Recorder started with resolution: ${width}x${height}, Bitrate: $calculatedBitRate, output: $outputPath")
     }
 
     /**
@@ -82,20 +87,20 @@ class ProcessedVideoRecorder(
             null
         }
         if (canvas != null) {
-            // Draw the bitmap scaled to the canvas size.
+            // Scale the bitmap to the canvas dimensions.
             canvas.drawBitmap(bitmap, null, Rect(0, 0, canvas.width, canvas.height), null)
             inputSurface?.unlockCanvasAndPost(canvas)
         } else {
             Log.w(TAG, "Canvas was null; frame not recorded.")
         }
 
-        // Drain the encoder’s output.
+        // Drain the encoder's output to retrieve encoded frames.
         drainEncoder(endOfStream = false)
         frameCount++
     }
 
     /**
-     * Call this method to stop recording. It finalizes the file.
+     * Call this method to stop recording. It finalizes the output file.
      */
     fun stop() {
         // Signal end-of-stream.
@@ -119,11 +124,11 @@ class ProcessedVideoRecorder(
 
     /**
      * Drains any available output from the encoder.
-     * If endOfStream is true, it signals the encoder that no more frames are coming.
+     * If endOfStream is true, signals the encoder that no more frames are coming.
      */
     private fun drainEncoder(endOfStream: Boolean) {
         if (endOfStream) {
-            // Tell the encoder that we’re done.
+            // Inform the encoder no more input frames will be provided.
             mediaCodec?.signalEndOfInputStream()
         }
 
@@ -134,7 +139,7 @@ class ProcessedVideoRecorder(
             when {
                 outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> {
                     if (!endOfStream) {
-                        break  // No output available yet.
+                        break // No output available yet.
                     }
                 }
                 outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
@@ -160,7 +165,7 @@ class ProcessedVideoRecorder(
                         mediaMuxer?.writeSampleData(trackIndex, encodedData, bufferInfo)
                     }
                     mediaCodec?.releaseOutputBuffer(outputBufferIndex, false)
-                    // Break if we’ve reached end-of-stream.
+                    // Exit loop if end-of-stream flag is reached.
                     if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                         break
                     }
@@ -169,4 +174,3 @@ class ProcessedVideoRecorder(
         }
     }
 }
-
