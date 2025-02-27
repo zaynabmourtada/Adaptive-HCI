@@ -1,4 +1,4 @@
-#Wed Feb 26 21:48:52 EST 2025
+#Thu Feb 27 13:44:00 EST 2025
 base.0=C\:\\Users\\deniz\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\dex\\debugAndroidTest\\mergeExtDexDebugAndroidTest\\classes.dex
 base.1=C\:\\Users\\deniz\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\dex\\debugAndroidTest\\mergeLibDexDebugAndroidTest\\0\\classes.dex
 base.2=C\:\\Users\\deniz\\AndroidStudioProjects\\Adaptive-HCI\\Xamera\\OpenCV-4.10.0\\build\\intermediates\\dex\\debugAndroidTest\\mergeProjectDexDebugAndroidTest\\0\\classes.dex

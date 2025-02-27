@@ -14,24 +14,6 @@
             android:entryValues="@array/shutter_speed_values"
             android:defaultValue="60" />
 
-        <!-- Lighting Mode Settings -->
-        <ListPreference
-            android:key="lighting_mode"
-            android:title="Lighting Mode"
-            android:summary="Choose between Low Light, High Light, or Normal"
-            android:entries="@array/lighting_modes"
-            android:entryValues="@array/lighting_mode_values"
-            android:defaultValue="normal" />
-
-        <!-- Flash Settings with blue switch -->
-        <SwitchPreferenceCompat
-            android:key="enable_flash"
-            android:title="Enable Flash"
-            android:defaultValue="false"
-            android:summary="Turn on the flash during video capture"
-            android:thumbTint="@color/blue"
-            android:trackTint="@color/blue" />
-
     </PreferenceCategory>
 
 </PreferenceScreen>

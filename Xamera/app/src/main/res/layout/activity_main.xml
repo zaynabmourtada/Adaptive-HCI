@@ -54,13 +54,13 @@
             android:id="@+id/titleText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Xamera (Pre-Beta)"
+            android:text="Xamera: Rollity Edition"
             android:textSize="24sp"
             android:textColor="@android:color/white"
             android:textStyle="bold"
             android:gravity="center"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp" />
+            android:paddingStart="10dp"
+            />
     </LinearLayout>
 
     <!-- Top Controls Container: RadioButton on the left, and Settings/About buttons side-by-side on the right -->
