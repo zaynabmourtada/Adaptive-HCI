@@ -1,3 +1,4 @@
+
 package com.developer27.xamera
 
 import android.Manifest
@@ -37,12 +38,10 @@ import org.tensorflow.lite.gpu.GpuDelegate
 import org.tensorflow.lite.nnapi.NnApiDelegate
 import java.io.File
 import java.io.FileOutputStream
-import java.nio.MappedByteBuffer
-import java.nio.channels.FileChannel
-import org.tensorflow.lite.support.image.TensorImage
-import org.tensorflow.lite.DataType
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.MappedByteBuffer
+import java.nio.channels.FileChannel
 
 /**
  * MainActivity:
@@ -269,7 +268,7 @@ class MainActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-    // TODO - Soham Naik: Implement the ML Inference logic here
+    // Inference algorithm for letters and digits.
     private fun initializeInferenceResult() {
         if (isLetterSelected) {
             // Inference logic for letters
@@ -296,12 +295,13 @@ class MainActivity : AppCompatActivity() {
         // Prepare output array assuming 10 classes (digits 0-9).
         val outputArray = Array(1) { FloatArray(10) }
 
-        if (tfliteInterpreter == null) {
+        val digitInterpreter = videoProcessor?.getDigitInterpreter()
+        if (digitInterpreter == null) {
             Log.e("MainActivity", "Digit model interpreter not set")
             return "Error"
         }
         // Run inference.
-        tfliteInterpreter?.run(inputBuffer, outputArray)
+        digitInterpreter.run(inputBuffer, outputArray)
 
         // Determine the predicted digit.
         val predictedDigit = outputArray[0].indices.maxByOrNull { outputArray[0][it] } ?: -1
@@ -426,7 +426,11 @@ class MainActivity : AppCompatActivity() {
 
                         // Initialize the interpreter with the best options.
                         tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
-                        videoProcessor?.setInterpreter(tfliteInterpreter!!)
+                        when (modelName) {
+                            "YOLOv3_float32.tflite" -> videoProcessor?.setYOLOmodel(tfliteInterpreter!!)
+                            "DigitRecog_float32.tflite" -> videoProcessor?.setDigitModel(tfliteInterpreter!!)
+                            else -> Log.d("MainActivity", "No model processing method defined for $modelName")
+                        }
                     } catch (e: Exception) {
                         Toast.makeText(this, "Error loading TFLite model: ${e.message}", Toast.LENGTH_LONG).show()
                         Log.d("MainActivity", "TFLite Interpreter error", e)

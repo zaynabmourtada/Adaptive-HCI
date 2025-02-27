@@ -24,13 +24,24 @@ android:textColor="@color/white"
     android:layout_marginBottom="16dp" />
 
     <!-- Version -->
-<TextView
-android:id="@+id/textViewVersion"
-android:layout_width="wrap_content"
-android:layout_height="wrap_content"
-android:text="Version: 1.0 (Pre-Beta)"
-android:textColor="@android:color/white"
-    app:layout_constraintTop_toBottomOf="@id/textViewTitle"
+    <TextView
+        android:id="@+id/textViewEdition"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Designed for: Rollity Research Project"
+        android:textColor="@android:color/white"
+        app:layout_constraintTop_toBottomOf="@id/textViewTitle"
+        app:layout_constraintStart_toStartOf="parent"
+        android:layout_marginTop="15dp" />
+
+    <!-- Version -->
+    <TextView
+    android:id="@+id/textViewVersion"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Version: 1.0 (Beta)"
+    android:textColor="@android:color/white"
+    app:layout_constraintTop_toBottomOf="@id/textViewEdition"
     app:layout_constraintStart_toStartOf="parent"
     android:layout_marginTop="8dp" />
 
@@ -49,7 +60,7 @@ android:textColor="@android:color/white"
 android:id="@+id/textViewReleaseDate"
 android:layout_width="wrap_content"
 android:layout_height="wrap_content"
-android:text="Expected Release Date: February 28th 2025"
+android:text="Release Date: February 28th 2025"
 android:textColor="@android:color/white"
     app:layout_constraintTop_toBottomOf="@id/phaseNumber"
     app:layout_constraintStart_toStartOf="parent"
@@ -82,7 +93,7 @@ android:textColor="@android:color/white"
         android:id="@+id/textViewLab"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Lab: At Trustworthy AIoT Lab"
+        android:text="Lab: Trustworthy AIoT Lab"
         android:textColor="@android:color/white"
         app:layout_constraintTop_toBottomOf="@id/textViewProfessor"
         app:layout_constraintStart_toStartOf="parent"
@@ -93,7 +104,7 @@ android:textColor="@android:color/white"
 android:id="@+id/textViewCourse"
 android:layout_width="wrap_content"
 android:layout_height="wrap_content"
-android:text="Course: CIS 4961 - Senior Design II"
+android:text="Course: CIS 4962 - Senior Design II"
 android:textColor="@android:color/white"
     app:layout_constraintTop_toBottomOf="@id/textViewLab"
     app:layout_constraintStart_toStartOf="parent"
