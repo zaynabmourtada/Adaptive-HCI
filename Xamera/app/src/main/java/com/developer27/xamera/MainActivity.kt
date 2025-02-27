@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraManager
 import android.os.Bundle
@@ -68,6 +69,10 @@ class MainActivity : AppCompatActivity() {
 
     // New: Stores the tracking coordinates received from VideoProcessor.
     private var trackingCoordinates: String = ""
+
+    // Declare these as member variables or inside onCreate before setting the listener.
+    var isLetterSelected = true
+    var isDigitSelected = !isLetterSelected
 
     // Permissions required by the app.
     private val REQUIRED_PERMISSIONS = arrayOf(
@@ -160,7 +165,30 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        // Loads in both the ML models
+        // Set up the single RadioButton (radioToggle) as a toggle control.
+        // Initially set to "Digit".
+        viewBinding.radioToggle.setTextColor(Color.WHITE)
+        viewBinding.radioToggle.buttonTintList = ContextCompat.getColorStateList(this, android.R.color.white)
+        viewBinding.radioToggle.text = "Digit"
+        viewBinding.radioToggle.isChecked = true
+
+        // Initialize the RadioButton: When checked (isLetterSelected true) it should display "Letter".
+        viewBinding.radioToggle.text = if (isLetterSelected) "Letter" else "Digit"
+        viewBinding.radioToggle.isChecked = isLetterSelected
+
+        viewBinding.radioToggle.setOnClickListener {
+            // Toggle the letter selection state.
+            isLetterSelected = !isLetterSelected
+
+            // Update the digit selection state as its inverse.
+            isDigitSelected = !isLetterSelected
+
+            // Update the RadioButton's text and checked state.
+            viewBinding.radioToggle.text = if (isLetterSelected) "Letter" else "Digit"
+            viewBinding.radioToggle.isChecked = isLetterSelected
+        }
+
+        // Loads in both the ML models.
         loadTFLiteModelOnStartupThreaded("YOLOv3_float32.tflite")
         loadTFLiteModelOnStartupThreaded("DigitRecog_float32.tflite")
 
@@ -212,13 +240,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        //Initialize the inference results
+        // Initialize the inference results.
         intializeInferenceResult()
 
         // Retrieve the tracking coordinates from VideoProcessor.
         trackingCoordinates = videoProcessor?.getTrackingCoordinatesString() ?: ""
 
-        // Start XameraAR Activity when the user stops processing
+        // Start XameraAR Activity when the user stops processing.
         val intent = Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java)
         // Pass the letter (or inference result) for the 2D Letter Cube.
         intent.putExtra("LETTER_KEY", inferenceResult)
@@ -233,7 +261,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // TODO - Zaynab Mourtada: Implement the ML Inference logic here
-    private fun intializeInferenceResult(){
+    private fun intializeInferenceResult() {
         inferenceResult = "ML - Inference"
     }
 
@@ -276,11 +304,11 @@ class MainActivity : AppCompatActivity() {
         return File(picturesDir, "Processed_${System.currentTimeMillis()}.jpg").absolutePath
     }
 
-    // Loads the TFlite Model
-    // First sets number of threads for CPU fallback
-    // Second checks if NNAPI is avail (TPU/NPU ~ Google Pixel 8)
-    // Third checks if GpuDelegate is avail (MotoGPlay etc)
-    // If both are unavail, CPU is used for inference
+    // Loads the TFlite Model:
+    // - First sets number of threads for CPU fallback.
+    // - Second checks if NNAPI is available.
+    // - Third checks if GPU delegate is available.
+    // If both are unavailable, CPU is used for inference.
     private fun loadTFLiteModelOnStartupThreaded(modelName: String) {
         Thread {
             val bestLoadedPath = copyAssetModelBlocking(modelName)
@@ -288,13 +316,13 @@ class MainActivity : AppCompatActivity() {
                 if (bestLoadedPath.isNotEmpty()) {
                     try {
                         val options = Interpreter.Options().apply {
-                            // Use all available cores for CPU fallback
+                            // Use all available cores for CPU fallback.
                             setNumThreads(Runtime.getRuntime().availableProcessors())
                         }
 
                         var delegateAdded = false
 
-                        // Attempt to add NNAPI delegate
+                        // Attempt to add NNAPI delegate.
                         try {
                             val nnApiDelegate = NnApiDelegate()
                             options.addDelegate(nnApiDelegate)
@@ -315,7 +343,7 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
 
-                        // Initialize the interpreter with the best options
+                        // Initialize the interpreter with the best options.
                         tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
                         when (modelName) {
                             "YOLOv3_float32.tflite" -> videoProcessor?.setYOLOmodel(tfliteInterpreter!!)
