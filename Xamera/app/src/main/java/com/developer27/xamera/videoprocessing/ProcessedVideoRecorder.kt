@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Rect
 import android.media.MediaCodec
-import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.util.Log
@@ -46,10 +45,7 @@ class ProcessedVideoRecorder(
     fun start() {
         // Configure the video format with fixed resolution and computed bit rate.
         val format = MediaFormat.createVideoFormat(MIME_TYPE, width, height)
-        format.setInteger(
-            MediaFormat.KEY_COLOR_FORMAT,
-            MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
-        )
+        format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, width * height)
         // Dynamically compute bit rate.
         val calculatedBitRate = width * height * bitRateMultiplier
         format.setInteger(MediaFormat.KEY_BIT_RATE, calculatedBitRate)

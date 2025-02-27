@@ -218,14 +218,17 @@ class MainActivity : AppCompatActivity() {
 
         videoProcessor?.clearTrackingData()
 
-        val inputTensor = tfliteInterpreter?.getInputTensor(0)
-        val inputShape = inputTensor?.shape()
-        val width = inputShape?.getOrNull(2) ?: 416
-        val height = inputShape?.getOrNull(1) ?: 416
+        if (Settings.ExportData.videoDATA) {
+            val inputTensor = tfliteInterpreter?.getInputTensor(0)
+            val inputShape = inputTensor?.shape()
+            val width = inputShape?.getOrNull(2) ?: 416
+            val height = inputShape?.getOrNull(1) ?: 416
 
-        val outputPath = getProcessedVideoOutputPath()
-        processedVideoRecorder = ProcessedVideoRecorder(width, height, outputPath)
-        processedVideoRecorder?.start()
+            val outputPath = getProcessedVideoOutputPath()
+
+            processedVideoRecorder = ProcessedVideoRecorder(width, height, outputPath)
+            processedVideoRecorder?.start()
+        }
     }
 
     private fun stopProcessingAndRecording() {
