@@ -74,7 +74,7 @@ object Settings {
         var lineThickness = 4
     }
     object BoundingBox {
-        var enableBoundingBox = true
+        var enableBoundingBox = false
         var boxColor = Scalar(0.0, 255.0, 0.0)
         var boxThickness = 2
     }
@@ -153,17 +153,8 @@ class VideoProcessor(private val context: Context) {
     // Processes a frame using Contour Detection - Returns a Pair containing outputBitmap and videoBitmap.
     private fun processFrameInternalCONTOUR(bitmap: Bitmap): Pair<Bitmap, Bitmap>? {
         return try {
-            val originalMat = Mat().also { Utils.bitmapToMat(bitmap, it) }
-            val preprocessedMat = Preprocessing.preprocessFrame(originalMat)
-            originalMat.release()
-
-            val videoBitmap = Bitmap.createBitmap(preprocessedMat.cols(), preprocessedMat.rows(), Bitmap.Config.ARGB_8888).apply {
-                Utils.matToBitmap(preprocessedMat, this)
-            }
-            val (center, processedMat) = ContourDetection.processContourDetection(preprocessedMat)
-            preprocessedMat.release()
-
-            Imgproc.cvtColor(processedMat, processedMat, Imgproc.COLOR_GRAY2BGR)
+            val (preprocessedMat, preprocessedBitmap) = Preprocessing.preprocessFrame(bitmap)
+            val (center, contourMat) = ContourDetection.processContourDetection(preprocessedMat)
             if (center != null) {
                 rawDataList.add(center)
                 val (fx, fy) = KalmanHelper.applyKalmanFilter(center)
@@ -171,15 +162,16 @@ class VideoProcessor(private val context: Context) {
                 if (rawDataList.size > Settings.Trace.lineLimit) rawDataList.pollFirst()
                 if (smoothDataList.size > Settings.Trace.lineLimit) smoothDataList.pollFirst()
                 with(Settings.Trace) {
-                    if (enableRAWtrace) TraceRenderer.drawRawTrace(smoothDataList, processedMat)
-                    if (enableSPLINEtrace) TraceRenderer.drawSplineCurve(smoothDataList, processedMat)
+                    if (enableRAWtrace) TraceRenderer.drawRawTrace(smoothDataList, contourMat)
+                    if (enableSPLINEtrace) TraceRenderer.drawSplineCurve(smoothDataList, contourMat)
                 }
             }
-            val outputBitmap = Bitmap.createBitmap(processedMat.cols(), processedMat.rows(), Bitmap.Config.ARGB_8888).apply {
-                Utils.matToBitmap(processedMat, this)
-                processedMat.rows()
+            val outputBitmap = Bitmap.createBitmap(contourMat.cols(), contourMat.rows(), Bitmap.Config.ARGB_8888).apply {
+                Utils.matToBitmap(contourMat, this)
             }
-            Pair(outputBitmap, videoBitmap)
+            preprocessedMat.release()
+            contourMat.release()
+            return Pair(outputBitmap, preprocessedBitmap)
         } catch (e: Exception) {
             logCat("Error processing frame: ${e.message}", e)
             null
@@ -192,6 +184,7 @@ class VideoProcessor(private val context: Context) {
             // Retrieve model dimensions (input size and output shape) in one go.
             val modelDims = getModelDimensions()  // e.g., inputWidth = 416, inputHeight = 416, outputShape = [1, 5, 3549]
             Log.e("YOLOTest", "Model Width: ${modelDims.inputWidth}, Model Height: ${modelDims.inputHeight}")
+
             // Apply letterbox: resize and pad to the target dimensions.
             val (letterboxedBitmap, padOffsets) = YOLOHelper.createLetterboxedBitmap(bitmap, modelDims.inputWidth, modelDims.inputHeight)
             // Create a Mat from the original bitmap for drawing bounding boxes.
@@ -414,8 +407,9 @@ object KalmanHelper {
 
 // Helper object for preprocessing frames with OpenCV.
 object Preprocessing {
-    fun preprocessFrame(src: Mat): Mat {
-        val grayMat = applyGrayscale(src)
+    fun preprocessFrame(src: Bitmap): Pair<Mat, Bitmap> {
+        val srcMat = Mat().also { Utils.bitmapToMat(src, it) }
+        val grayMat = applyGrayscale(srcMat)
         val enhancedMat = enhanceBrightness(grayMat)
         grayMat.release()
         val thresholdMat = conditionalThresholding(enhancedMat)
@@ -424,7 +418,11 @@ object Preprocessing {
         thresholdMat.release()
         val closedMat = applyMorphologicalClosing(blurredMat)
         blurredMat.release()
-        return closedMat
+        srcMat.release()
+        val closedBitmap = Bitmap.createBitmap(closedMat.cols(), closedMat.rows(), Bitmap.Config.ARGB_8888).apply {
+            Utils.matToBitmap(closedMat, this)
+        }
+        return Pair(closedMat, closedBitmap)
     }
     private fun applyGrayscale(frame: Mat): Mat {
         val grayMat = Mat()
@@ -459,6 +457,7 @@ object ContourDetection {
             drawContour(mat, it)
             calculateCenterOfMass(it)
         }
+        Imgproc.cvtColor(mat, mat, Imgproc.COLOR_GRAY2BGR)
         return Pair(center, mat)
     }
     private fun findContours(mat: Mat): List<MatOfPoint> {
