@@ -35,19 +35,22 @@ data class DetectionResult(
     val width: Float, val height: Float,
     val confidence: Float
 )
-
 data class BoundingBox(
     val x1: Float, val y1: Float,
     val x2: Float, val y2: Float,
     val confidence: Float, val classId: Int
 )
 
+private var tfliteInterpreter: Interpreter? = null
+private val rawDataList = LinkedList<Point>()
+private val smoothDataList = LinkedList<Point>()
+
 // Object to hold various configuration settings.
 object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
-        var current: Mode = Mode.CONTOUR
-        var enableYOLOinference = false
+        var current: Mode = Mode.YOLO
+        var enableYOLOinference = true
     }
     object Inference {
         var confidenceThreshold: Float = 0.5f
@@ -79,9 +82,6 @@ object Settings {
 
 // Main VideoProcessor class.
 class VideoProcessor(private val context: Context) {
-    private var tfliteInterpreter: Interpreter? = null
-    private val rawDataList = LinkedList<Point>()
-    private val smoothDataList = LinkedList<Point>()
 
     init {
         initOpenCV()
@@ -124,7 +124,7 @@ class VideoProcessor(private val context: Context) {
         return try {
             val (pMat, pBmp) = Preprocessing.preprocessFrame(bitmap)
             val (center, cMat) = ContourDetection.processContourDetection(pMat)
-            TraceRenderer.drawTrace(center, rawDataList, smoothDataList, cMat)
+            TraceRenderer.drawTrace(center, cMat)
             val outBmp = Bitmap.createBitmap(cMat.cols(), cMat.rows(), Bitmap.Config.ARGB_8888).also { Utils.matToBitmap(cMat, it) }
             pMat.release(); cMat.release()
             outBmp to pBmp
@@ -144,7 +144,7 @@ class VideoProcessor(private val context: Context) {
             YOLOHelper.parseTFLite(out)?.let {
                 val (box, c) = YOLOHelper.rescaleInferencedCoordinates(it, bitmap.width, bitmap.height, offsets, inputW, inputH)
                 if (Settings.BoundingBox.enableBoundingBox) YOLOHelper.drawBoundingBoxes(m, box)
-                TraceRenderer.drawTrace(c, rawDataList, smoothDataList, m)
+                TraceRenderer.drawTrace(c, m)
             }
         }
         val yoloBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888).also {
@@ -218,7 +218,7 @@ class VideoProcessor(private val context: Context) {
 
 // Helper object to draw raw and spline traces.
 object TraceRenderer {
-    fun drawTrace(center: Point?, rawDataList: LinkedList<Point>, smoothDataList: LinkedList<Point>, contourMat: Mat) {
+    fun drawTrace(center: Point?, contourMat: Mat) {
         center?.let { detectedCenter ->
             rawDataList.add(detectedCenter)
             val (fx, fy) = KalmanHelper.applyKalmanFilter(detectedCenter)
