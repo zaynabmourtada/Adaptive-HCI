@@ -1,6 +1,7 @@
 venv/
 /YOLOv8/Tools/.vscode
 /YOLOv8/Tools/MYvenv
+/YOLOv8/Tools/Model_Conversion/MYvenv
 /digitEnv
 /10000 DIDA
 venv/
