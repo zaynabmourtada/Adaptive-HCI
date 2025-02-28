@@ -216,12 +216,12 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.getColorStateList(this, R.color.red)
         viewBinding.processedFrameView.visibility = View.VISIBLE
 
-        videoProcessor?.clearTrackingData()
+        videoProcessor?.reset()
 
         if (Settings.ExportData.videoDATA) {
-            val modelDims = videoProcessor?.getModelDimensions()
-            val width = modelDims?.inputWidth ?: 416
-            val height = modelDims?.inputWidth ?: 416
+            val dims = videoProcessor?.getModelDimensions()
+            val width = dims?.first ?: 416
+            val height = dims?.second ?: 416
             val outputPath = getProcessedVideoOutputPath()
             processedVideoRecorder = ProcessedVideoRecorder(width, height, outputPath)
             processedVideoRecorder?.start()

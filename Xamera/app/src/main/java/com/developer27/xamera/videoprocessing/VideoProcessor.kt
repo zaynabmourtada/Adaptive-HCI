@@ -31,34 +31,23 @@ import kotlin.math.max
 import kotlin.math.min
 
 data class DetectionResult(
-    val xCenter: Float,
-    val yCenter: Float,
-    val width: Float,
-    val height: Float,
+    val xCenter: Float, val yCenter: Float,
+    val width: Float, val height: Float,
     val confidence: Float
 )
 
 data class BoundingBox(
-    val x1: Float,
-    val y1: Float,
-    val x2: Float,
-    val y2: Float,
-    val confidence: Float,
-    val classId: Int
-)
-
-data class ModelDimensions(
-    val inputWidth: Int,
-    val inputHeight: Int,
-    val outputShape: List<Int>
+    val x1: Float, val y1: Float,
+    val x2: Float, val y2: Float,
+    val confidence: Float, val classId: Int
 )
 
 // Object to hold various configuration settings.
 object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
-        var current: Mode = Mode.YOLO
-        var enableYOLOinference = true
+        var current: Mode = Mode.CONTOUR
+        var enableYOLOinference = false
     }
     object Inference {
         var confidenceThreshold: Float = 0.5f
@@ -82,13 +71,9 @@ object Settings {
         var factor = 2.0
         var threshold = 150.0
     }
-    object Debug {
-        var enableToasts = true
-        var enableLogging = true
-    }
     object ExportData {
         var frameIMG = false
-        var videoDATA = true
+        var videoDATA = false
     }
 }
 
@@ -102,28 +87,21 @@ class VideoProcessor(private val context: Context) {
         initOpenCV()
         KalmanHelper.initKalmanFilter()
     }
-
-    // Loads the OpenCV library.
     private fun initOpenCV() {
         try {
             System.loadLibrary("opencv_java4")
-            logCat("OpenCV loaded successfully.")
         } catch (e: UnsatisfiedLinkError) {
-            logCat("OpenCV failed to load: ${e.message}", e)
+            Log.d("VideoProcessor","OpenCV failed to load: ${e.message}", e)
         }
     }
-
-    // Sets the TFLite model.
     fun setInterpreter(model: Interpreter) {
         synchronized(this) { tfliteInterpreter = model }
-        logCat("TFLite Model set in VideoProcessor successfully!")
+        Log.d("VideoProcessor","TFLite Model set in VideoProcessor successfully!")
     }
-
-    // Clears tracking data.
-    fun clearTrackingData() {
+    fun reset() {
         rawDataList.clear()
         smoothDataList.clear()
-        showToast("Tracking data reset.")
+        Toast.makeText(context, "VideoProc Reset", Toast.LENGTH_SHORT).show()
     }
 
     // Processes a frame asynchronously and returns a Pair (outputBitmap, videoBitmap).
@@ -135,108 +113,56 @@ class VideoProcessor(private val context: Context) {
                     Settings.DetectionMode.Mode.YOLO -> processFrameInternalYOLO(bitmap)
                 }
             } catch (e: Exception) {
-                logCat("Error processing frame: ${e.message}", e)
+                Log.d("VideoProcessor","Error processing frame: ${e.message}", e)
                 null
             }
             withContext(Dispatchers.Main) { callback(result) }
         }
     }
-
     // Processes a frame using Contour Detection - Returns a Pair containing outputBitmap and videoBitmap.
     private fun processFrameInternalCONTOUR(bitmap: Bitmap): Pair<Bitmap, Bitmap>? {
         return try {
-            val (preprocessedMat, preprocessedBitmap) = Preprocessing.preprocessFrame(bitmap)
-            val (center, contourMat) = ContourDetection.processContourDetection(preprocessedMat)
-            TraceRenderer.drawTrace(center, rawDataList, smoothDataList, contourMat)
-            val contourBitmap = Bitmap.createBitmap(contourMat.cols(), contourMat.rows(), Bitmap.Config.ARGB_8888
-            ).apply { Utils.matToBitmap(contourMat, this) }
-            preprocessedMat.release()
-            contourMat.release()
-            Pair(contourBitmap, preprocessedBitmap)
+            val (pMat, pBmp) = Preprocessing.preprocessFrame(bitmap)
+            val (center, cMat) = ContourDetection.processContourDetection(pMat)
+            TraceRenderer.drawTrace(center, rawDataList, smoothDataList, cMat)
+            val outBmp = Bitmap.createBitmap(cMat.cols(), cMat.rows(), Bitmap.Config.ARGB_8888).also { Utils.matToBitmap(cMat, it) }
+            pMat.release(); cMat.release()
+            outBmp to pBmp
         } catch (e: Exception) {
-            logCat("Error processing frame: ${e.message}", e)
+            Log.d("VideoProcessor","Error processing frame: ${e.message}", e)
             null
         }
     }
-
     // Processes a frame using YOLO - Returns a Pair containing outputBitmap and letterboxedBitmap.
-    private suspend fun processFrameInternalYOLO(bitmap: Bitmap): Pair<Bitmap, Bitmap>? {
-        return withContext(Dispatchers.IO) {
-            // Retrieve model dimensions (input size and output shape) in one go.
-            val modelDims = getModelDimensions()  // e.g., inputWidth = 416, inputHeight = 416, outputShape = [1, 5, 3549]
-            Log.e("YOLOTest", "Model Width: ${modelDims.inputWidth}, Model Height: ${modelDims.inputHeight}")
-            // removing pre processing on YOLO
-            //val (_, preprocessedBitmap) = Preprocessing.preprocessFrame(bitmap)
-            // Apply letterbox: resize and pad to the target dimensions.
-            val (letterboxedBitmap, padOffsets) = YOLOHelper.createLetterboxedBitmap(bitmap, modelDims.inputWidth, modelDims.inputHeight)
-            // Create a Mat from the original bitmap for drawing bounding boxes & trace lines
-            val originalMatForDraw = Mat().also { Utils.bitmapToMat(bitmap, it) }
-            with(Settings.DetectionMode) {
-                if (enableYOLOinference) {
-                    // Prepare tensor image for inference.
-                    val tensorImage = TensorImage(DataType.FLOAT32).apply { load(letterboxedBitmap) }
-                    if (tfliteInterpreter == null) {
-                        Log.e("YOLOTest", "TFLite Model is NULL! Cannot run inference.")
-                        return@withContext null
-                    }
-                    // Allocate output array using the output shape from modelDims.
-                    val outputArray = Array(modelDims.outputShape[0]) { Array(modelDims.outputShape[1]) { FloatArray(modelDims.outputShape[2]) } }
-                    // Run inference.
-                    tfliteInterpreter?.run(tensorImage.buffer, outputArray)
-                    // Finds Best Detection
-                    val detectionResult = YOLOHelper.parseTFLite(outputArray)
-                    // Based on Detection, scale to Output Screen and output Center and Bounding Box
-                    val center: Point? = detectionResult?.let { detection ->
-                        // Rescale detection to the original image space.
-                        val (boundingBox, center) = YOLOHelper.rescaleInferencedCoordinates(
-                            detection,
-                            bitmap.width,
-                            bitmap.height,
-                            padOffsets,
-                            modelDims.inputWidth,
-                            modelDims.inputHeight
-                        )
-                        if (Settings.BoundingBox.enableBoundingBox) {
-                            YOLOHelper.drawBoundingBoxes(originalMatForDraw, boundingBox)
-                        }
-                        center
-                    }
-                    TraceRenderer.drawTrace(center, rawDataList, smoothDataList, originalMatForDraw)
-                }
+    private suspend fun processFrameInternalYOLO(bitmap: Bitmap): Pair<Bitmap, Bitmap> = withContext(Dispatchers.IO) {
+        val (inputW, inputH, outputShape) = getModelDimensions()
+        val (letterboxed, offsets) = YOLOHelper.createLetterboxedBitmap(bitmap, inputW, inputH)
+        val m = Mat().also { Utils.bitmapToMat(bitmap, it) }
+        if (Settings.DetectionMode.enableYOLOinference && tfliteInterpreter != null) {
+            val out = Array(outputShape[0]) { Array(outputShape[1]) { FloatArray(outputShape[2]) } }
+            TensorImage(DataType.FLOAT32).apply { load(letterboxed) }.also { tfliteInterpreter?.run(it.buffer, out) }
+            YOLOHelper.parseTFLite(out)?.let {
+                val (box, c) = YOLOHelper.rescaleInferencedCoordinates(it, bitmap.width, bitmap.height, offsets, inputW, inputH)
+                if (Settings.BoundingBox.enableBoundingBox) YOLOHelper.drawBoundingBoxes(m, box)
+                TraceRenderer.drawTrace(c, rawDataList, smoothDataList, m)
             }
-            val outputBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888).apply {
-                Utils.matToBitmap(originalMatForDraw, this)
-                originalMatForDraw.release()
-            }
-            Pair(outputBitmap, letterboxedBitmap)
         }
+        val yoloBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888).also {
+            Utils.matToBitmap(m, it)
+            m.release()
+        }
+        yoloBmp to letterboxed
     }
 
     // Dynamically retrieves the model input size.
-    fun getModelDimensions(): ModelDimensions {
-        // Retrieve input tensor shape.
-        val inputTensor = tfliteInterpreter?.getInputTensor(0)
-        val inputShape = inputTensor?.shape()
-        val (height, width) = (inputShape?.getOrNull(1) ?: 416) to (inputShape?.getOrNull(2) ?: 416)
-        // Retrieve output tensor shape.
-        val outputTensor = tfliteInterpreter?.getOutputTensor(0)
-        val outputShape: List<Int> = outputTensor?.shape()?.toList() ?: listOf(1, 5, 3549)
-        return ModelDimensions(inputWidth = width, inputHeight = height, outputShape = outputShape)
+    fun getModelDimensions(): Triple<Int, Int, List<Int>> {
+        val inTensor = tfliteInterpreter?.getInputTensor(0)
+        val inShape = inTensor?.shape()
+        val (h, w) = (inShape?.getOrNull(1) ?: 416) to (inShape?.getOrNull(2) ?: 416)
+        val outTensor = tfliteInterpreter?.getOutputTensor(0)
+        val outShape = outTensor?.shape()?.toList() ?: listOf(1, 5, 3549)
+        return Triple(w, h, outShape)
     }
-
-    private fun showToast(msg: String) {
-        if (Settings.Debug.enableToasts) {
-            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun logCat(message: String, throwable: Throwable? = null) {
-        if (Settings.Debug.enableLogging) {
-            if (throwable != null) Log.e("VideoProcessor", message, throwable)
-            else Log.d("VideoProcessor", message)
-        }
-    }
-
     // Creates a white, square (28x28) Bitmap that encapsulates the drawn spline trace (with padding).
     fun exportTraceForInference(): Bitmap {
         // Ensure there is some trace data.
@@ -284,7 +210,6 @@ class VideoProcessor(private val context: Context) {
         val scaledBitmap = Bitmap.createScaledBitmap(outputBitmap, 28, 28, true)
         return scaledBitmap
     }
-
     // Returns the tracking coordinates as a semicolon-separated string. Each point is formatted as "x,y,0.0".
     fun getTrackingCoordinatesString(): String {
         return smoothDataList.joinToString(separator = ";") { "${it.x},${it.y},0.0" }
@@ -366,74 +291,31 @@ object KalmanHelper {
 // Helper object for preprocessing frames with OpenCV.
 object Preprocessing {
     fun preprocessFrame(src: Bitmap): Pair<Mat, Bitmap> {
-        val srcMat = Mat().also { Utils.bitmapToMat(src, it) }
-        val grayMat = applyGrayscale(srcMat)
-        val enhancedMat = enhanceBrightness(grayMat)
-        grayMat.release()
-        val thresholdMat = conditionalThresholding(enhancedMat)
-        enhancedMat.release()
-        val blurredMat = applyGaussianBlur(thresholdMat)
-        thresholdMat.release()
-        val closedMat = applyMorphologicalClosing(blurredMat)
-        blurredMat.release()
-        srcMat.release()
-        val closedBitmap = Bitmap.createBitmap(closedMat.cols(), closedMat.rows(), Bitmap.Config.ARGB_8888).apply {
-            Utils.matToBitmap(closedMat, this)
-        }
-        return Pair(closedMat, closedBitmap)
-    }
-    private fun applyGrayscale(frame: Mat): Mat {
-        val grayMat = Mat()
-        Imgproc.cvtColor(frame, grayMat, Imgproc.COLOR_BGR2GRAY)
-        return grayMat
-    }
-    private fun enhanceBrightness(image: Mat): Mat = Mat().apply { Core.multiply(image, Scalar(Settings.Brightness.factor), this) }
-    private fun conditionalThresholding(image: Mat): Mat {
-        val thresholdMat = Mat()
-        Imgproc.threshold(image, thresholdMat, Settings.Brightness.threshold, 255.0, Imgproc.THRESH_TOZERO)
-        return thresholdMat
-    }
-    private fun applyGaussianBlur(image: Mat): Mat {
-        val blurredMat = Mat()
-        Imgproc.GaussianBlur(image, blurredMat, Size(5.0, 5.0), 0.0)
-        return blurredMat
-    }
-    private fun applyMorphologicalClosing(image: Mat): Mat {
-        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
-        val closedImage = Mat()
-        Imgproc.morphologyEx(image, closedImage, Imgproc.MORPH_CLOSE, kernel)
-        return closedImage
+        val sMat = Mat().also { Utils.bitmapToMat(src, it) }
+        val gMat = Mat().also { Imgproc.cvtColor(sMat, it, Imgproc.COLOR_BGR2GRAY); sMat.release() }
+        val eMat = Mat().also { Core.multiply(gMat, Scalar(Settings.Brightness.factor), it); gMat.release() }
+        val tMat = Mat().also { Imgproc.threshold(eMat, it, Settings.Brightness.threshold, 255.0, Imgproc.THRESH_TOZERO); eMat.release() }
+        val bMat = Mat().also { Imgproc.GaussianBlur(tMat, it, Size(5.0, 5.0), 0.0); tMat.release() }
+        val k = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+        val cMat = Mat().also { Imgproc.morphologyEx(bMat, it, Imgproc.MORPH_CLOSE, k); bMat.release() }
+        val bmp = Bitmap.createBitmap(cMat.cols(), cMat.rows(), Bitmap.Config.ARGB_8888).also { Utils.matToBitmap(cMat, it) }
+        return cMat to bmp
     }
 }
 
 // Helper object for contour detection.
 object ContourDetection {
-    fun processContourDetection(mat: Mat): Pair<Point?, Mat> {
-        val contours = findContours(mat)
-        val largestContour = findLargestContour(contours)
-        val center = largestContour?.let {
-            drawContour(mat, it)
-            calculateCenterOfMass(it)
+    fun processContourDetection(mat: Mat) = findContours(mat).maxByOrNull { Imgproc.contourArea(it) }.let { c ->
+        val center = c?.let {
+            Imgproc.drawContours(mat, listOf(it), -1, Settings.BoundingBox.boxColor, Settings.BoundingBox.boxThickness)
+            val m = Imgproc.moments(it)
+            Point(m.m10 / m.m00, m.m01 / m.m00)
         }
         Imgproc.cvtColor(mat, mat, Imgproc.COLOR_GRAY2BGR)
-        return Pair(center, mat)
+        center to mat
     }
-    private fun findContours(mat: Mat): List<MatOfPoint> {
-        val contours = mutableListOf<MatOfPoint>()
-        val hierarchy = Mat()
-        Imgproc.findContours(mat, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
-        hierarchy.release()
-        return contours
-    }
-    private fun findLargestContour(contours: List<MatOfPoint>): MatOfPoint? = contours.maxByOrNull { Imgproc.contourArea(it) }
-    private fun drawContour(mat: Mat, contour: MatOfPoint) {
-        Imgproc.drawContours(mat, listOf(contour), -1, Settings.BoundingBox.boxColor, Settings.BoundingBox.boxThickness)
-    }
-    private fun calculateCenterOfMass(contour: Mat): Point {
-        val moments = Imgproc.moments(contour)
-        val centerX = moments.m10 / moments.m00
-        val centerY = moments.m01 / moments.m00
-        return Point(centerX, centerY)
+    private fun findContours(mat: Mat) = mutableListOf<MatOfPoint>().also {
+        Mat().also { h -> Imgproc.findContours(mat, it, h, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE); h.release() }
     }
 }
 
@@ -441,7 +323,6 @@ object ContourDetection {
 object YOLOHelper {
     fun parseTFLite(rawOutput: Array<Array<FloatArray>>): DetectionResult? {
         val numDetections = rawOutput[0][0].size
-        Log.d("YOLOTest", "Total detected objects: $numDetections")
         // Step 1: Parse detections and filter by confidence.
         val detections = mutableListOf<DetectionResult>()
         for (i in 0 until numDetections) {
@@ -481,13 +362,14 @@ object YOLOHelper {
         }
         return bestDetection
     }
-    private fun detectionToBox(d: DetectionResult): BoundingBox {
-        val x1 = d.xCenter - d.width / 2
-        val y1 = d.yCenter - d.height / 2
-        val x2 = d.xCenter + d.width / 2
-        val y2 = d.yCenter + d.height / 2
-        return BoundingBox(x1, y1, x2, y2, d.confidence, 1)
-    }
+    private fun detectionToBox(d: DetectionResult) = BoundingBox(
+        d.xCenter - d.width / 2,
+        d.yCenter - d.height / 2,
+        d.xCenter + d.width / 2,
+        d.yCenter + d.height / 2,
+        d.confidence,
+        1
+    )
     private fun computeIoU(boxA: BoundingBox, boxB: BoundingBox): Float {
         val x1 = max(boxA.x1, boxB.x1)
         val y1 = max(boxA.y1, boxB.y1)
@@ -574,7 +456,7 @@ object YOLOHelper {
         srcMat.release()
         // Compute padding needed to reach target dimensions
         val (padWidth, padHeight) = (targetWidth - newWidth) to (targetHeight - newHeight)
-        fun computePadding(total: Int) = total / 2 to (total - total / 2)
+        val computePadding = { total: Int -> total / 2 to (total - total / 2) }
         val (top, bottom) = computePadding(padHeight)
         val (left, right) = computePadding(padWidth)
         // Create the final letterboxed image with padding
