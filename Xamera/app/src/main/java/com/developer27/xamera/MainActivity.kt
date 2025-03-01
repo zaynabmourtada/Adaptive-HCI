@@ -1,4 +1,3 @@
-
 package com.developer27.xamera
 
 import android.Manifest
@@ -8,12 +7,12 @@ import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.preference.PreferenceManager
@@ -25,6 +24,7 @@ import android.view.View
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.developer27.xamera.camera.CameraHelper
@@ -43,46 +43,38 @@ import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
 
-/**
- * MainActivity:
- * - Sets up the camera preview and UI controls.
- * - Processes frames via VideoProcessor (which applies OpenCV overlays such as drawn traces).
- * - Records the processed frames to a video file.
- * - When the user stops tracking, the app first saves the tracking (line) data file
- *   (which is saved in Documents/tracking) and then automatically saves the Letter Inference Data
- *   in Documents/2d_letter with a timestamp.
- */
 class MainActivity : AppCompatActivity() {
     private lateinit var viewBinding: ActivityMainBinding
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var cameraManager: CameraManager
     private lateinit var cameraHelper: CameraHelper
-    // Global TFLite Interpreter instance.
     private var tfliteInterpreter: Interpreter? = null
-
-    // Custom recorder to save processed video frames.
     private var processedVideoRecorder: ProcessedVideoRecorder? = null
     private var processedFrameRecorder: ProcessedFrameRecorder? = null
-
-    // VideoProcessor applies detection and drawing overlays.
     private var videoProcessor: VideoProcessor? = null
 
-    // Flags to control the processing/recording states.
+    // Flag for tracking (start/stop tracking mode)
     private var isRecording = false
+    // Flag for frame processing
     private var isProcessing = false
     private var isProcessingFrame = false
 
-    // This variable is for inference result.
+    // Variable for inference result.
     private var inferenceResult = ""
 
-    // New: Stores the tracking coordinates received from VideoProcessor.
+    // Stores the tracking coordinates.
     private var trackingCoordinates: String = ""
 
-    // Declare these as member variables or inside onCreate before setting the listener.
+    // For toggling digit/letter recognition.
     var isLetterSelected = true
-    var isDigitSelected = !isLetterSelected  // Inverse of letter selection
+    var isDigitSelected = !isLetterSelected
 
-    // Permissions required by the app.
+    // New flag for writing mode.
+    private var isWriting = false
+
+    // New flag to clear prediction when returning from an external intent.
+    private var shouldClearPrediction = false
+
     private val REQUIRED_PERMISSIONS = arrayOf(
         Manifest.permission.CAMERA,
         Manifest.permission.RECORD_AUDIO
@@ -91,7 +83,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val SETTINGS_REQUEST_CODE = 1
-        // Mapping for camera rotation.
         private val ORIENTATIONS = SparseIntArray().apply {
             append(Surface.ROTATION_0, 90)
             append(Surface.ROTATION_90, 0)
@@ -100,7 +91,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // TextureView listener for the camera preview.
     private val textureListener = object : TextureView.SurfaceTextureListener {
         @SuppressLint("MissingPermission")
         override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
@@ -131,7 +121,11 @@ class MainActivity : AppCompatActivity() {
         cameraHelper = CameraHelper(this, viewBinding, sharedPreferences)
         videoProcessor = VideoProcessor(this)
 
+        // Hide the processed frame view initially.
         viewBinding.processedFrameView.visibility = View.GONE
+
+        // Set default text for the predicted letter TextView.
+        viewBinding.predictedLetterTextView.text = "Prediction Not Available"
 
         requestPermissionLauncher =
             registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
@@ -158,13 +152,17 @@ class MainActivity : AppCompatActivity() {
             requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
         }
 
+        // Set up the Start Tracking button.
         viewBinding.startProcessingButton.setOnClickListener {
             if (isRecording) {
+                // Stop tracking and update prediction.
                 stopProcessingAndRecording()
             } else {
                 startProcessingAndRecording()
             }
         }
+
+        // Set up the Switch Camera, About, and Settings buttons.
         viewBinding.switchCameraButton.setOnClickListener { switchCamera() }
         viewBinding.aboutButton.setOnClickListener {
             startActivity(Intent(this, AboutXameraActivity::class.java))
@@ -173,30 +171,41 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        // Set up the single RadioButton (radioToggle) as a toggle control.
-        // Initially set to "Digit".
-        viewBinding.radioToggle.setTextColor(Color.WHITE)
+        // Set up the RadioButton for toggling between letters and digits.
+        viewBinding.radioToggle.setTextColor(android.graphics.Color.WHITE)
         viewBinding.radioToggle.buttonTintList = ContextCompat.getColorStateList(this, android.R.color.white)
-        viewBinding.radioToggle.text = "Digit"
-        viewBinding.radioToggle.isChecked = true
-
-        // Initialize the RadioButton: When checked (isLetterSelected true) it should display "Letter".
         viewBinding.radioToggle.text = if (isLetterSelected) "Letter" else "Digit"
         viewBinding.radioToggle.isChecked = isLetterSelected
-
         viewBinding.radioToggle.setOnClickListener {
-            // Toggle the letter selection state.
             isLetterSelected = !isLetterSelected
-
-            // Update the digit selection state as its inverse.
             isDigitSelected = !isLetterSelected
-
-            // Update the RadioButton's text and checked state.
             viewBinding.radioToggle.text = if (isLetterSelected) "Letter" else "Digit"
             viewBinding.radioToggle.isChecked = isLetterSelected
         }
 
-        // Loads in both the ML models.
+        // Set up the Start Writing button.
+        viewBinding.startWritingButton.setOnClickListener {
+            toggleWritingMode()
+        }
+
+        // Set up the Clear Prediction button ("C") under the zoom buttons.
+        viewBinding.clearPredictionButton.setOnClickListener {
+            // Stop writing if active.
+            if (isWriting) {
+                isWriting = false
+                viewBinding.startWritingButton.text = "Start Writing"
+                viewBinding.startWritingButton.backgroundTintList =
+                    ContextCompat.getColorStateList(this, R.color.green)
+            }
+            // Stop tracking if active.
+            if (isRecording) {
+                stopProcessingAndRecording()
+            }
+            // Reset the prediction panel.
+            viewBinding.predictedLetterTextView.text = "No Prediction Yet"
+        }
+
+        // Load ML models.
         loadTFLiteModelOnStartupThreaded("YOLOv3_float32.tflite")
         loadTFLiteModelOnStartupThreaded("DigitRecog_float32.tflite")
 
@@ -206,6 +215,67 @@ class MainActivity : AppCompatActivity() {
                 cameraHelper.updateShutterSpeed()
             }
         }
+    }
+
+    // Function for toggling writing mode.
+    private fun toggleWritingMode() {
+        if (!isWriting) {
+            // Start writing mode.
+            isWriting = true
+            viewBinding.startWritingButton.text = "Stop Writing"
+            viewBinding.startWritingButton.backgroundTintList =
+                ContextCompat.getColorStateList(this, R.color.red)
+            // Clear the prediction panel.
+            viewBinding.predictedLetterTextView.text = "No Prediction Available Yet"
+        } else {
+            // Stop writing mode.
+            isWriting = false
+            viewBinding.startWritingButton.text = "Start Writing"
+            viewBinding.startWritingButton.backgroundTintList =
+                ContextCompat.getColorStateList(this, R.color.green)
+            // When writing stops, check the accumulated prediction.
+            val prediction = viewBinding.predictedLetterTextView.text.toString()
+            if (isLetterSelected) {
+                // Letter mode: ask if user wants to send an email.
+                AlertDialog.Builder(this)
+                    .setTitle("Send Email")
+                    .setMessage("Do you wish to send an email with the text: $prediction?")
+                    .setPositiveButton("Yes") { _, _ ->
+                        sendEmail(prediction)
+                    }
+                    .setNegativeButton("No") { _, _ ->
+                        launch3DActivity()
+                    }
+                    .show()
+            } else {
+                // Digit mode: if the prediction is composed solely of digits, ask if user wants to call.
+                if (prediction.matches(Regex("\\d+"))) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Call Number")
+                        .setMessage("Do you wish to call the number $prediction?")
+                        .setPositiveButton("Yes") { _, _ ->
+                            makePhoneCall(prediction)
+                        }
+                        .setNegativeButton("No") { _, _ ->
+                            launch3DActivity()
+                        }
+                        .show()
+                } else {
+                    launch3DActivity()
+                }
+            }
+        }
+    }
+
+    // New function to send an email with the prediction.
+    private fun sendEmail(text: String) {
+        val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
+            data = Uri.parse("mailto:") // Only email apps should handle this.
+            putExtra(Intent.EXTRA_SUBJECT, "Air-Written Email by Xamera")
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        shouldClearPrediction = true
+        startActivity(emailIntent)
     }
 
     private fun startProcessingAndRecording() {
@@ -244,73 +314,59 @@ class MainActivity : AppCompatActivity() {
         with(Settings.ExportData) {
             if (frameIMG) {
                 val bitmap = videoProcessor?.exportTraceForInference()
-                if (bitmap != null) { processedFrameRecorder?.save(bitmap) }
+                if (bitmap != null) {
+                    processedFrameRecorder?.save(bitmap)
+                }
             }
         }
 
-        // Initialize the inference results.
+        // Compute the inference result.
         initializeInferenceResult()
-
-        // Retrieve the tracking coordinates from VideoProcessor.
-        trackingCoordinates = videoProcessor?.getTrackingCoordinatesString() ?: ""
-
-        // Start XameraAR Activity when the user stops processing.
-        val intent = Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java)
-        // Pass the letter (or inference result) for the 2D Letter Cube.
-        intent.putExtra("LETTER_KEY", inferenceResult)
-        // Use trackingCoordinates if available; otherwise fallback to a default coordinate string.
-        val pathCoordinates = if (trackingCoordinates.isNotEmpty()) {
-            trackingCoordinates
+        // If in writing mode, append the prediction to the TextView.
+        if (isWriting) {
+            val currentText = viewBinding.predictedLetterTextView.text.toString()
+            val newText = if (currentText == "No Prediction Available Yet") {
+                inferenceResult
+            } else {
+                currentText + inferenceResult
+            }
+            viewBinding.predictedLetterTextView.text = newText
         } else {
-            "0.0,0.0,0.0;5.0,10.0,-5.0;-5.0,15.0,10.0;20.0,-5.0,5.0;-10.0,0.0,-10.0;10.0,-15.0,15.0;0.0,20.0,-5.0"
+            // Otherwise, just update the panel.
+            viewBinding.predictedLetterTextView.text = inferenceResult
         }
-        intent.putExtra("PATH_COORDINATES", pathCoordinates)
-        startActivity(intent)
+
+        // Retrieve tracking coordinates.
+        trackingCoordinates = videoProcessor?.getTrackingCoordinatesString() ?: ""
     }
 
-    // Inference algorithm for letters and digits.
     private fun initializeInferenceResult() {
         if (isLetterSelected) {
-            // Inference logic for letters
             inferenceResult = "ML - Inference: Letters"
         } else if (isDigitSelected) {
-            // Inference logic for digits
             inferenceResult = runDigitRecognitionInference()
         }
     }
 
-    // Run the digit inference using the exported trace bitmap.
     private fun runDigitRecognitionInference(): String {
-        // Get the 28x28 trace image.
         val digitBitmap = videoProcessor?.exportTraceForInference()
         if (digitBitmap == null) {
             Log.e("MainActivity", "No digit image available for inference")
             return "Error"
         }
-        // Convert the image to grayscale (but keep ARGB_8888 config).
         val grayBitmap = convertToGrayscale(digitBitmap)
-        // Convert the grayscale bitmap into a ByteBuffer containing 784 floats.
         val inputBuffer = convertBitmapToGrayscaleByteBuffer(grayBitmap)
-
-        // Prepare output array assuming 10 classes (digits 0-9).
         val outputArray = Array(1) { FloatArray(10) }
-
         if (tfliteInterpreter == null) {
             Log.e("MainActivity", "Digit model interpreter not set")
             return "Error"
         }
-        // Run inference.
         tfliteInterpreter?.run(inputBuffer, outputArray)
-
-        // Determine the predicted digit.
         val predictedDigit = outputArray[0].indices.maxByOrNull { outputArray[0][it] } ?: -1
         Log.d("MainActivity", "Digit model predicted: $predictedDigit")
         return predictedDigit.toString()
     }
 
-    /**
-     * Converts a bitmap to grayscale while preserving the ARGB_8888 configuration.
-     */
     private fun convertToGrayscale(bitmap: Bitmap): Bitmap {
         val grayscaleBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(grayscaleBitmap)
@@ -322,27 +378,40 @@ class MainActivity : AppCompatActivity() {
         return grayscaleBitmap
     }
 
-    /**
-     * Converts a 28x28 ARGB_8888 bitmap (with grayscale values) into a ByteBuffer
-     * of shape [1, 28, 28, 1] (784 floats). Each pixel’s red channel is used.
-     */
     private fun convertBitmapToGrayscaleByteBuffer(bitmap: Bitmap): ByteBuffer {
-        val inputSize = bitmap.width * bitmap.height // should be 28*28 = 784
-        val byteBuffer = ByteBuffer.allocateDirect(inputSize * 4) // float size = 4 bytes
+        val inputSize = bitmap.width * bitmap.height
+        val byteBuffer = ByteBuffer.allocateDirect(inputSize * 4)
         byteBuffer.order(ByteOrder.nativeOrder())
-
         val intValues = IntArray(bitmap.width * bitmap.height)
         bitmap.getPixels(intValues, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-
-        // Extract the red channel from each pixel (since in grayscale, R=G=B).
         for (pixel in intValues) {
-            // Extract red component from ARGB.
             val r = (pixel shr 16 and 0xFF).toFloat()
-            // Normalize the value to [0, 1]. Adjust normalization as per your model's training.
             val normalized = r / 255.0f
             byteBuffer.putFloat(normalized)
         }
         return byteBuffer
+    }
+
+    private fun launch3DActivity() {
+        // Send the accumulated prediction information to the 3D launcher.
+        val intent = Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java)
+        intent.putExtra("LETTER_KEY", viewBinding.predictedLetterTextView.text.toString())
+        val pathCoordinates = if (trackingCoordinates.isNotEmpty()) {
+            trackingCoordinates
+        } else {
+            "0.0,0.0,0.0;5.0,10.0,-5.0;-5.0,15.0,10.0;20.0,-5.0,5.0;-10.0,0.0,-10.0;10.0,-15.0,15.0;0.0,20.0,-5.0"
+        }
+        intent.putExtra("PATH_COORDINATES", pathCoordinates)
+        shouldClearPrediction = true
+        startActivity(intent)
+    }
+
+    // Simulate making a phone call using ACTION_DIAL.
+    private fun makePhoneCall(digits: String) {
+        val callIntent = Intent(Intent.ACTION_DIAL)
+        callIntent.data = Uri.parse("tel:$digits")
+        shouldClearPrediction = true
+        startActivity(callIntent)
     }
 
     private fun processFrameWithVideoProcessor() {
@@ -384,11 +453,6 @@ class MainActivity : AppCompatActivity() {
         return File(picturesDir, "Processed_${System.currentTimeMillis()}.jpg").absolutePath
     }
 
-    // Loads the TFlite Model:
-    // - First sets number of threads for CPU fallback.
-    // - Second checks if NNAPI is available.
-    // - Third checks if GPU delegate is available.
-    // If both are unavailable, CPU is used for inference.
     private fun loadTFLiteModelOnStartupThreaded(modelName: String) {
         Thread {
             val bestLoadedPath = copyAssetModelBlocking(modelName)
@@ -396,13 +460,9 @@ class MainActivity : AppCompatActivity() {
                 if (bestLoadedPath.isNotEmpty()) {
                     try {
                         val options = Interpreter.Options().apply {
-                            // Use all available cores for CPU fallback.
                             setNumThreads(Runtime.getRuntime().availableProcessors())
                         }
-
                         var delegateAdded = false
-
-                        // Attempt to add NNAPI delegate.
                         try {
                             val nnApiDelegate = NnApiDelegate()
                             options.addDelegate(nnApiDelegate)
@@ -411,8 +471,6 @@ class MainActivity : AppCompatActivity() {
                         } catch (e: Exception) {
                             Log.d("MainActivity", "NNAPI delegate unavailable, falling back to GPU delegate.", e)
                         }
-
-                        // If NNAPI wasn't added, try the GPU delegate instead.
                         if (!delegateAdded) {
                             try {
                                 val gpuDelegate = GpuDelegate()
@@ -422,8 +480,6 @@ class MainActivity : AppCompatActivity() {
                                 Log.d("MainActivity", "GPU delegate unavailable, will use CPU only.", e)
                             }
                         }
-
-                        // Initialize the interpreter with the best options.
                         when (modelName) {
                             "YOLOv3_float32.tflite" -> {
                                 videoProcessor?.setInterpreter(Interpreter(loadMappedFile(bestLoadedPath), options))
@@ -433,7 +489,6 @@ class MainActivity : AppCompatActivity() {
                             }
                             else -> Log.d("MainActivity", "No model processing method defined for $modelName")
                         }
-
                     } catch (e: Exception) {
                         Toast.makeText(this, "Error loading TFLite model: ${e.message}", Toast.LENGTH_LONG).show()
                         Log.d("MainActivity", "TFLite Interpreter error", e)
@@ -497,6 +552,11 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             viewBinding.viewFinder.surfaceTextureListener = textureListener
+        }
+        // When returning from an external intent, clear the prediction.
+        if (shouldClearPrediction) {
+            viewBinding.predictedLetterTextView.text = "No Prediction Yet"
+            shouldClearPrediction = false
         }
     }
 
