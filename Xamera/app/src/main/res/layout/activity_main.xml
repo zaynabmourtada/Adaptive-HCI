@@ -59,8 +59,7 @@
             android:textColor="@android:color/white"
             android:textStyle="bold"
             android:gravity="center"
-            android:paddingStart="10dp"
-            />
+            android:paddingStart="10dp" />
     </LinearLayout>
 
     <!-- Top Controls Container: RadioButton on the left, and Settings/About buttons side-by-side on the right -->
@@ -154,7 +153,29 @@
             android:text="-"
             android:textColor="@android:color/black"
             android:textSize="24sp" />
+
+        <!-- Clear Prediction Button ("C") -->
+        <Button
+            android:id="@+id/clearPredictionButton"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:backgroundTint="@color/red"
+            android:elevation="2dp"
+            android:text="C"
+            android:textColor="@android:color/white"
+            android:textSize="24sp" />
     </LinearLayout>
+
+    <!-- TextView to display the predicted letter -->
+    <TextView
+        android:id="@+id/predictedLetterTextView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Prediction Not Available"
+        android:textSize="24sp"
+        android:textColor="@android:color/white"
+        android:layout_gravity="center_horizontal|bottom"
+        android:layout_marginBottom="180dp" />
 
     <!-- Bottom Controls -->
     <LinearLayout
@@ -165,6 +186,17 @@
         android:gravity="center"
         android:layout_gravity="center_horizontal|bottom"
         android:layout_marginBottom="50dp">
+
+        <!-- Start Writing Button (new button added to the left of Start Tracking) -->
+        <Button
+            android:id="@+id/startWritingButton"
+            android:layout_width="110dp"
+            android:layout_height="110dp"
+            android:backgroundTint="@color/green"
+            android:elevation="2dp"
+            android:text="Start Writing"
+            android:textColor="@android:color/white"
+            android:layout_marginEnd="16dp" />
 
         <!-- Start Tracking Button -->
         <Button
