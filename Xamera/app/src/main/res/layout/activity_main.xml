@@ -43,10 +43,10 @@
         <!-- Icon (ImageButton) -->
         <ImageButton
             android:id="@+id/iconImageButton"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_width="58dp"
+            android:layout_height="58dp"
             android:background="@android:color/transparent"
-            android:src="@drawable/xamera_launcher_foreground"
+            android:src="@mipmap/xamera_launcher"
             android:contentDescription="@string/switch_camera" />
 
         <!-- Title Text -->
@@ -54,9 +54,9 @@
             android:id="@+id/titleText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Xamera: Rollity Edition"
-            android:textSize="24sp"
-            android:textColor="@android:color/white"
+            android:text="Xamera"
+            android:textSize="44sp"
+            android:textColor="@color/yellow"
             android:textStyle="bold"
             android:gravity="center"
             android:paddingStart="10dp" />
@@ -80,8 +80,8 @@
             android:layout_height="wrap_content"
             android:text="Digits"
             android:checked="true"
-            android:textColor="@android:color/white"
-            android:buttonTint="@android:color/white"
+            android:textColor="@color/yellow"
+            android:buttonTint="@color/yellow"
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp" />
 
@@ -101,8 +101,8 @@
                 android:text="Settings"
                 android:textSize="16sp"
                 android:layout_margin="8dp"
-                android:backgroundTint="@android:color/white"
-                android:textColor="@android:color/black"
+                android:backgroundTint="@color/yellow"
+                android:textColor="#000066"
                 android:elevation="2dp" />
 
             <!-- About Button with right margin of 16dp -->
@@ -114,8 +114,8 @@
                 android:textSize="16sp"
                 android:layout_margin="8dp"
                 android:layout_marginEnd="16dp"
-                android:backgroundTint="@android:color/white"
-                android:textColor="@android:color/black"
+                android:backgroundTint="@color/yellow"
+                android:textColor="#000066"
                 android:elevation="2dp" />
         </LinearLayout>
     </LinearLayout>
@@ -136,10 +136,10 @@
             android:layout_width="60dp"
             android:layout_height="60dp"
             android:layout_marginBottom="16dp"
-            android:backgroundTint="@color/white"
+            android:backgroundTint="@color/yellow"
             android:elevation="2dp"
             android:text="+"
-            android:textColor="@android:color/black"
+            android:textColor="@color/darkBlue"
             android:textSize="24sp" />
 
         <!-- Zoom Out Button -->
@@ -148,10 +148,10 @@
             android:layout_width="60dp"
             android:layout_height="60dp"
             android:layout_marginBottom="16dp"
-            android:backgroundTint="@color/white"
+            android:backgroundTint="@color/yellow"
             android:elevation="2dp"
             android:text="-"
-            android:textColor="@android:color/black"
+            android:textColor="@color/darkBlue"
             android:textSize="24sp" />
 
         <!-- Clear Prediction Button ("C") -->
@@ -173,7 +173,7 @@
         android:layout_height="wrap_content"
         android:text="Prediction Not Available"
         android:textSize="24sp"
-        android:textColor="@android:color/white"
+        android:textColor="@color/yellow"
         android:layout_gravity="center_horizontal|bottom"
         android:layout_marginBottom="180dp" />
 
@@ -215,9 +215,9 @@
             android:layout_width="110dp"
             android:layout_height="110dp"
             android:text="Switch Camera"
-            android:textColor="@android:color/black"
+            android:textColor="@color/darkBlue"
             android:textSize="16sp"
-            android:backgroundTint="@color/white"
+            android:backgroundTint="@color/yellow"
             android:elevation="2dp" />
     </LinearLayout>
 
