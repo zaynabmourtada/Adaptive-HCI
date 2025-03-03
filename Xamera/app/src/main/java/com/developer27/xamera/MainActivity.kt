@@ -27,6 +27,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.developer27.xamera.camera.CameraHelper
 import com.developer27.xamera.databinding.ActivityMainBinding
 import com.developer27.xamera.videoprocessing.ProcessedFrameRecorder
@@ -111,6 +112,8 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Install the splash screen (Android 12+)
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
@@ -172,8 +175,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Set up the RadioButton for toggling between letters and digits.
-        viewBinding.radioToggle.setTextColor(android.graphics.Color.WHITE)
-        viewBinding.radioToggle.buttonTintList = ContextCompat.getColorStateList(this, android.R.color.white)
+        viewBinding.radioToggle.setTextColor(android.graphics.Color.YELLOW)
+        viewBinding.radioToggle.buttonTintList = ContextCompat.getColorStateList(this, R.color.yellow)
         viewBinding.radioToggle.text = if (isLetterSelected) "Letter" else "Digit"
         viewBinding.radioToggle.isChecked = isLetterSelected
         viewBinding.radioToggle.setOnClickListener {
