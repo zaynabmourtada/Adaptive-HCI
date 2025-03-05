@@ -1,1 +1,0 @@
-ffmpeg -i "F:\GitHub\Adaptive-HCI\YOLOv8\Tools\0_video\padded_video.mp4" "F:\GitHub\Adaptive-HCI\YOLOv8\Tools\1_extracted_frames\frame_%04d.jpg"

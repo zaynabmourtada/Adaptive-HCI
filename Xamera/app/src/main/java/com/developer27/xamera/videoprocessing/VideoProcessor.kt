@@ -50,7 +50,7 @@ object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
         var current: Mode = Mode.YOLO
-        var enableYOLOinference = true
+        var enableYOLOinference = false
     }
     object Inference {
         var confidenceThreshold: Float = 0.5f
@@ -58,7 +58,7 @@ object Settings {
     }
     object Trace {
         var enableRAWtrace = false
-        var enableSPLINEtrace = true
+        var enableSPLINEtrace = false
         var lineLimit = 50
         var splineStep = 0.01
         var originalLineColor = Scalar(255.0, 0.0, 0.0)
@@ -66,7 +66,7 @@ object Settings {
         var lineThickness = 4
     }
     object BoundingBox {
-        var enableBoundingBox = true
+        var enableBoundingBox = false
         var boxColor = Scalar(0.0, 255.0, 0.0)
         var boxThickness = 2
     }
@@ -76,7 +76,7 @@ object Settings {
     }
     object ExportData {
         var frameIMG = false
-        var videoDATA = false
+        var videoDATA = true
     }
 }
 
