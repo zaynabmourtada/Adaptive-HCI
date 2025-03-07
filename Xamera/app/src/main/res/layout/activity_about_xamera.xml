@@ -4,121 +4,159 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="16dp"
     android:background="@color/darkBlue"
+    android:padding="16dp"
     tools:context=".AboutXameraActivity">
 
-    <!-- Title -->
-<TextView
-android:id="@+id/textViewTitle"
-android:layout_width="wrap_content"
-android:layout_height="wrap_content"
-android:text="About Xamera"
-android:textSize="24sp"
-android:textStyle="bold"
-android:gravity="center"
-android:textColor="@color/yellow"
-    app:layout_constraintTop_toTopOf="parent"
-    app:layout_constraintStart_toStartOf="parent"
-    app:layout_constraintEnd_toEndOf="parent"
-    android:layout_marginBottom="16dp" />
-
-    <!-- Version -->
-    <TextView
-        android:id="@+id/textViewEdition"
-        android:layout_width="wrap_content"
+    <!-- Title Bar (Icon + Title) -->
+    <LinearLayout
+        android:id="@+id/title_container"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Designed for: Rollity Research Project"
-        android:textColor="@color/yellow"
-        app:layout_constraintTop_toBottomOf="@id/textViewTitle"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:background="@color/darkBlue"
+        android:paddingTop="16dp"
+        android:paddingBottom="16dp"
+        android:elevation="4dp"
+        app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        android:layout_marginTop="15dp" />
+        app:layout_constraintEnd_toEndOf="parent">
 
-    <!-- Version -->
-    <TextView
-    android:id="@+id/textViewVersion"
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:text="Version: 1.0 (Beta)"
-    android:textColor="@color/yellow"
-    app:layout_constraintTop_toBottomOf="@id/textViewEdition"
-    app:layout_constraintStart_toStartOf="parent"
-    android:layout_marginTop="8dp" />
+        <!-- Icon (ImageButton) -->
+        <ImageButton
+            android:id="@+id/iconImageButton"
+            android:layout_width="58dp"
+            android:layout_height="58dp"
+            android:background="@android:color/transparent"
+            android:src="@mipmap/xamera_launcher"
+            android:contentDescription="@string/switch_camera" />
 
-    <!-- Phase -->
-    <TextView
-        android:id="@+id/phaseNumber"
-        android:layout_width="wrap_content"
+        <!-- Title Text -->
+        <TextView
+            android:id="@+id/titleText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Xamera"
+            android:textSize="44sp"
+            android:textColor="@color/yellow"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:paddingStart="8dp" />
+    </LinearLayout>
+
+    <!-- Details container: wraps content after "University" -->
+    <LinearLayout
+        android:id="@+id/details_container"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="Phase: P1"
-        android:textColor="@color/yellow"
-        app:layout_constraintTop_toBottomOf="@id/textViewVersion"
+        android:orientation="vertical"
+        android:background="@color/yellow"
+        android:padding="16dp"
+        android:layout_marginStart="3dp"
+        android:layout_marginEnd="3dp"
+        app:layout_constraintTop_toBottomOf="@id/title_container"
+        app:layout_constraintBottom_toTopOf="@id/umLogo"
         app:layout_constraintStart_toStartOf="parent"
-        android:layout_marginTop="8dp" />
-    <!-- Release Date -->
-<TextView
-android:id="@+id/textViewReleaseDate"
-android:layout_width="wrap_content"
-android:layout_height="wrap_content"
-android:text="Release Date: February 28th 2025"
-android:textColor="@color/yellow"
-    app:layout_constraintTop_toBottomOf="@id/phaseNumber"
-    app:layout_constraintStart_toStartOf="parent"
-    android:layout_marginTop="8dp" />
+        app:layout_constraintEnd_toEndOf="parent">
 
-    <!-- Developers -->
-<TextView
-android:id="@+id/textViewDevelopers"
-android:layout_width="wrap_content"
-android:layout_height="wrap_content"
-android:text="Developers: Deniz Acikbas, Soham Naik, Zaynab Mourtada, Alan Raj"
-android:textColor="@color/yellow"
-    app:layout_constraintTop_toBottomOf="@id/textViewReleaseDate"
-    app:layout_constraintStart_toStartOf="parent"
-    android:layout_marginTop="8dp" />
+        <!-- Header Text -->
+        <TextView
+            android:id="@+id/detailsHeader"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="About Xamera"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="@color/darkBlue"
+            android:layout_gravity="center_horizontal"
+            android:paddingBottom="8dp" />
 
-    <!-- Professor -->
-<TextView
-android:id="@+id/textViewProfessor"
-android:layout_width="wrap_content"
-android:layout_height="wrap_content"
-android:text="Professor: Xiao Zhang"
-android:textColor="@color/yellow"
-    app:layout_constraintTop_toBottomOf="@id/textViewDevelopers"
-    app:layout_constraintStart_toStartOf="parent"
-    android:layout_marginTop="8dp" />
+        <TextView
+            android:id="@+id/textViewEdition"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Designed for: Rollity Research Project"
+            android:textColor="@color/darkBlue" />
 
-    <!-- Lab -->
-    <TextView
-        android:id="@+id/textViewLab"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Lab: Trustworthy AIoT Lab"
-        android:textColor="@color/yellow"
-        app:layout_constraintTop_toBottomOf="@id/textViewProfessor"
+        <TextView
+            android:id="@+id/textViewVersion"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Version: 1.0 (Beta)"
+            android:textColor="@color/darkBlue"
+            android:layout_marginTop="8dp" />
+
+        <TextView
+            android:id="@+id/phaseNumber"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Phase: P1"
+            android:textColor="@color/darkBlue"
+            android:layout_marginTop="8dp" />
+
+        <TextView
+            android:id="@+id/textViewReleaseDate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Release Date: February 28th 2025"
+            android:textColor="@color/darkBlue"
+            android:layout_marginTop="8dp" />
+
+        <TextView
+            android:id="@+id/textViewDevelopers"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Developers: Deniz Acikbas, Soham Naik, Zaynab Mourtada, Alan Raj"
+            android:textColor="@color/darkBlue"
+            android:layout_marginTop="8dp" />
+
+        <TextView
+            android:id="@+id/textViewProfessor"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Professor: Xiao Zhang"
+            android:textColor="@color/darkBlue"
+            android:layout_marginTop="8dp" />
+
+        <TextView
+            android:id="@+id/textViewLab"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Lab: Trustworthy AIoT Lab"
+            android:textColor="@color/darkBlue"
+            android:layout_marginTop="8dp" />
+
+        <TextView
+            android:id="@+id/textViewCourse"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Course: CIS 4962 - Senior Design II"
+            android:textColor="@color/darkBlue"
+            android:layout_marginTop="8dp" />
+
+        <TextView
+            android:id="@+id/textViewUniversity"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="University: University of Michigan-Dearborn"
+            android:textColor="@color/darkBlue"
+            android:layout_marginTop="8dp" />
+    </LinearLayout>
+
+    <!-- UofM Logo with smaller dimensions, placed at the bottom -->
+    <ImageView
+        android:id="@+id/umLogo"
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        android:src="@drawable/umlogo"
+        android:layout_marginStart="32dp"
+        android:layout_marginEnd="32dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp"
+        app:layout_constraintTop_toBottomOf="@id/details_container"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        android:layout_marginTop="8dp" />
-
-    <!-- Course -->
-<TextView
-android:id="@+id/textViewCourse"
-android:layout_width="wrap_content"
-android:layout_height="wrap_content"
-android:text="Course: CIS 4962 - Senior Design II"
-android:textColor="@color/yellow"
-    app:layout_constraintTop_toBottomOf="@id/textViewLab"
-    app:layout_constraintStart_toStartOf="parent"
-    android:layout_marginTop="8dp" />
-
-    <!-- University -->
-<TextView
-android:id="@+id/textViewUniversity"
-android:layout_width="wrap_content"
-android:layout_height="wrap_content"
-android:text="University: University of Michigan-Dearborn"
-android:textColor="@color/yellow"
-    app:layout_constraintTop_toBottomOf="@id/textViewCourse"
-    app:layout_constraintStart_toStartOf="parent"
-    android:layout_marginTop="8dp" />
+        app:layout_constraintEnd_toEndOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
