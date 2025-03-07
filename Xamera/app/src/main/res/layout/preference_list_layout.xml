@@ -5,13 +5,13 @@
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:padding="16dp"
-    android:background="#DAEE2C">
+    android:background="#FFCB05">
 
     <TextView
         android:id="@android:id/title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="#000066"
+        android:textColor="#00274C"
     android:textSize="16sp"
     android:textStyle="bold"/>
 
@@ -19,6 +19,6 @@
         android:id="@android:id/summary"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="#000066"
+        android:textColor="#00274C"
     android:textSize="14sp"/>
 </LinearLayout>

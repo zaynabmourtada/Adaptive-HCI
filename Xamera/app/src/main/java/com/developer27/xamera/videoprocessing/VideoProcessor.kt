@@ -61,13 +61,13 @@ object Settings {
         var enableSPLINEtrace = true
         var lineLimit = 50
         var splineStep = 0.01
-        var originalLineColor = Scalar(255.0, 0.0, 0.0)
-        var splineLineColor = Scalar(0.0, 0.0, 255.0)
+        var originalLineColor = Scalar(0.0, 39.0, 76.0)
+        var splineLineColor = Scalar(255.0, 203.0, 5.0)
         var lineThickness = 4
     }
     object BoundingBox {
         var enableBoundingBox = true
-        var boxColor = Scalar(0.0, 255.0, 0.0)
+        var boxColor = Scalar(0.0, 39.0, 76.0)
         var boxThickness = 2
     }
     object Brightness {
