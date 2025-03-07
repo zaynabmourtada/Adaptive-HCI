@@ -128,7 +128,14 @@ class MainActivity : AppCompatActivity() {
         viewBinding.processedFrameView.visibility = View.GONE
 
         // Set default text for the predicted letter TextView.
-        viewBinding.predictedLetterTextView.text = "Prediction Not Available"
+        viewBinding.predictedLetterTextView.text = "No Prediction Yet"
+
+        // When the title container is clicked, open the URL in a browser.
+        viewBinding.titleContainer.setOnClickListener {
+            val url = "https://www.zhangxiao.me/"
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            startActivity(intent)
+        }
 
         requestPermissionLauncher =
             registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
@@ -174,9 +181,8 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        // Set up the RadioButton for toggling between letters and digits.
-        viewBinding.radioToggle.setTextColor(android.graphics.Color.YELLOW)
-        viewBinding.radioToggle.buttonTintList = ContextCompat.getColorStateList(this, R.color.yellow)
+        viewBinding.radioToggle.setTextColor(android.graphics.Color.parseColor("#FFCB05"))
+        viewBinding.radioToggle.buttonTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#FFCB05"))
         viewBinding.radioToggle.text = if (isLetterSelected) "Letter" else "Digit"
         viewBinding.radioToggle.isChecked = isLetterSelected
         viewBinding.radioToggle.setOnClickListener {
@@ -229,7 +235,7 @@ class MainActivity : AppCompatActivity() {
             viewBinding.startWritingButton.backgroundTintList =
                 ContextCompat.getColorStateList(this, R.color.red)
             // Clear the prediction panel.
-            viewBinding.predictedLetterTextView.text = "No Prediction Available Yet"
+            viewBinding.predictedLetterTextView.text = ""
         } else {
             // Stop writing mode.
             isWriting = false

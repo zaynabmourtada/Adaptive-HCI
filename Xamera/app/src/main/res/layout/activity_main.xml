@@ -102,7 +102,7 @@
                 android:textSize="16sp"
                 android:layout_margin="8dp"
                 android:backgroundTint="@color/yellow"
-                android:textColor="#000066"
+                android:textColor="@color/darkBlue"
                 android:elevation="2dp" />
 
             <!-- About Button with right margin of 16dp -->
@@ -115,7 +115,7 @@
                 android:layout_margin="8dp"
                 android:layout_marginEnd="16dp"
                 android:backgroundTint="@color/yellow"
-                android:textColor="#000066"
+                android:textColor="@color/darkBlue"
                 android:elevation="2dp" />
         </LinearLayout>
     </LinearLayout>
@@ -171,7 +171,7 @@
         android:id="@+id/predictedLetterTextView"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Prediction Not Available"
+        android:text="No Prediction Yet"
         android:textSize="24sp"
         android:textColor="@color/yellow"
         android:layout_gravity="center_horizontal|bottom"
