@@ -49,18 +49,18 @@ private val smoothDataList = LinkedList<Point>()
 object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
-        var current: Mode = Mode.YOLO
-        var enableYOLOinference = true
+        var current: Mode = Mode.CONTOUR // YOLO: MAIN MODE for Demo, CONTOUR: For Testing & For 28x28 IMG
+        var enableYOLOinference = false  // Only use with YOLO enabled
     }
     object Inference {
         var confidenceThreshold: Float = 0.5f
         var iouThreshold: Float = 0.5f
     }
     object Trace {
-        var enableRAWtrace = false
-        var enableSPLINEtrace = true
-        var lineLimit = 50
-        var splineStep = 0.01
+        var enableRAWtrace = false     // RAW collected connected line (has harsh angles)
+        var enableSPLINEtrace = true   // SMOOTHED collected connected line (splined, transposed from RAW line)
+        var lineLimit = 75             // Line Length
+        var splineStep = 0.01          // Granularity of the splined line (smoothed line)
         var originalLineColor = Scalar(0.0, 39.0, 76.0)
         var splineLineColor = Scalar(255.0, 203.0, 5.0)
         var lineThickness = 4
@@ -75,8 +75,8 @@ object Settings {
         var threshold = 150.0
     }
     object ExportData {
-        var frameIMG = false
-        var videoDATA = false
+        var frameIMG = true          // enable or disable 28x28 IMG saving
+        var videoDATA = false        // enable or disable video saving (for YOLO training)
     }
 }
 
