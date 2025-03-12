@@ -355,6 +355,43 @@ class MainActivity : AppCompatActivity() {
 
         // Retrieve tracking coordinates.
         trackingCoordinates = videoProcessor?.getTrackingCoordinatesString() ?: ""
+
+        // --- New: Save the drawn line as a 28 x 28 image ---
+        saveDrawnLineAs28x28()
+    }
+
+    // New helper function to save the drawn line as a 28x28 image.
+    private fun saveDrawnLineAs28x28() {
+        // Retrieve the drawn line bitmap from the video processor.
+        val originalBitmap = videoProcessor?.exportTraceForInference()
+        if (originalBitmap == null) {
+            Log.e("MainActivity", "No drawn line available to save")
+            return
+        }
+        // Scale the bitmap to 28x28 pixels.
+        val scaledBitmap = Bitmap.createScaledBitmap(originalBitmap, 28, 28, true)
+        // Save the 28x28 image to the "Rollity_ML_Training" folder.
+        val outputPath = get28x28OutputPath()
+        try {
+            FileOutputStream(outputPath).use { fos ->
+                scaledBitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+            }
+            Toast.makeText(this, "28x28 image saved at: $outputPath", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to save 28x28 image: ${e.message}")
+            Toast.makeText(this, "Failed to save 28x28 image", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Helper function to generate an output path for the 28x28 image in the "Rollity_ML_Training" folder.
+    private fun get28x28OutputPath(): String {
+        @Suppress("DEPRECATION")
+        val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        val rollityDir = File(picturesDir, "Rollity_ML_Training")
+        if (!rollityDir.exists()) {
+            rollityDir.mkdirs()
+        }
+        return File(rollityDir, "DrawnLine_28x28_${System.currentTimeMillis()}.png").absolutePath
     }
 
     private fun initializeInferenceResult() {
