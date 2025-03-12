@@ -369,7 +369,7 @@ class MainActivity : AppCompatActivity() {
     private fun get28x28OutputPath(): String {
         @Suppress("DEPRECATION")
         val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-        val rollityDir = File(picturesDir, "Rollity_ML_Training")
+        val rollityDir = File(picturesDir, "Rollity_ML_Training_Data")
         if (!rollityDir.exists()) {
             rollityDir.mkdirs()
         }
