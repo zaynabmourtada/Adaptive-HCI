@@ -326,13 +326,21 @@ class MainActivity : AppCompatActivity() {
         processedVideoRecorder?.stop()
         processedVideoRecorder = null
 
-        val outputPath = getProcessedImageOutputPath()
+        val outputPath = get28x28OutputPath()
         processedFrameRecorder = ProcessedFrameRecorder(outputPath)
+        //Save the drawn line as a 28x28 image.
         with(Settings.ExportData) {
             if (frameIMG) {
                 val bitmap = videoProcessor?.exportTraceForInference()
                 if (bitmap != null) {
                     processedFrameRecorder?.save(bitmap)
+                    //try {
+                    //    FileOutputStream(outputPath).use { fos ->
+                    //        bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                    //    }
+                    //} catch (e: Exception) {
+                    //    Log.e("MainActivity", "Failed to save 28x28 image: ${e.message}")
+                    //}
                 }
             }
         }
@@ -355,6 +363,17 @@ class MainActivity : AppCompatActivity() {
 
         // Retrieve tracking coordinates.
         trackingCoordinates = videoProcessor?.getTrackingCoordinatesString() ?: ""
+    }
+
+    // Helper function to generate an output path for the 28x28 image in the "Rollity_ML_Training" folder.
+    private fun get28x28OutputPath(): String {
+        @Suppress("DEPRECATION")
+        val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        val rollityDir = File(picturesDir, "Rollity_ML_Training_Data")
+        if (!rollityDir.exists()) {
+            rollityDir.mkdirs()
+        }
+        return File(rollityDir, "DrawnLine_28x28_${System.currentTimeMillis()}.png").absolutePath
     }
 
     private fun initializeInferenceResult() {
@@ -460,16 +479,6 @@ class MainActivity : AppCompatActivity() {
         }
         return File(moviesDir, "Processed_${System.currentTimeMillis()}.mp4").absolutePath
     }
-
-    private fun getProcessedImageOutputPath(): String {
-        @Suppress("DEPRECATION")
-        val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-        if (!picturesDir.exists()) {
-            picturesDir.mkdirs()
-        }
-        return File(picturesDir, "Processed_${System.currentTimeMillis()}.jpg").absolutePath
-    }
-
     private fun loadTFLiteModelOnStartupThreaded(modelName: String) {
         Thread {
             val bestLoadedPath = copyAssetModelBlocking(modelName)
