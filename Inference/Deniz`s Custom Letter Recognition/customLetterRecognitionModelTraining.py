@@ -1,70 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
-from torchvision import datasets, transforms
+from torchvision import datasets, transforms, models
 from torch.utils.data import DataLoader
 import os
 
-# -------------------------------
-# 1. Define a smaller CNN model
-# -------------------------------
-class SmallCNN(nn.Module):
-    """
-    A simple CNN for 28x28 grayscale images.
-    Adjust the number of convolution layers, feature maps, or
-    fully connected layers as needed.
-    """
-    def __init__(self, num_classes):
-        super(SmallCNN, self).__init__()
-        # in_channels=1 because we have grayscale images
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.pool = nn.MaxPool2d(2, 2)
-        
-        # After two convolutions + two 2×2 pools:
-        # Each pool halves the spatial dimension:
-        # 28 -> 14 -> 7
-        # So final feature map is 64×7×7 = 3136
-        self.fc1 = nn.Linear(64 * 7 * 7, 128)
-        self.fc2 = nn.Linear(128, num_classes)
-
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))  # [batch, 32, 14, 14]
-        x = self.pool(F.relu(self.conv2(x)))  # [batch, 64, 7, 7]
-        x = x.view(x.size(0), -1)             # Flatten to [batch, 3136]
-        x = F.relu(self.fc1(x))               # [batch, 128]
-        x = self.fc2(x)                       # [batch, num_classes]
-        return x
-
-# -------------------------------
-# 2. (Optional) Model Exporter
-# -------------------------------
-class ModelExporter:
-    def __init__(self, model, class_names):
-        """
-        Args:
-            model: Trained PyTorch model.
-            class_names: List of class names.
-        """
-        self.model = model
-        self.class_names = class_names
-
-    def save(self, file_path):
-        """Save the model's state dictionary along with class names."""
-        checkpoint = {
-            'model_state_dict': self.model.state_dict(),
-            'class_names': self.class_names
-        }
-        torch.save(checkpoint, file_path)
-        print(f"Model saved to {file_path}")
-
 def main():
     # -------------------------------
-    # 3. Define transforms
+    # 1. Define transforms for 28x28 grayscale images.
     # -------------------------------
-    # Convert to grayscale -> Resize -> ToTensor -> Normalize
-    # Typical MNIST normalization: mean=0.1307, std=0.3081
     data_transforms = {
         'train': transforms.Compose([
             transforms.Grayscale(num_output_channels=1),
@@ -81,23 +25,17 @@ def main():
     }
 
     # -------------------------------
-    # 4. Load datasets and dataloaders
+    # 2. Load datasets and dataloaders.
     # -------------------------------
-    data_dir = 'data'  # Adjust to your dataset root
+    data_dir = 'data'  # Change this to your dataset directory.
     image_datasets = {
-        x: datasets.ImageFolder(os.path.join(data_dir, x),
-                                transform=data_transforms[x])
+        x: datasets.ImageFolder(os.path.join(data_dir, x), transform=data_transforms[x])
         for x in ['train', 'val']
     }
-
     dataloaders = {
-        x: DataLoader(image_datasets[x],
-                      batch_size=32,
-                      shuffle=True,
-                      num_workers=0)
+        x: DataLoader(image_datasets[x], batch_size=32, shuffle=True, num_workers=0)
         for x in ['train', 'val']
     }
-
     dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
     class_names = image_datasets['train'].classes
 
@@ -106,35 +44,42 @@ def main():
     print("Validation images:", dataset_sizes['val'])
 
     # -------------------------------
-    # 5. Create the model
+    # 3. Create a ResNet‑18–based model.
     # -------------------------------
-    model = SmallCNN(num_classes=len(class_names))
+    # Load a pretrained ResNet‑18 model.
+    model = models.resnet18(pretrained=True)
+    # Modify the first convolutional layer to accept 1-channel grayscale images.
+    model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+    # (Optional) Initialize conv1 weights by averaging the pretrained weights across channels:
+    # model.conv1.weight.data = model.conv1.weight.data.mean(dim=1, keepdim=True)
+    
+    # Replace the final fully connected layer to output the correct number of classes.
+    num_ftrs = model.fc.in_features
+    model.fc = nn.Linear(num_ftrs, len(class_names))
 
-    # Move model to GPU if available
+    # -------------------------------
+    # 4. Set up device, loss, optimizer, and scheduler.
+    # -------------------------------
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
-    # -------------------------------
-    # 6. Define loss and optimizer
-    # -------------------------------
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+    optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
 
-    num_epochs = 50  # Increased epochs
+    num_epochs = 50  # Increase the number of epochs as needed
 
     # -------------------------------
-    # 7. Training loop
+    # 5. Training loop.
     # -------------------------------
     for epoch in range(num_epochs):
         print(f'Epoch {epoch}/{num_epochs - 1}')
         print('-' * 10)
-
         for phase in ['train', 'val']:
             if phase == 'train':
-                model.train()  # Set to training mode
+                model.train()  # Set model to training mode
             else:
-                model.eval()   # Set to eval mode
+                model.eval()   # Set model to evaluation mode
 
             running_loss = 0.0
             running_corrects = 0
@@ -142,16 +87,13 @@ def main():
             for inputs, labels in dataloaders[phase]:
                 inputs = inputs.to(device)
                 labels = labels.to(device)
-
                 optimizer.zero_grad()
 
-                # Forward pass
                 with torch.set_grad_enabled(phase == 'train'):
                     outputs = model(inputs)
                     _, preds = torch.max(outputs, 1)
                     loss = criterion(outputs, labels)
 
-                    # Backprop in training phase
                     if phase == 'train':
                         loss.backward()
                         optimizer.step()
@@ -166,18 +108,21 @@ def main():
             epoch_acc = running_corrects.double() / dataset_sizes[phase]
 
             print(f'{phase.capitalize()} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
-
         print()
 
     print('Training complete')
 
     # -------------------------------
-    # 8. Save the model
+    # 6. Save the model checkpoint.
     # -------------------------------
-    exporter = ModelExporter(model, class_names)
-    save_path = os.path.join("saved_models", "smallcnn_28x28.pth")
+    save_path = os.path.join("saved_models", "resnet18_custom.pth")
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    exporter.save(save_path)
+    checkpoint = {
+        'model_state_dict': model.state_dict(),
+        'class_names': class_names
+    }
+    torch.save(checkpoint, save_path)
+    print(f"Model saved to {save_path}")
 
 if __name__ == '__main__':
     main()
