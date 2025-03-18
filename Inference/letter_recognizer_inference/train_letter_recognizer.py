@@ -24,10 +24,10 @@ emnist_transform = transforms.Compose([
 ])
 
 # Load CSV Dataset
-class CSVLetterDataset(data.Dataset):
+class CSVLetterDataset(Dataset):
     def __init__(self, csv_path):
         self.data = pd.read_csv(csv_path, header=None).values
-        self.labels = self.data[:, 0]  
+        self.labels = self.data[:, 0].astype(int)  - 1
         self.images = self.data[:, 1:].reshape(-1, 28, 28)  
         self.images = self.images.astype('float32') / 255.0
         self.images = torch.tensor(self.images).unsqueeze(1)  
