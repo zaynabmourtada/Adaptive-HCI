@@ -52,6 +52,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraManager: CameraManager
     private lateinit var cameraHelper: CameraHelper
     private var tfliteInterpreter: Interpreter? = null
+    // New interpreter for letter recognition
+    private var letterInterpreter: Interpreter? = null
+
     private var processedVideoRecorder: ProcessedVideoRecorder? = null
     private var processedFrameRecorder: ProcessedFrameRecorder? = null
     private var videoProcessor: VideoProcessor? = null
@@ -225,6 +228,8 @@ class MainActivity : AppCompatActivity() {
         // Load ML models.
         loadTFLiteModelOnStartupThreaded("YOLOv3_float32.tflite")
         loadTFLiteModelOnStartupThreaded("DigitRecog_float32.tflite")
+        // New: load the letter recognition model.
+        loadTFLiteModelOnStartupThreaded("LetterRecog_float32.tflite")
 
         cameraHelper.setupZoomControls()
         sharedPreferences.registerOnSharedPreferenceChangeListener { _, key ->
@@ -328,19 +333,12 @@ class MainActivity : AppCompatActivity() {
 
         val outputPath = get28x28OutputPath()
         processedFrameRecorder = ProcessedFrameRecorder(outputPath)
-        //Save the drawn line as a 28x28 image.
+        // Save the drawn line as a 28x28 image.
         with(Settings.ExportData) {
             if (frameIMG) {
                 val bitmap = videoProcessor?.exportTraceForInference()
                 if (bitmap != null) {
                     processedFrameRecorder?.save(bitmap)
-                    //try {
-                    //    FileOutputStream(outputPath).use { fos ->
-                    //        bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
-                    //    }
-                    //} catch (e: Exception) {
-                    //    Log.e("MainActivity", "Failed to save 28x28 image: ${e.message}")
-                    //}
                 }
             }
         }
@@ -376,9 +374,10 @@ class MainActivity : AppCompatActivity() {
         return File(rollityDir, "DrawnLine_28x28_${System.currentTimeMillis()}.png").absolutePath
     }
 
+    // Updated: if letter mode is selected, run letter inference; otherwise, run digit inference.
     private fun initializeInferenceResult() {
         if (isLetterSelected) {
-            inferenceResult = "ML - Inference: Letters"
+            inferenceResult = runLetterRecognitionInference()
         } else if (isDigitSelected) {
             inferenceResult = runDigitRecognitionInference()
         }
@@ -401,6 +400,33 @@ class MainActivity : AppCompatActivity() {
         val predictedDigit = outputArray[0].indices.maxByOrNull { outputArray[0][it] } ?: -1
         Log.d("MainActivity", "Digit model predicted: $predictedDigit")
         return predictedDigit.toString()
+    }
+
+    // New function for letter recognition inference.
+    private fun runLetterRecognitionInference(): String {
+        val letterBitmap = videoProcessor?.exportTraceForInference()
+        if (letterBitmap == null) {
+            Log.e("MainActivity", "No letter image available for inference")
+            return "Error"
+        }
+        val grayBitmap = convertToGrayscale(letterBitmap)
+        val inputBuffer = convertBitmapToGrayscaleByteBuffer(grayBitmap)
+        // Assuming the letter model outputs 26 values (for A-Z)
+        val outputArray = Array(1) { FloatArray(26) }
+        if (letterInterpreter == null) {
+            Log.e("MainActivity", "Letter model interpreter not set")
+            return "Error"
+        }
+        letterInterpreter?.run(inputBuffer, outputArray)
+        // Find the index with the maximum probability.
+        val maxIndex = outputArray[0].indices.maxByOrNull { outputArray[0][it] } ?: -1
+        if (maxIndex == -1) {
+            return "Error"
+        }
+        // Map the index to a letter (assuming 0 -> 'A', 1 -> 'B', ..., 25 -> 'Z')
+        val predictedLetter = ('A'.toInt() + maxIndex).toChar()
+        Log.d("MainActivity", "Letter model predicted: $predictedLetter")
+        return predictedLetter.toString()
     }
 
     private fun convertToGrayscale(bitmap: Bitmap): Bitmap {
@@ -479,6 +505,7 @@ class MainActivity : AppCompatActivity() {
         }
         return File(moviesDir, "Processed_${System.currentTimeMillis()}.mp4").absolutePath
     }
+
     private fun loadTFLiteModelOnStartupThreaded(modelName: String) {
         Thread {
             val bestLoadedPath = copyAssetModelBlocking(modelName)
@@ -512,6 +539,9 @@ class MainActivity : AppCompatActivity() {
                             }
                             "DigitRecog_float32.tflite" -> {
                                 tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
+                            }
+                            "LetterRecog_float32.tflite" -> {
+                                letterInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
                             }
                             else -> Log.d("MainActivity", "No model processing method defined for $modelName")
                         }

@@ -50,7 +50,7 @@ object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
         var current: Mode = Mode.CONTOUR // YOLO: MAIN MODE for Demo, CONTOUR: For Testing & For 28x28 IMG
-        var enableYOLOinference = false  // Only use with YOLO enabled
+        var enableYOLOinference = true  // Only use with YOLO enabled
     }
     object Inference {
         var confidenceThreshold: Float = 0.5f
