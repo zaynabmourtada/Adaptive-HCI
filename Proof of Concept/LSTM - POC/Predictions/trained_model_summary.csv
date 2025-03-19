@@ -1,31 +1,3 @@
-CSV_File,LabelEntered,PredictedID,PredictedLetter
-/home/dacikbas/xamera_machine_learning/data/I_Handwriting.csv,I,24,Y
-/home/dacikbas/xamera_machine_learning/data/A_Handwriting.csv,A,24,Y
-/home/dacikbas/xamera_machine_learning/data/A_Handwriting.csv,A,24,Y
-/home/dacikbas/xamera_machine_learning/data/A_Handwriting.csv,I,24,Y
-/home/dacikbas/xamera_machine_learning/data/O_HandWriting.csv,O,0,A
-/home/dacikbas/xamera_machine_learning/data/I_Handwriting.csv,I,8,I
-/home/dacikbas/xamera_machine_learning/data/O_HandWriting.csv,O,24,Y
-/home/dacikbas/xamera_machine_learning/data/O_HandWriting.csv,O,4,E
-/home/dacikbas/xamera_machine_learning/data/O_HandWriting.csv,O,14,O
-/home/dacikbas/xamera_machine_learning/data/A_Handwriting.csv,A,0,A
-/home/dacikbas/xamera_machine_learning/data/C_Handwriting.csv,C,14,O
-/home/dacikbas/xamera_machine_learning/data/C_Handwriting.csv,C,0,A
-/home/dacikbas/xamera_machine_learning/data/C_Handwriting.csv,C,0,A
-/home/dacikbas/xamera_machine_learning/data/C_Handwriting.csv,C,0,A
-/home/dacikbas/xamera_machine_learning/data/C_Handwriting.csv,C,0,A
-/home/dacikbas/xamera_machine_learning/data/C_Handwriting.csv,C,0,A
-/home/dacikbas/xamera_machine_learning/data/C_Handwriting.csv,C,2,C
-/home/dacikbas/xamera_machine_learning/data/D_Handwriting.csv,D,2,C
-/home/dacikbas/xamera_machine_learning/data/D_Handwriting.csv,D,3,D
-/home/dacikbas/xamera_machine_learning/data/B_Handwriting.csv,B,1,B
-/home/dacikbas/xamera_machine_learning/data/U_Handwriting.csv,U,20,U
-/home/dacikbas/xamera_machine_learning/data/V_Handwriting.csv,V,20,U
-/home/dacikbas/xamera_machine_learning/data/V_Handwriting.csv,V,4,E
-/home/dacikbas/xamera_machine_learning/data/V_Handwriting.csv,V,4,E
-/home/dacikbas/xamera_machine_learning/data/V_Handwriting.csv,V,4,E
-/home/dacikbas/xamera_machine_learning/data/V_Handwriting.csv,V,21,V
-/home/dacikbas/xamera_machine_learning/data/Z_Handwriting.csv,Z,25,Z
-/home/dacikbas/xamera_machine_learning/data/E_Handwriting.csv,E,4,E
-/home/dacikbas/xamera_machine_learning/data/F_Handwriting.csv,F,5,F
-/home/dacikbas/xamera_machine_learning/data/S_Handwriting.csv,S,18,S
+version https://git-lfs.github.com/spec/v1
+oid sha256:b7b40762eaa19bf8a8c106161b6426ed077abc7b1881cd061e594d7f8c896193
+size 2131
