@@ -9,7 +9,6 @@ import com.developer27.xamera.databinding.ActivityAboutXameraBinding
 class AboutXameraActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityAboutXameraBinding
-    private var umLogoClickCount = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -23,7 +22,7 @@ class AboutXameraActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-        // When the UM logo is clicked 5 times, show a toast.
+        // When the UM logo is clicked show the website
         binding.umLogo.setOnClickListener {
             val url = "https://umich.edu/"
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
