@@ -117,11 +117,12 @@ def main():
     # -------------------------------
     save_path = os.path.join("saved_models", "resnet18_custom.pth")
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    checkpoint = {
-        'model': model,
-        'class_names': class_names
-    }
-    torch.save(checkpoint, save_path)
+    #checkpoint = {
+    #    'model': model,
+    #    'class_names': class_names
+    #}
+    #torch.save(checkpoint, save_path)
+    torch.save(model, save_path)  # Save entire model instead of state_dict
     print(f"Model saved to {save_path}")
 
 if __name__ == '__main__':

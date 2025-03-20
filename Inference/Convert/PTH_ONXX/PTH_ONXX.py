@@ -38,8 +38,11 @@ onnx_path = "resnet18_custom.onnx"
 # ========================
 # 1. Load the Entire Model
 # ========================
-model = torch.load(pth_path, map_location='cpu')
-model.eval()
+model = LetterRecognizer()  # Recreate model instance
+state_dict = torch.load(pth_path, map_location='cpu')  # Load weights
+model.load_state_dict(state_dict)  # Load into model
+model.eval()  # Set to evaluation mode
+
 
 # ========================
 # 2. Create Dummy Input
