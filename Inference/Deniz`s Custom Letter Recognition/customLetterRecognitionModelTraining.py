@@ -118,7 +118,7 @@ def main():
     save_path = os.path.join("saved_models", "resnet18_custom.pth")
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     checkpoint = {
-        'model_state_dict': model.state_dict(),
+        'model': model,
         'class_names': class_names
     }
     torch.save(checkpoint, save_path)
