@@ -24,9 +24,16 @@ if not os.path.exists(output_folder):
 # Load YOLO model with the specified device
 model = YOLO(model_path).to(device)
 
+
 # Automatically detect expected input size
 expected_size = model.overrides.get("imgsz", 416)  # Get imgsz if available, else default to 416
 print(f"Model expected image size: {expected_size}x{expected_size}")
+
+# Create a dummy input tensor with shape [1, 3, expected_size, expected_size]
+dummy_input = torch.zeros((1, 3, expected_size, expected_size)).to(device)
+with torch.no_grad():
+    dummy_output = model.model(dummy_input)
+print("Dummy output tensor shape:", dummy_output.shape)
 
 # Define class label mapping and colors for each class.
 # Adjust indices if your model uses a different ordering.
