@@ -82,7 +82,7 @@
             android:id="@+id/textViewVersion"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Version: 1.0 (Beta)"
+            android:text="Version: 1.0 (Research Preview)"
             android:textColor="@color/darkBlue"
             android:layout_marginTop="8dp" />
 
@@ -98,7 +98,7 @@
             android:id="@+id/textViewReleaseDate"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Release Date: February 28th 2025"
+            android:text="Release Date: March 20th 2025"
             android:textColor="@color/darkBlue"
             android:layout_marginTop="8dp" />
 
@@ -138,7 +138,7 @@
             android:id="@+id/textViewUniversity"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="University: University of Michigan-Dearborn"
+            android:text="Institution: University of Michigan-Dearborn"
             android:textColor="@color/darkBlue"
             android:layout_marginTop="8dp" />
     </LinearLayout>

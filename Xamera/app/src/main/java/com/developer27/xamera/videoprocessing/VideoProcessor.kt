@@ -49,7 +49,7 @@ private val smoothDataList = LinkedList<Point>()
 object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
-        var current: Mode = Mode.CONTOUR // YOLO: MAIN MODE for Demo, CONTOUR: For Testing & For 28x28 IMG
+        var current: Mode = Mode.YOLO // YOLO: MAIN MODE for Demo, CONTOUR: For Testing & For 28x28 IMG
         var enableYOLOinference = true  // Only use with YOLO enabled
     }
     object Inference {
