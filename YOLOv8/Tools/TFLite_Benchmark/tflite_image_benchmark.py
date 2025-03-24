@@ -45,6 +45,8 @@ print("Number of detections:", num_detections)
 # Dictionary to store the top detection per class (with detection index)
 top_detections = {}
 
+print("0: ", detections[0])
+
 # For each class (0, 1, 2), find the detection with the highest score.
 # Here, detection vector: [x, y, width, height, score_class0, score_class1, score_class2]
 for class_id in [0, 1, 2]:
