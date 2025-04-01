@@ -256,8 +256,8 @@ def process_video(video_path, output_path, threshold_value, merge_distance, min_
     out.release()
     print(f"Processed {frame_count} frames from {video_path}")
 
-def test():
-    print("TEST.PY")
+def main_test():
+    print("MAIN_TEST.PY")
     script_dir = os.path.dirname(os.path.abspath(__file__))
     input_folder = os.path.join(script_dir, INPUT_FOLDER)
     output_folder = os.path.join(script_dir, OUTPUT_FOLDER)
@@ -272,4 +272,4 @@ def test():
             print(f"Saved processed video to: {output_path}")
 
 if __name__ == "__main__":
-    test()
+    main_test()
