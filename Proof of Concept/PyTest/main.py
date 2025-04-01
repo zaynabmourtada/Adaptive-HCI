@@ -179,7 +179,7 @@ def process_video(video_path, output_path, threshold_value, merge_distance, min_
             label = labels[i]
             cv2.rectangle(processed_frame, (x1, y1), (x2, y2), box_colors[label], 2)
             # Annotate with: "User_x L:{overall_avg_length:.3f}" on the same row.
-            cv2.putText(processed_frame, f"{label} L:{overall_avg_length:.3f}", (x1, y1 - 5),
+            cv2.putText(processed_frame, f"{label} W:{overall_avg_length:.3f}", (x1, y1 - 5),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_colors[label], 1, cv2.LINE_AA)
 
         out.write(processed_frame)
@@ -192,6 +192,7 @@ def process_video(video_path, output_path, threshold_value, merge_distance, min_
     print(f"Processed {frame_count} frames from {video_path}")
 
 def main():
+    print("MAIN.PY")
     script_dir = os.path.dirname(os.path.abspath(__file__))
     input_folder = os.path.join(script_dir, INPUT_FOLDER)
     output_folder = os.path.join(script_dir, OUTPUT_FOLDER)
