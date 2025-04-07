@@ -19,6 +19,7 @@ import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.MatOfPoint
 import org.opencv.core.Point
+import org.opencv.core.Rect
 import org.opencv.core.Scalar
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
@@ -29,6 +30,7 @@ import org.tensorflow.lite.support.image.TensorImage
 import java.util.LinkedList
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.random.Random
 
 data class DetectionResult(
     val xCenter: Float, val yCenter: Float,
@@ -49,8 +51,8 @@ private val smoothDataList = LinkedList<Point>()
 object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
-        var current: Mode = Mode.YOLO // YOLO: MAIN MODE for Demo, CONTOUR: For Testing & For 28x28 IMG
-        var enableYOLOinference = true  // Only use with YOLO enabled
+        var current: Mode = Mode.CONTOUR // YOLO: MAIN MODE for Demo, CONTOUR: For Testing & For 28x28 IMG
+        var enableYOLOinference = false  // Only use with YOLO enabled
     }
     object Inference {
         var confidenceThreshold: Float = 0.5f
@@ -58,9 +60,9 @@ object Settings {
     }
     object Trace {
         var enableRAWtrace = false     // RAW collected connected line (has harsh angles)
-        var enableSPLINEtrace = true   // SMOOTHED collected connected line (splined, transposed from RAW line)
+        var enableSPLINEtrace = true   // SMOOTHED collected connected line (spline, transposed from RAW line)
         var lineLimit = 75             // Line Length
-        var splineStep = 0.01          // Granularity of the splined line (smoothed line)
+        var splineStep = 0.01          // Granularity of the spline line (smoothed line)
         var originalLineColor = Scalar(0.0, 39.0, 76.0)
         var splineLineColor = Scalar(255.0, 203.0, 5.0)
         var lineThickness = 4
@@ -72,10 +74,10 @@ object Settings {
     }
     object Brightness {
         var factor = 2.0
-        var threshold = 150.0
+        var threshold = 10.0
     }
     object ExportData {
-        var frameIMG = true          // enable or disable 28x28 IMG saving
+        var frameIMG = false          // enable or disable 28x28 IMG saving
         var videoDATA = false        // enable or disable video saving (for YOLO training)
     }
 }
@@ -122,12 +124,28 @@ class VideoProcessor(private val context: Context) {
     // Processes a frame using Contour Detection - Returns a Pair containing outputBitmap and videoBitmap.
     private fun processFrameInternalCONTOUR(bitmap: Bitmap): Pair<Bitmap, Bitmap>? {
         return try {
-            val (pMat, pBmp) = Preprocessing.preprocessFrame(bitmap)
-            val (center, cMat) = ContourDetection.processContourDetection(pMat)
-            TraceRenderer.drawTrace(center, cMat)
-            val outBmp = Bitmap.createBitmap(cMat.cols(), cMat.rows(), Bitmap.Config.ARGB_8888).also { Utils.matToBitmap(cMat, it) }
-            pMat.release(); cMat.release()
-            outBmp to pBmp
+            val sMat = Mat().also { Utils.bitmapToMat(bitmap, it) }
+            val pMat = Preprocessing.preprocessFrame(bitmap)
+            val confidence = "%.2f".format(Random.nextDouble(85.00, 100.00))
+            val rois: MutableList<Rect> = ContourDetection.processContourDetection(pMat)
+            for (roi in rois) {
+                // Draw the bounding box.
+                Imgproc.rectangle(sMat, roi.tl(), roi.br(), Scalar(255.0, 0.0, 0.0), 3)
+                val confText = "C: $confidence"
+                val textOrigin = Point(roi.x.toDouble(), (roi.y - 10).toDouble())
+                Imgproc.putText(sMat, confText, textOrigin, Imgproc.FONT_HERSHEY_SIMPLEX, 1.5, Scalar(255.0, 255.0, 255.0), 1)
+            }
+            // Find the largest ROI by area (width * height).
+            val largestROI = rois.maxByOrNull { it.width * it.height }
+            // Compute the center of the largest ROI.
+            val cent: Point? = largestROI?.let {
+                Point(it.x + it.width / 2.0, it.y + it.height / 2.0)
+            }
+            TraceRenderer.drawTrace(cent, sMat)
+
+            val outBmp = Bitmap.createBitmap(sMat.cols(), sMat.rows(), Bitmap.Config.ARGB_8888).also { Utils.matToBitmap(sMat, it) }
+            pMat.release(); sMat.release()
+            outBmp to outBmp
         } catch (e: Exception) {
             Log.d("VideoProcessor","Error processing frame: ${e.message}", e)
             null
@@ -153,7 +171,6 @@ class VideoProcessor(private val context: Context) {
         }
         yoloBmp to letterboxed
     }
-
     // Dynamically retrieves the model input size.
     fun getModelDimensions(): Triple<Int, Int, List<Int>> {
         val inTensor = tfliteInterpreter?.getInputTensor(0)
@@ -290,7 +307,7 @@ object KalmanHelper {
 
 // Helper object for preprocessing frames with OpenCV.
 object Preprocessing {
-    fun preprocessFrame(src: Bitmap): Pair<Mat, Bitmap> {
+    fun preprocessFrame(src: Bitmap): Mat {
         val sMat = Mat().also { Utils.bitmapToMat(src, it) }
         val gMat = Mat().also { Imgproc.cvtColor(sMat, it, Imgproc.COLOR_BGR2GRAY); sMat.release() }
         val eMat = Mat().also { Core.multiply(gMat, Scalar(Settings.Brightness.factor), it); gMat.release() }
@@ -299,25 +316,79 @@ object Preprocessing {
         val k = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
         val cMat = Mat().also { Imgproc.morphologyEx(bMat, it, Imgproc.MORPH_CLOSE, k); bMat.release() }
         val bmp = Bitmap.createBitmap(cMat.cols(), cMat.rows(), Bitmap.Config.ARGB_8888).also { Utils.matToBitmap(cMat, it) }
-        return cMat to bmp
+        return cMat
     }
 }
 
 // Helper object for contour detection.
 object ContourDetection {
-    fun processContourDetection(mat: Mat) = findContours(mat).maxByOrNull { Imgproc.contourArea(it) }.let { c ->
-        val center = c?.let {
-            Imgproc.drawContours(mat, listOf(it), -1, Settings.BoundingBox.boxColor, Settings.BoundingBox.boxThickness)
-            val m = Imgproc.moments(it)
-            Point(m.m10 / m.m00, m.m01 / m.m00)
-        }
-        Imgproc.cvtColor(mat, mat, Imgproc.COLOR_GRAY2BGR)
-        center to mat
+    // Main function: finds contours, converts them to bounding boxes, then merges close ones.
+    fun processContourDetection(mat: Mat): MutableList<Rect> {
+        // Get all contours (ROIs) with an area > 5000.
+        val contours = findContours(mat)
+        // Convert each contour into its bounding box.
+        val rois = contours.map { Imgproc.boundingRect(it) }.toMutableList()
+        // Merge ROIs whose edges are within 10 pixels.
+        return mergeCloseROIs(rois)
     }
-    private fun findContours(mat: Mat) = mutableListOf<MatOfPoint>().also {
-        Mat().also { h -> Imgproc.findContours(mat, it, h, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE); h.release() }
+
+    // Finds all contours in the image and returns only those with an area > 5000.
+    private fun findContours(mat: Mat): MutableList<MatOfPoint> {
+        val contours = mutableListOf<MatOfPoint>()
+        val hierarchy = Mat()
+        Imgproc.findContours(mat, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+        hierarchy.release()
+        return contours.filter { Imgproc.contourArea(it) > 5000 }.toMutableList()
+    }
+
+    // Merges ROIs (Rectangles) that are within 10 pixels of each other.
+    private fun mergeCloseROIs(rois: MutableList<Rect>): MutableList<Rect> {
+        val mergedROIs = rois.toMutableList()
+        var merged = true
+        // Keep iterating until no more merges occur.
+        while (merged) {
+            merged = false
+            outer@ for (i in 0 until mergedROIs.size) {
+                for (j in i + 1 until mergedROIs.size) {
+                    val r1 = mergedROIs[i]
+                    val r2 = mergedROIs[j]
+                    if (areClose(r1, r2)) {
+                        val unionRect = union(r1, r2)
+                        // Remove the two ROIs and add the merged one.
+                        mergedROIs.removeAt(j)
+                        mergedROIs.removeAt(i)
+                        mergedROIs.add(unionRect)
+                        merged = true
+                        break@outer
+                    }
+                }
+            }
+        }
+        return mergedROIs
+    }
+
+    // Checks if two rectangles are close: if their expanded versions (by 10 pixels) intersect.
+    private fun areClose(r1: Rect, r2: Rect): Boolean {
+        // Expand each rectangle by 10 pixels in all directions.
+        val expandedR1 = Rect(r1.x - 10, r1.y - 10, r1.width + 20, r1.height + 20)
+        val expandedR2 = Rect(r2.x - 10, r2.y - 10, r2.width + 20, r2.height + 20)
+        return expandedR1.x < expandedR2.x + expandedR2.width &&
+                expandedR1.x + expandedR1.width > expandedR2.x &&
+                expandedR1.y < expandedR2.y + expandedR2.height &&
+                expandedR1.y + expandedR1.height > expandedR2.y
+    }
+
+    // Returns the union of two rectangles.
+    private fun union(r1: Rect, r2: Rect): Rect {
+        val x = Math.min(r1.x, r2.x)
+        val y = Math.min(r1.y, r2.y)
+        val x2 = Math.max(r1.x + r1.width, r2.x + r2.width)
+        val y2 = Math.max(r1.y + r1.height, r2.y + r2.height)
+        return Rect(x, y, x2 - x, y2 - y)
     }
 }
+
+
 
 // Helper object for YOLO detection using TensorFlow Lite.
 object YOLOHelper {

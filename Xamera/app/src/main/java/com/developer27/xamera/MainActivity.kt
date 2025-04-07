@@ -331,17 +331,18 @@ class MainActivity : AppCompatActivity() {
         processedVideoRecorder?.stop()
         processedVideoRecorder = null
 
-        // Commented out the saving of the 28x28 image.
-        // val outputPath = get28x28OutputPath()
-        // processedFrameRecorder = ProcessedFrameRecorder(outputPath)
-        // with(Settings.ExportData) {
-        //     if (frameIMG) {
-        //         val bitmap = videoProcessor?.exportTraceForInference()
-        //         if (bitmap != null) {
-        //             processedFrameRecorder?.save(bitmap)
-        //         }
-        //     }
-        // }
+        val outputPath = get28x28OutputPath()
+        processedFrameRecorder = ProcessedFrameRecorder(outputPath)
+        with(Settings.ExportData)
+        {
+            if (frameIMG)
+            {
+                val bitmap = videoProcessor?.exportTraceForInference()
+                if (bitmap != null) {
+                    processedFrameRecorder?.save(bitmap)
+                }
+            }
+        }
 
         // Compute the inference result.
         initializeInferenceResult()
