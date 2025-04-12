@@ -26,6 +26,15 @@
             android:entryValues="@array/detection_mode_values"
             android:defaultValue="CONTOUR" />
 
+        <!-- Bounding Box Enable Preference with summaryOn/summaryOff -->
+        <SwitchPreference
+            android:key="enable_bounding_box"
+            android:layout="@layout/preference_list_layout"
+            android:title="Enable Bounding Box"
+            android:summaryOn="Yes"
+            android:summaryOff="No"
+            android:defaultValue="true" />
+
     </PreferenceCategory>
 
 </PreferenceScreen>

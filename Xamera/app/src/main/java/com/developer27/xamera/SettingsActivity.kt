@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceFragmentCompat
+import androidx.preference.SwitchPreference
 import com.developer27.xamera.videoprocessing.Settings
 
 class SettingsActivity : AppCompatActivity() {
@@ -42,6 +43,18 @@ class SettingsActivity : AppCompatActivity() {
                     }
                 }
                 Toast.makeText(context, "Detection mode set to $newValue", Toast.LENGTH_SHORT).show()
+                true
+            }
+
+            val boundingBoxPref = findPreference<SwitchPreference>("enable_bounding_box")
+            boundingBoxPref?.setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                Settings.BoundingBox.enableBoundingBox = enabled
+                Toast.makeText(
+                    context,
+                    "Bounding Box: ${if (enabled) "Yes" else "No"}",
+                    Toast.LENGTH_SHORT
+                ).show()
                 true
             }
         }
