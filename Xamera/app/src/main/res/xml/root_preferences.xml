@@ -16,6 +16,16 @@
             android:entryValues="@array/shutter_speed_values"
             android:defaultValue="60" />
 
+        <!-- New Detection Mode Preference -->
+        <ListPreference
+            android:key="detection_mode"
+            android:layout="@layout/preference_list_layout"
+            android:title="Detection Mode"
+            android:summary="Choose between CONTOUR and YOLO detection"
+            android:entries="@array/detection_mode_options"
+            android:entryValues="@array/detection_mode_values"
+            android:defaultValue="CONTOUR" />
+
     </PreferenceCategory>
 
 </PreferenceScreen>
