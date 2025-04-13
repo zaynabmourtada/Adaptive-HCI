@@ -1,19 +1,16 @@
 # Git Ignores - Soham
-/Tools/YOLO/AutoLabeler/myenv
-/Tools/YOLO/Model Conversion (YOLO - TFL)/MYvenv
-/Tools/YOLO/PyTorch Benchmark/venvw
-/Tools/YOLO/TFLite Benchmark/venv
-
-/Tools/YOLO/AutoLabeler/myenv
-
-/Tools/Model Converter (PT - TFL)/PTH_ONXX/myenv
-/Tools/Model Converter (PT - TFL)/ONXX_TFLITE/myenv
+/YOLO/Tools/AutoLabeler/myenv
+/YOLO/Tools/Model Converter (PT - TFL)/MYvenv
+/YOLO/Tools/PyTorch Benchmark/venvw
+/YOLO/Tools/TFLite Benchmark/venv
 
 /Proof of Concept/OOK Detection & Occlusion/venv
 
 # Git Ignores - Zaynab
 /Letter & Digit Inference/digitEnv
 /Letter & Digit Inference/10000 DIDA
+/Letter & Digit Inference/Model Converter (PT - TFL)/PTH_ONXX/myenv
+/Letter & Digit Inference/Model Converter (PT - TFL)/ONXX_TFLITE/myenv
 
 
 venv/
