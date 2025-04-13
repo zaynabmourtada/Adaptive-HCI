@@ -681,6 +681,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // NEW: Clear the accumulated handwriting coordinates when returning to the app.
+        accumulatedCoordinates.clear()
+
         cameraHelper.startBackgroundThread()
         if (viewBinding.viewFinder.isAvailable) {
             if (allPermissionsGranted()) {
