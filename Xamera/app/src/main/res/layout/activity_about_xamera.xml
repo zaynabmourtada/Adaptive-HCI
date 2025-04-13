@@ -82,15 +82,7 @@
             android:id="@+id/textViewVersion"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Version: 1.0 (Research Preview)"
-            android:textColor="@color/darkBlue"
-            android:layout_marginTop="8dp" />
-
-        <TextView
-            android:id="@+id/phaseNumber"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Phase: P1"
+            android:text="Version: 1.0"
             android:textColor="@color/darkBlue"
             android:layout_marginTop="8dp" />
 
@@ -98,7 +90,7 @@
             android:id="@+id/textViewReleaseDate"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Release Date: March 20th 2025"
+            android:text="Release Date: April 14th 2025"
             android:textColor="@color/darkBlue"
             android:layout_marginTop="8dp" />
 

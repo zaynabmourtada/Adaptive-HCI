@@ -1,11 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    Updated activity_main.xml:
-    - A single RadioButton (radioToggle) on the left that toggles between "Digits" and "Letters".
-    - Settings and About buttons arranged horizontally (next to each other) on the right.
-    - All controls are centered horizontally.
--->
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/preview_frame"
@@ -62,7 +57,7 @@
             android:paddingStart="8dp" />
     </LinearLayout>
 
-    <!-- Top Controls Container: RadioButton on the left, and Settings/About buttons side-by-side on the right -->
+    <!-- Top Controls Container: Switch on the left, and Settings/About buttons side-by-side on the right -->
     <LinearLayout
         android:id="@+id/top_controls_container"
         android:layout_width="match_parent"
@@ -72,16 +67,17 @@
         android:layout_gravity="top|center_horizontal"
         android:layout_marginTop="90dp">
 
-        <!-- Single RadioButton for toggling between Digits and Letters.
+        <!-- Single SwitchCompat for toggling between Digits and Letters.
              Its left margin is 16dp. -->
-        <RadioButton
-            android:id="@+id/radioToggle"
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/letterDigitSwitch"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Digits"
             android:checked="true"
-            android:textColor="@color/yellow"
-            android:buttonTint="@color/yellow"
+            android:textColor="#FFCB05"
+            app:thumbTint="@color/yellow"
+            app:trackTint="@color/yellow"
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp" />
 

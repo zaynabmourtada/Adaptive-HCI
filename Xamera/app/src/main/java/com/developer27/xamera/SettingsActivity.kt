@@ -13,6 +13,7 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Use the updated layout with a fixed header.
         setContentView(R.layout.settings_activity)
 
         supportFragmentManager
@@ -23,9 +24,23 @@ class SettingsActivity : AppCompatActivity() {
 
     class SettingsFragment : PreferenceFragmentCompat() {
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+            // Load preferences from the XML resource.
             setPreferencesFromResource(R.xml.root_preferences, rootKey)
 
-            // Set up the detection mode preference listener.
+            // Rolling Shutter Speed listener.
+            val shutterSpeedPref = findPreference<ListPreference>("shutter_speed")
+            shutterSpeedPref?.setOnPreferenceChangeListener { _, newValue ->
+                // For example, update your global shutter speed setting here.
+                // Settings.Camera.shutterSpeed = newValue as String (if defined)
+                Toast.makeText(
+                    context,
+                    "Rolling Shutter Speed set to ${newValue} Hz",
+                    Toast.LENGTH_SHORT
+                ).show()
+                true
+            }
+
+            // Detection mode listener.
             val detectionModePref = findPreference<ListPreference>("detection_mode")
             detectionModePref?.setOnPreferenceChangeListener { _, newValue ->
                 when (newValue as String) {
@@ -46,6 +61,7 @@ class SettingsActivity : AppCompatActivity() {
                 true
             }
 
+            // Bounding box enable listener.
             val boundingBoxPref = findPreference<SwitchPreference>("enable_bounding_box")
             boundingBoxPref?.setOnPreferenceChangeListener { _, newValue ->
                 val enabled = newValue as Boolean
@@ -57,11 +73,64 @@ class SettingsActivity : AppCompatActivity() {
                 ).show()
                 true
             }
+
+            // RAW trace enable listener.
+            val rawTracePref = findPreference<SwitchPreference>("enable_raw_trace")
+            rawTracePref?.setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                Settings.Trace.enableRAWtrace = enabled
+                Toast.makeText(
+                    context,
+                    "RAW Trace: ${if (enabled) "Yes" else "No"}",
+                    Toast.LENGTH_SHORT
+                ).show()
+                true
+            }
+
+            // SPLINE trace enable listener.
+            val splineTracePref = findPreference<SwitchPreference>("enable_spline_trace")
+            splineTracePref?.setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                Settings.Trace.enableSPLINEtrace = enabled
+                Toast.makeText(
+                    context,
+                    "SPLINE Trace: ${if (enabled) "Yes" else "No"}",
+                    Toast.LENGTH_SHORT
+                ).show()
+                true
+            }
+
+            // Export Data: 28x28 IMG saving listener.
+            val frameImgPref = findPreference<SwitchPreference>("frame_img")
+            frameImgPref?.setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                Settings.ExportData.frameIMG = enabled
+                Toast.makeText(
+                    context,
+                    "28x28 IMG Saving: ${if (enabled) "Yes" else "No"}",
+                    Toast.LENGTH_SHORT
+                ).show()
+                true
+            }
+
+            // Export Data: Video saving listener.
+            val videoDataPref = findPreference<SwitchPreference>("video_data")
+            videoDataPref?.setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                Settings.ExportData.videoDATA = enabled
+                Toast.makeText(
+                    context,
+                    "Video Saving: ${if (enabled) "Yes" else "No"}",
+                    Toast.LENGTH_SHORT
+                ).show()
+                true
+            }
         }
     }
 
     override fun onBackPressed() {
         super.onBackPressed()
+        // Save settings and return to the calling Activity.
         setResult(RESULT_OK, Intent())
         finish()
     }
