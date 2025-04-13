@@ -45,14 +45,16 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
+import kotlin.math.max
 
 class MainActivity : AppCompatActivity() {
+
     private lateinit var viewBinding: ActivityMainBinding
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var cameraManager: CameraManager
     private lateinit var cameraHelper: CameraHelper
     private var tfliteInterpreter: Interpreter? = null
-    // New interpreter for letter recognition
+    // Interpreter for letter recognition.
     private var letterInterpreter: Interpreter? = null
 
     private var processedVideoRecorder: ProcessedVideoRecorder? = null
@@ -68,18 +70,21 @@ class MainActivity : AppCompatActivity() {
     // Variable for inference result.
     private var inferenceResult = ""
 
-    // Stores the tracking coordinates.
+    // Stores the current session tracking coordinates.
     private var trackingCoordinates: String = ""
 
     // For toggling digit/letter recognition.
     var isLetterSelected = true
     var isDigitSelected = !isLetterSelected
 
-    // New flag for writing mode.
+    // Flag for writing mode.
     private var isWriting = false
 
-    // New flag to clear prediction when returning from an external intent.
+    // Flag to clear prediction when returning from an external intent.
     private var shouldClearPrediction = false
+
+    // NEW: Accumulated handwriting coordinates (each element corresponds to one letter)
+    private val accumulatedCoordinates = mutableListOf<String>()
 
     private val REQUIRED_PERMISSIONS = arrayOf(
         Manifest.permission.CAMERA,
@@ -117,13 +122,11 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Prevent screen from turning off
+        // Prevent screen from turning off.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
-        // Lock screen orientation to portrait
+        // Lock screen orientation to portrait.
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-
-        // Install the splash screen (Android 12+)
+        // Install splash screen (Android 12+).
         installSplashScreen()
         super.onCreate(savedInstanceState)
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
@@ -138,7 +141,7 @@ class MainActivity : AppCompatActivity() {
         // Hide the processed frame view initially.
         viewBinding.processedFrameView.visibility = View.GONE
 
-        // Set default text for the predicted letter TextView.
+        // Set default text for the prediction TextView.
         viewBinding.predictedLetterTextView.text = "No Prediction Yet"
 
         // When the title container is clicked, open the URL in a browser.
@@ -148,20 +151,19 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-        requestPermissionLauncher =
-            registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-                val camGranted = permissions[Manifest.permission.CAMERA] ?: false
-                val micGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
-                if (camGranted && micGranted) {
-                    if (viewBinding.viewFinder.isAvailable) {
-                        cameraHelper.openCamera()
-                    } else {
-                        viewBinding.viewFinder.surfaceTextureListener = textureListener
-                    }
+        requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+            val camGranted = permissions[Manifest.permission.CAMERA] ?: false
+            val micGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
+            if (camGranted && micGranted) {
+                if (viewBinding.viewFinder.isAvailable) {
+                    cameraHelper.openCamera()
                 } else {
-                    Toast.makeText(this, "Camera & Audio permissions are required.", Toast.LENGTH_SHORT).show()
+                    viewBinding.viewFinder.surfaceTextureListener = textureListener
                 }
+            } else {
+                Toast.makeText(this, "Camera & Audio permissions are required.", Toast.LENGTH_SHORT).show()
             }
+        }
 
         if (allPermissionsGranted()) {
             if (viewBinding.viewFinder.isAvailable) {
@@ -176,7 +178,6 @@ class MainActivity : AppCompatActivity() {
         // Set up the Start Tracking button.
         viewBinding.startProcessingButton.setOnClickListener {
             if (isRecording) {
-                // Stop tracking and update prediction.
                 stopProcessingAndRecording()
             } else {
                 startProcessingAndRecording()
@@ -192,15 +193,55 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        viewBinding.radioToggle.setTextColor(android.graphics.Color.parseColor("#FFCB05"))
-        viewBinding.radioToggle.buttonTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#FFCB05"))
-        viewBinding.radioToggle.text = if (isLetterSelected) "Letter" else "Digit"
-        viewBinding.radioToggle.isChecked = isLetterSelected
-        viewBinding.radioToggle.setOnClickListener {
-            isLetterSelected = !isLetterSelected
-            isDigitSelected = !isLetterSelected
-            viewBinding.radioToggle.text = if (isLetterSelected) "Letter" else "Digit"
-            viewBinding.radioToggle.isChecked = isLetterSelected
+        // Use SwitchCompat (letterDigitSwitch) to toggle between Letter and Digit modes.
+        val letterDigitSwitch = viewBinding.letterDigitSwitch
+        if (isLetterSelected) {
+            // Letter mode: use yellow (maize).
+            letterDigitSwitch.setTextColor(android.graphics.Color.parseColor("#FFCB05"))
+            letterDigitSwitch.thumbTintList = android.content.res.ColorStateList.valueOf(
+                android.graphics.Color.parseColor("#FFCB05")
+            )
+            letterDigitSwitch.trackTintList = android.content.res.ColorStateList.valueOf(
+                android.graphics.Color.parseColor("#FFCB05")
+            )
+            letterDigitSwitch.text = "Letter"
+        } else {
+            // Digit mode: use white.
+            letterDigitSwitch.setTextColor(android.graphics.Color.parseColor("#FFFFFF"))
+            letterDigitSwitch.thumbTintList = android.content.res.ColorStateList.valueOf(
+                android.graphics.Color.parseColor("#FFFFFF")
+            )
+            letterDigitSwitch.trackTintList = android.content.res.ColorStateList.valueOf(
+                android.graphics.Color.parseColor("#FFFFFF")
+            )
+            letterDigitSwitch.text = "Digit"
+        }
+        letterDigitSwitch.isChecked = isLetterSelected
+
+        letterDigitSwitch.setOnCheckedChangeListener { _, isChecked ->
+            isLetterSelected = isChecked
+            isDigitSelected = !isChecked
+            if (isChecked) {
+                // Letter mode: yellow (maize).
+                letterDigitSwitch.setTextColor(android.graphics.Color.parseColor("#FFCB05"))
+                letterDigitSwitch.thumbTintList = android.content.res.ColorStateList.valueOf(
+                    android.graphics.Color.parseColor("#FFCB05")
+                )
+                letterDigitSwitch.trackTintList = android.content.res.ColorStateList.valueOf(
+                    android.graphics.Color.parseColor("#FFCB05")
+                )
+                letterDigitSwitch.text = "Letter"
+            } else {
+                // Digit mode: white.
+                letterDigitSwitch.setTextColor(android.graphics.Color.parseColor("#FFFFFF"))
+                letterDigitSwitch.thumbTintList = android.content.res.ColorStateList.valueOf(
+                    android.graphics.Color.parseColor("#FFFFFF")
+                )
+                letterDigitSwitch.trackTintList = android.content.res.ColorStateList.valueOf(
+                    android.graphics.Color.parseColor("#FFFFFF")
+                )
+                letterDigitSwitch.text = "Digit"
+            }
         }
 
         // Set up the Start Writing button.
@@ -208,27 +249,23 @@ class MainActivity : AppCompatActivity() {
             toggleWritingMode()
         }
 
-        // Set up the Clear Prediction button ("C") under the zoom buttons.
+        // Set up the Clear Prediction button ("C").
         viewBinding.clearPredictionButton.setOnClickListener {
-            // Stop writing if active.
             if (isWriting) {
                 isWriting = false
                 viewBinding.startWritingButton.text = "Start Writing"
                 viewBinding.startWritingButton.backgroundTintList =
                     ContextCompat.getColorStateList(this, R.color.green)
             }
-            // Stop tracking if active.
             if (isRecording) {
                 stopProcessingAndRecording()
             }
-            // Reset the prediction panel.
             viewBinding.predictedLetterTextView.text = "No Prediction Yet"
         }
 
         // Load ML models.
         loadTFLiteModelOnStartupThreaded("YOLOv3_float32.tflite")
         loadTFLiteModelOnStartupThreaded("DigitRecog_float32.tflite")
-        // New: load the letter recognition model.
         loadTFLiteModelOnStartupThreaded("LetterRecog_float32.tflite")
 
         cameraHelper.setupZoomControls()
@@ -242,45 +279,41 @@ class MainActivity : AppCompatActivity() {
     // Function for toggling writing mode.
     private fun toggleWritingMode() {
         if (!isWriting) {
-            // Start writing mode.
             isWriting = true
             viewBinding.startWritingButton.text = "Stop Writing"
             viewBinding.startWritingButton.backgroundTintList =
                 ContextCompat.getColorStateList(this, R.color.red)
-            // Clear the prediction panel.
             viewBinding.predictedLetterTextView.text = ""
         } else {
-            // Stop writing mode.
             isWriting = false
             viewBinding.startWritingButton.text = "Start Writing"
             viewBinding.startWritingButton.backgroundTintList =
                 ContextCompat.getColorStateList(this, R.color.green)
-            // When writing stops, check the accumulated prediction.
             val prediction = viewBinding.predictedLetterTextView.text.toString()
-            if (isLetterSelected) {
-                // Letter mode: ask if user wants to send an email.
+            if (prediction.matches(Regex("^(?=.*[A-Za-z])(?=.*\\d).+$"))) {
+                // For alphanumeric: prompt for email.
                 AlertDialog.Builder(this)
                     .setTitle("Send Email")
                     .setMessage("Do you wish to send an email with the text: $prediction?")
-                    .setPositiveButton("Yes") { _, _ ->
-                        sendEmail(prediction)
-                    }
-                    .setNegativeButton("No") { _, _ ->
-                        launch3DActivity()
-                    }
+                    .setPositiveButton("Yes") { _, _ -> sendEmail(prediction) }
+                    .setNegativeButton("No") { _, _ -> launch3DActivity() }
+                    .show()
+            } else if (isLetterSelected) {
+                // Only letters: prompt for email.
+                AlertDialog.Builder(this)
+                    .setTitle("Send Email")
+                    .setMessage("Do you wish to send an email with the text: $prediction?")
+                    .setPositiveButton("Yes") { _, _ -> sendEmail(prediction) }
+                    .setNegativeButton("No") { _, _ -> launch3DActivity() }
                     .show()
             } else {
-                // Digit mode: if the prediction is composed solely of digits, ask if user wants to call.
+                // Only digits: if solely digits, prompt for call.
                 if (prediction.matches(Regex("\\d+"))) {
                     AlertDialog.Builder(this)
                         .setTitle("Call Number")
                         .setMessage("Do you wish to call the number $prediction?")
-                        .setPositiveButton("Yes") { _, _ ->
-                            makePhoneCall(prediction)
-                        }
-                        .setNegativeButton("No") { _, _ ->
-                            launch3DActivity()
-                        }
+                        .setPositiveButton("Yes") { _, _ -> makePhoneCall(prediction) }
+                        .setNegativeButton("No") { _, _ -> launch3DActivity() }
                         .show()
                 } else {
                     launch3DActivity()
@@ -292,7 +325,7 @@ class MainActivity : AppCompatActivity() {
     // New function to send an email with the prediction.
     private fun sendEmail(text: String) {
         val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
-            data = Uri.parse("mailto:") // Only email apps should handle this.
+            data = Uri.parse("mailto:")
             putExtra(Intent.EXTRA_SUBJECT, "Air-Written Email by Xamera")
             putExtra(Intent.EXTRA_TEXT, text)
         }
@@ -309,7 +342,7 @@ class MainActivity : AppCompatActivity() {
         viewBinding.processedFrameView.visibility = View.VISIBLE
 
         videoProcessor?.reset()
-
+        // (Optional) Start video recorder if enabled
         if (Settings.ExportData.videoDATA) {
             val dims = videoProcessor?.getModelDimensions()
             val width = dims?.first ?: 416
@@ -333,10 +366,8 @@ class MainActivity : AppCompatActivity() {
 
         val outputPath = get28x28OutputPath()
         processedFrameRecorder = ProcessedFrameRecorder(outputPath)
-        with(Settings.ExportData)
-        {
-            if (frameIMG)
-            {
+        with(Settings.ExportData) {
+            if (frameIMG) {
                 val bitmap = videoProcessor?.exportTraceForInference()
                 if (bitmap != null) {
                     processedFrameRecorder?.save(bitmap)
@@ -346,8 +377,14 @@ class MainActivity : AppCompatActivity() {
 
         // Compute the inference result.
         initializeInferenceResult()
-        // If in writing mode, append the prediction to the TextView.
+
+        // If writing mode is enabled, accumulate tracking coordinates.
         if (isWriting) {
+            val currentCoords = videoProcessor?.getTrackingCoordinatesString() ?: ""
+            if (currentCoords.isNotEmpty()) {
+                accumulateCoordinates(currentCoords)
+            }
+            // Append inferred letter text to the prediction TextView.
             val currentText = viewBinding.predictedLetterTextView.text.toString()
             val newText = if (currentText == "No Prediction Available Yet") {
                 inferenceResult
@@ -356,15 +393,52 @@ class MainActivity : AppCompatActivity() {
             }
             viewBinding.predictedLetterTextView.text = newText
         } else {
-            // Otherwise, just update the panel.
             viewBinding.predictedLetterTextView.text = inferenceResult
         }
 
-        // Retrieve tracking coordinates.
+        // Always update the current tracking coordinates.
         trackingCoordinates = videoProcessor?.getTrackingCoordinatesString() ?: ""
     }
 
-    // Helper function to generate an output path for the 28x28 image in the "Rollity_ML_Training" folder.
+    // NEW: Function to accumulate and horizontally offset new tracking coordinates.
+    private fun accumulateCoordinates(newCoords: String) {
+        // The coordinates format: "x,y,0.0;x,y,0.0;..."
+        if (newCoords.isEmpty()) return
+        if (accumulatedCoordinates.isEmpty()) {
+            accumulatedCoordinates.add(newCoords)
+        } else {
+            // Determine the maximum x value from all coordinates in the previously accumulated set.
+            var offsetX = 0.0
+            for (coordStr in accumulatedCoordinates) {
+                // Split coordinates by ";" and extract the x values.
+                val pts = coordStr.split(";").mapNotNull {
+                    val parts = it.split(",")
+                    parts.getOrNull(0)?.toDoubleOrNull()
+                }
+                if (pts.isNotEmpty()) {
+                    val currentMax = pts.maxOrNull() ?: 0.0
+                    offsetX = max(offsetX, currentMax)
+                }
+            }
+            // Add a fixed margin (e.g., 10 units) between letters.
+            offsetX += 10.0
+
+            // Adjust each new coordinate by adding offsetX to its x-value.
+            val adjustedPoints = newCoords.split(";").mapNotNull { pointStr ->
+                val parts = pointStr.split(",")
+                if (parts.size >= 2) {
+                    val x = parts[0].toDoubleOrNull() ?: 0.0
+                    val y = parts[1]
+                    val z = if (parts.size >= 3) parts[2] else "0.0"
+                    "${(x + offsetX)},$y,$z"
+                } else null
+            }
+            val adjustedCoords = adjustedPoints.joinToString(separator = ";")
+            accumulatedCoordinates.add(adjustedCoords)
+        }
+    }
+
+    // Helper function to generate the output path for the 28x28 image.
     private fun get28x28OutputPath(): String {
         @Suppress("DEPRECATION")
         val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
@@ -375,7 +449,7 @@ class MainActivity : AppCompatActivity() {
         return File(rollityDir, "DrawnLine_28x28_${System.currentTimeMillis()}.png").absolutePath
     }
 
-    // Updated: if letter mode is selected, run letter inference; otherwise, run digit inference.
+    // If letter mode is selected, run letter inference; otherwise, run digit inference.
     private fun initializeInferenceResult() {
         if (isLetterSelected) {
             inferenceResult = runLetterRecognitionInference()
@@ -403,7 +477,6 @@ class MainActivity : AppCompatActivity() {
         return predictedDigit.toString()
     }
 
-    // New function for letter recognition inference.
     private fun runLetterRecognitionInference(): String {
         val letterBitmap = videoProcessor?.exportTraceForInference()
         if (letterBitmap == null) {
@@ -412,19 +485,16 @@ class MainActivity : AppCompatActivity() {
         }
         val grayBitmap = convertToGrayscale(letterBitmap)
         val inputBuffer = convertBitmapToGrayscaleByteBuffer(grayBitmap)
-        // Assuming the letter model outputs 26 values (for A-Z)
         val outputArray = Array(1) { FloatArray(26) }
         if (letterInterpreter == null) {
             Log.e("MainActivity", "Letter model interpreter not set")
             return "Error"
         }
         letterInterpreter?.run(inputBuffer, outputArray)
-        // Find the index with the maximum probability.
         val maxIndex = outputArray[0].indices.maxByOrNull { outputArray[0][it] } ?: -1
         if (maxIndex == -1) {
             return "Error"
         }
-        // Map the index to a letter (assuming 0 -> 'A', 1 -> 'B', ..., 25 -> 'Z')
         val predictedLetter = ('A'.toInt() + maxIndex).toChar()
         Log.d("MainActivity", "Letter model predicted: $predictedLetter")
         return predictedLetter.toString()
@@ -455,16 +525,17 @@ class MainActivity : AppCompatActivity() {
         return byteBuffer
     }
 
+    // Modified launch3DActivity(): Combine accumulated coordinates.
     private fun launch3DActivity() {
-        // Send the accumulated prediction information to the 3D launcher.
+        val coords = if (accumulatedCoordinates.isNotEmpty())
+            accumulatedCoordinates.joinToString(separator = "|")
+        else if (trackingCoordinates.isNotEmpty())
+            trackingCoordinates
+        else
+            "0.0,0.0,0.0;5.0,10.0,-5.0;-5.0,15.0,10.0;20.0,-5.0,5.0;-10.0,0.0,-10.0;10.0,-15.0,15.0;0.0,20.0,-5.0"
         val intent = Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java)
         intent.putExtra("LETTER_KEY", viewBinding.predictedLetterTextView.text.toString())
-        val pathCoordinates = if (trackingCoordinates.isNotEmpty()) {
-            trackingCoordinates
-        } else {
-            "0.0,0.0,0.0;5.0,10.0,-5.0;-5.0,15.0,10.0;20.0,-5.0,5.0;-10.0,0.0,-10.0;10.0,-15.0,15.0;0.0,20.0,-5.0"
-        }
-        intent.putExtra("PATH_COORDINATES", pathCoordinates)
+        intent.putExtra("PATH_COORDINATES", coords)
         shouldClearPrediction = true
         startActivity(intent)
     }
@@ -493,9 +564,19 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                 }
+                // Reset the screen if no tracking coordinates were detected.
+                if (videoProcessor?.getTrackingCoordinatesString().isNullOrEmpty()) {
+                    resetScreen()
+                }
                 isProcessingFrame = false
             }
         }
+    }
+
+    private fun resetScreen() {
+        viewBinding.processedFrameView.setImageBitmap(null)
+        viewBinding.predictedLetterTextView.text = "No Prediction Yet"
+        trackingCoordinates = ""
     }
 
     private fun getProcessedVideoOutputPath(): String {
@@ -610,7 +691,6 @@ class MainActivity : AppCompatActivity() {
         } else {
             viewBinding.viewFinder.surfaceTextureListener = textureListener
         }
-        // When returning from an external intent, clear the prediction.
         if (shouldClearPrediction) {
             viewBinding.predictedLetterTextView.text = "No Prediction Yet"
             shouldClearPrediction = false
