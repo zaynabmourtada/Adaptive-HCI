@@ -13,7 +13,7 @@
 | `Letter & Digit Inference/` | Python-based ML pipeline for training and testing digit/letter classifiers (MNIST, DIDA, and custom datasets). Includes scripts to convert PyTorch models to TFLite. |
 | `Proof of Concept/` | Early Python-based prototypes and conceptual demos to validate design hypotheses. |
 | `Xamera/` | Final Android mobile app. Records and processes video input from users in real-time using deep learning backends. |
-| `YOLO/` | Object detection pipeline: training configs, datasets, auto-labeling tools, model format converters, and benchmarking tools for PyTorch and TFLite YOLOv5 models. |
+| `YOLO/` | Object detection pipeline: training configs, datasets, auto-labeling tools, model format converters, and benchmarking tools for PyTorch and TFLite YOLOv11nano models. |
 
 ---
 
