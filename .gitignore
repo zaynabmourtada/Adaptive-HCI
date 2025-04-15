@@ -11,6 +11,7 @@
 /Letter & Digit Inference/10000 DIDA
 /Letter & Digit Inference/Model Converter (PT - TFL)/PTH_ONXX/myenv
 /Letter & Digit Inference/Model Converter (PT - TFL)/ONXX_TFLITE/myenv
+/Letter & Digit Inference/Training Data/Chars74K
 
 
 venv/
