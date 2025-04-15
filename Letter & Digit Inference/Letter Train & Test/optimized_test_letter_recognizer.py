@@ -63,23 +63,22 @@ def evaluate_model(model, test_loader, device):
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    chars74k_path= "Chars74K"
-    xamera_path = "Xamera Letter Dataset"  
+    chars74k_path= r"C:\Users\zayna\OneDrive\Documents\University\Senior Design\GitHub code\Adaptive-HCI\Letter & Digit Inference\Training Data\Chars74K"
+    xamera_path = r"C:\Users\zayna\OneDrive\Documents\University\Senior Design\GitHub code\Adaptive-HCI\Letter & Digit Inference\Training Data\Xamera Letter Dataset"  
     model_path = "letter_recognizer_finetuned.pth" 
 
-    test_idx_path="test_idx.pth"
+    test_idx_path = "test_idx.pth"
     if os.path.exists(test_idx_path):
-        test_idx=torch.load(test_idx_path)
+        chars74k_test_idx, xamera_test_idx = torch.load(test_idx_path)
         print(f"Loaded test indices from {test_idx_path}")
     else:
         raise FileNotFoundError(f"Test indices file not found at {test_idx_path}")
 
-
     chars74k_dataset = ImageFolder(root=chars74k_path, transform=test_transform)
     xamera_dataset=ImageFolder(root=xamera_path, transform=test_transform)
 
-    chars74k_test = torch.utils.data.Subset(chars74k_dataset, test_idx[:len(chars74k_dataset)])
-    xamera_test = torch.utils.data.Subset(xamera_dataset, test_idx[len(chars74k_dataset):])
+    chars74k_test = torch.utils.data.Subset(chars74k_dataset, chars74k_test_idx)
+    xamera_test = torch.utils.data.Subset(xamera_dataset, xamera_test_idx)
 
     chars74k_loader = DataLoader(chars74k_test, batch_size=128, shuffle=False)
     xamera_loader = DataLoader(xamera_test, batch_size=128, shuffle=False)

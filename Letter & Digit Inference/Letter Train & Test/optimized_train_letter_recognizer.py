@@ -87,8 +87,8 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, scheduler
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    chars74k_path = "/home/zaynabmo/inference_project/letter_model/Chars74K"
-    xamera_path = "/home/zaynabmo/inference_project/letter_model/Xamera Letter Dataset"
+    chars74k_path = r"C:\Users\zayna\OneDrive\Documents\University\Senior Design\GitHub code\Adaptive-HCI\Letter & Digit Inference\Training Data\Chars74K"
+    xamera_path = r"C:\Users\zayna\OneDrive\Documents\University\Senior Design\GitHub code\Adaptive-HCI\Letter & Digit Inference\Training Data\Xamera Letter Dataset"
     chars74k_dataset = ImageFolder(root=chars74k_path, transform=common_transform)
     xamera_dataset = ImageFolder(root=xamera_path, transform=common_transform)
 
@@ -122,6 +122,22 @@ def main():
     fine_tune_scheduler=torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 
     print("\nFine-Tuning on Xamera Dataset...")
+
+    for param in model.conv1.parameters():
+        param.requires_grad = False
+    for param in model.conv2.parameters():
+        param.requires_grad = False
+    for param in model.conv3.parameters():
+        param.requires_grad = False
+    for param in model.bn1.parameters():
+        param.requires_grad = False
+    for param in model.bn2.parameters():
+        param.requires_grad = False
+    for param in model.bn3.parameters():
+        param.requires_grad = False
+
+    print("Frozen convolutional and batch norm layers for fine-tuning.")
+
     for epoch in range(10):
         total_loss=0
         correct=0
