@@ -1,82 +1,106 @@
+# Author: Zaynab Mourtada 
+# Purpose: Load a trained letter recognition model and evaluate its accuracy on two test datasets
+# Last Modified: 4/15/2025
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
+from torchvision.datasets import ImageFolder
 import os
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from train_letter_recognizer import LetterRecognizer, CSVLetterDataset
+import torch.serialization
 
-def show_sample_images(images, labels, predictions):
-    fig, axes = plt.subplots(2, 5, figsize=(10, 5))
-    for i, ax in enumerate(axes.flat):
-        img = images[i].squeeze()
-        ax.imshow(img, cmap="gray")
-        ax.set_title(f"Label: {labels[i]}\nPred: {predictions[i]}")
-        ax.axis("off")
-    plt.show()
+class UppercaseLetterRecognizer(nn.Module):
+    def __init__(self):
+        super(UppercaseLetterRecognizer, self).__init__()
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+        self.fc1 = nn.Linear(128 * 3 * 3, 256)
+        self.dropout = nn.Dropout(0.4)
+        self.fc2 = nn.Linear(256, 26)
 
-def test_model(model, test_loader, criterion, device, dataset_name):
+    def forward(self, x):
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.max_pool2d(x, 2)
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.max_pool2d(x, 2)
+        x = F.relu(self.bn3(self.conv3(x)))
+        x = F.max_pool2d(x, 2)
+        x = x.view(-1, 128 * 3 * 3)
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = self.fc2(x)
+        return x
+
+# Transformations 
+test_transform = transforms.Compose([
+    transforms.Grayscale(num_output_channels=1),
+    transforms.Resize((28, 28)),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,))
+])
+
+# Load trained model
+def load_model(model_path, device):
+    torch.serialization.add_safe_globals([UppercaseLetterRecognizer])
+    model = torch.load(model_path, map_location=device, weights_only=False)
     model.eval()
-    total_loss = 0
-    correct = 0
-    total_samples = 0
-    sample_images = []
-    sample_labels = []
-    sample_predictions = []
+    return model
 
+# Evaluate model performance
+def evaluate_model(model, test_loader, device):
+    correct, total = 0, 0
     with torch.no_grad():
         for images, labels in test_loader:
             images, labels = images.to(device), labels.to(device)
             outputs = model(images)
-            loss = criterion(outputs, labels)
-            total_loss += loss.item()
-            predicted = torch.argmax(outputs, dim=1)
+            _, predicted = torch.max(outputs, 1)
             correct += (predicted == labels).sum().item()
-            total_samples += labels.size(0)
+            total += labels.size(0)
 
-            if len(sample_images) < 10:  
-                sample_images.extend(images.cpu().numpy())
-                sample_labels.extend(labels.cpu().numpy())
-                sample_predictions.extend(predicted.cpu().numpy())
-
-    accuracy = 100 * correct / total_samples
-    avg_loss = total_loss / len(test_loader)
-
-    print(f"Test Accuracy on {dataset_name}: {accuracy:.2f}%\n")
-
-    show_sample_images(sample_images[:10], sample_labels[:10], sample_predictions[:10])
-    return avg_loss, accuracy
+    accuracy = 100 * correct / total
+    print(f"Test Accuracy: {accuracy:.2f}%")
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "letter_recognizer_finetuned.pth")
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Trained model not found at {model_path}")
     
-    print(f"Loading model from {model_path}...")
-    model = LetterRecognizer().to(device)
-    model = torch.load(model_path, map_location=device, weights_only=False)
-    model.to(device)
-    model.eval()
-    print("Model loaded successfully!\n")
+    # Set paths to data and model files based on where this script is located
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(base_dir, ".."))
+    chars74k_path= os.path.join(project_root, "Training Data", "Chars74K")
+    xamera_path = os.path.join(project_root, "Training Data", "Xamera Letter Dataset") 
+    model_path = os.path.join(project_root, "Trained Models", "PTH Files", "letter_recognizer_finetuned.pth")
+    test_idx_path = os.path.join(base_dir, "test_idx.pth")
 
+    if not os.path.exists(test_idx_path):
+        raise FileNotFoundError(f"Test indices file not found at {test_idx_path}")
+    
+    chars74k_test_idx, xamera_test_idx = torch.load(test_idx_path)
+    print(f"Loaded test indices from {test_idx_path}")
+    
+    chars74k_dataset = ImageFolder(root=chars74k_path, transform=test_transform)
+    xamera_dataset=ImageFolder(root=xamera_path, transform=test_transform)
+    
+    # Create test subsets using pre-saved indices
+    chars74k_test = torch.utils.data.Subset(chars74k_dataset, chars74k_test_idx)
+    xamera_test = torch.utils.data.Subset(xamera_dataset, xamera_test_idx)
 
-    emnist_test_dataset = CSVLetterDataset('EMNIST Letters/emnist-letters-test.csv') # Unzip the EMNIST Letters folder
-    xamera_test_dataset = CSVLetterDataset('xamera-letters-test.csv')
+    chars74k_loader = DataLoader(chars74k_test, batch_size=128, shuffle=False)
+    xamera_loader = DataLoader(xamera_test, batch_size=128, shuffle=False)
 
-    emnist_test_loader = DataLoader(emnist_test_dataset, batch_size=128, shuffle=False)
-    xamera_test_loader = DataLoader(xamera_test_dataset, batch_size=128, shuffle=False)
+    model = load_model(model_path, device)
+    print(f"Loaded model from {model_path}")
 
-    criterion = nn.CrossEntropyLoss()
+    print("Evaluating Chars74K Dataset:")
+    evaluate_model(model, chars74k_loader, device)
 
-    print("\nTesting on EMNIST Dataset...")
-    emnist_loss, emnist_acc = test_model(model, emnist_test_loader, criterion, device, "EMNIST")
-
-    print("\nTesting on Xamera Dataset...")
-    xamera_loss, xamera_acc = test_model(model, xamera_test_loader, criterion, device, "Xamera")
+    print("Evaluating Xamera Dataset:")
+    evaluate_model(model, xamera_loader, device)
 
 if __name__ == "__main__":
     main()
