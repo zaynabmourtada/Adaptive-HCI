@@ -5,8 +5,8 @@ import tensorflow as tf
 # ========================
 # File Paths
 # ========================p
-onnx_model_path = "resnet18_custom.onnx"
-tflite_model_path = "resnet18_custom.tflite"
+onnx_model_path = "letter_recognizer_finetuned.onnx"
+tflite_model_path = "letter_recognizer_finetuned.tflite"
 
 # ========================
 # 1. Load the ONNX Model
