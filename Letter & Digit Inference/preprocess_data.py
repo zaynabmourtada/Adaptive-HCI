@@ -1,53 +1,78 @@
+# Author: Zaynab Mourtada 
+# Purpose: Preprocess image data for inference model training
+# Last Modified: 4/15/2025
 import os
 import cv2
 
-def preprocess_and_rename(folder_path):
-    # Get a sorted list of files in the folder
-    files = sorted(os.listdir(folder_path))
+def preprocess_images(
+    input_folder,
+    output_folder=None,
+    rename_with_prefix=True,
+    delete_original=False
+):
+    if not os.path.isdir(input_folder):
+        print(f"Error: The folder '{input_folder}' does not exist.")
+        return
 
-    # Loop through and rename files while processing
+    # Collect only image files
+    files = sorted([
+        f for f in os.listdir(input_folder)
+        if os.path.splitext(f)[1].lower() in ['.png', '.jpg', '.jpeg']
+    ])
+
+    if not files:
+        print("No valid image files found in the folder.")
+        return
+    
+    # If no output folder is provided, save in the same folder
+    if output_folder is None:
+        output_folder = input_folder
+    else:
+        os.makedirs(output_folder, exist_ok=True)
+    
+    # Used for renaming files like '[folder_name]_1.png' based on folder name
+    folder_prefix = os.path.basename(input_folder) if rename_with_prefix else ""
+
     for index, file_name in enumerate(files, start=1):
-        file_ext = os.path.splitext(file_name)[1]  # Extract file extension
+        old_path = os.path.join(input_folder, file_name)
+        file_ext = os.path.splitext(file_name)[1].lower()
 
-        # Skip non-image files
-        if file_ext.lower() not in ['.png', '.jpg', '.jpeg']:
-            print(f"Skipping non-image file: {file_name}")
-            continue
-
-        # Generate new file name (e.g., Z_1.png)
-        folder_name = os.path.basename(folder_path)  # Get the last part of the path as the folder name
-        new_name = f"{folder_name}_{index}{file_ext}"  # e.g., Z_1.png
-        old_path = os.path.join(folder_path, file_name)
-        new_path = os.path.join(folder_path, new_name)
-
-        # Read the image in grayscale mode
+        new_name = f"{folder_prefix}_{index}{file_ext}" if rename_with_prefix else file_name
+        new_path = os.path.join(output_folder, new_name)
+        
+        # Grayscale image
         img = cv2.imread(old_path, cv2.IMREAD_GRAYSCALE)
-
-        # Check if the image was read successfully
         if img is None:
             print(f"Failed to read image: {old_path}")
             continue
-
-        # Resize the image to 28x28
+        
+        # Resize to 28x28
         resized_img = cv2.resize(img, (28, 28))
-
-        # Save the processed image with the new name
         cv2.imwrite(new_path, resized_img)
-
-        # If the new name differs from the old name, delete the old file
-        if new_name != file_name:
+        
+        # Delete original file if overwritten
+        if delete_original and output_folder == input_folder and new_name != file_name:
             try:
                 os.remove(old_path)
             except OSError as e:
-                print(f"Error removing {old_path}: {e}")
+                print(f"Error deleting {file_name}: {e}")
 
-        print(f"Renamed and processed: {file_name} -> {new_name}")
+        if rename_with_prefix or output_folder != input_folder:
+            print(f"Processed: {file_name} → {new_name}")
+        else:
+            print(f"Processed: {file_name}")
 
-    print("Renaming and preprocessing complete!")
+    print("\nPreprocessing is complete.")
+    print(f"Output saved to: {output_folder}")
 
-# Example usage
-folder_path = input("Enter the folder path: ").strip()
-if os.path.isdir(folder_path):
-    preprocess_and_rename(folder_path)
-else:
-    print(f"Error: The folder '{folder_path}' does not exist.")
+
+if __name__ == "__main__":
+    input_dir = input("Enter input folder path: ").strip()
+    out_dir = input("Output folder (leave blank to save in the same folder): ").strip() or None
+
+    preprocess_images(
+        input_folder=input_dir,
+        output_folder=out_dir,
+        rename_with_prefix=True,
+        delete_original=False
+    )
