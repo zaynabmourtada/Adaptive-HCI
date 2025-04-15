@@ -184,7 +184,7 @@ class VideoProcessor(private val context: Context) {
     fun exportTraceForInference(): Bitmap {
         // Ensure there is some trace data.
         if (smoothDataList.isEmpty()) {
-            return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
+            return Bitmap.createBitmap(28, 28, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
         }
         // 1. Compute the bounding box of the trace points.
         var minX = Double.MAX_VALUE
