@@ -4,9 +4,9 @@
 // Glove 1 - Two Light Sources for OOK Signal
 // Toggles LED_1, LED_2 and LED_3 simultaneously
 
-int LED_1 = 7; // Thumb
-int LED_2 = 4; // Pinky
-int LED_3 = 3; // Index
+int LED_1 = 6; // Thumb
+int LED_2 = 2; // Pinky
+int LED_3 = 5; // Index
 
 float shutterRate = 6000.0;  
 unsigned long shutterPeriod;
@@ -34,8 +34,8 @@ void loop() {
 
   // Update all LED's
   updateLED(LED_1, i1, USER_1);
-  //updateLED(LED_2, i2, USER_2);
-  //updateLED(LED_3, i3, USER_3);
+  updateLED(LED_2, i2, USER_2);
+  updateLED(LED_3, i3, USER_3);
 
   // Measure how long the updates took
   unsigned long endTime = micros();
