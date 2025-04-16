@@ -33,8 +33,8 @@ void loop() {
   unsigned long startTime = micros();
 
   // Update all LED's
-  updateLED(LED_1, i1, USER_1);
-  updateLED(LED_2, i2, USER_2);
+  //updateLED(LED_1, i1, USER_1);
+  //updateLED(LED_2, i2, USER_2);
   updateLED(LED_3, i3, USER_3);
 
   // Measure how long the updates took
