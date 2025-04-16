@@ -1,3 +1,5 @@
+@file:Suppress("SameParameterValue")
+
 package com.developer27.xamera.videoprocessing
 
 import android.graphics.Bitmap
@@ -6,8 +8,10 @@ import android.graphics.Rect
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import android.os.Environment
 import android.util.Log
 import android.view.Surface
+import java.io.File
 
 /**
  * A helper class that encodes processed Bitmap frames to an H.264 video
@@ -30,6 +34,19 @@ class ProcessedVideoRecorder(
     companion object {
         private const val TAG = "ProcessedVideoRecorder"
         private const val MIME_TYPE = "video/avc" // H.264 Advanced Video Coding
+
+        /**
+         * Returns the full file path in the Movies folder under "Exported Videos from Xamera".
+         */
+        fun getExportedVideoOutputPath(): String {
+            @Suppress("DEPRECATION")
+            val moviesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+            val exportDir = File(moviesDir, "Exported Videos from Xamera")
+            if (!exportDir.exists()) {
+                exportDir.mkdirs()
+            }
+            return File(exportDir, "XameraVideo_${System.currentTimeMillis()}.mp4").absolutePath
+        }
     }
 
     private var mediaCodec: MediaCodec? = null
