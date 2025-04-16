@@ -619,9 +619,6 @@ class MainActivity : AppCompatActivity() {
                             "YOLO_FP32.tflite" -> {
                                 videoProcessor?.setInterpreter(Interpreter(loadMappedFile(bestLoadedPath), options))
                             }
-                            "YOLO_FP16.tflite" -> {
-                                videoProcessor?.setInterpreter(Interpreter(loadMappedFile(bestLoadedPath), options))
-                            }
                             "DIGIT_FP32.tflite" -> {
                                 tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
                             }
