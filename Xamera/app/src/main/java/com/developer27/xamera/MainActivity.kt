@@ -264,9 +264,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Load ML models.
-        loadTFLiteModelOnStartupThreaded("YOLOv3_float32.tflite")
-        loadTFLiteModelOnStartupThreaded("DigitRecog_float32.tflite")
-        loadTFLiteModelOnStartupThreaded("LetterRecog_float32.tflite")
+        loadTFLiteModelOnStartupThreaded("YOLO_FP32.tflite")
+        loadTFLiteModelOnStartupThreaded("DIGIT_FP32.tflite")
+        loadTFLiteModelOnStartupThreaded("LETTER_FP32.tflite")
 
         cameraHelper.setupZoomControls()
         sharedPreferences.registerOnSharedPreferenceChangeListener { _, key ->
@@ -616,13 +616,16 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                         when (modelName) {
-                            "YOLOv3_float32.tflite" -> {
+                            "YOLO_FP32.tflite" -> {
                                 videoProcessor?.setInterpreter(Interpreter(loadMappedFile(bestLoadedPath), options))
                             }
-                            "DigitRecog_float32.tflite" -> {
+                            "YOLO_FP16.tflite" -> {
+                                videoProcessor?.setInterpreter(Interpreter(loadMappedFile(bestLoadedPath), options))
+                            }
+                            "DIGIT_FP32.tflite" -> {
                                 tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
                             }
-                            "LetterRecog_float32.tflite" -> {
+                            "LETTER_FP32.tflite" -> {
                                 letterInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
                             }
                             else -> Log.d("MainActivity", "No model processing method defined for $modelName")
