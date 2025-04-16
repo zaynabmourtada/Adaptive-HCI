@@ -127,9 +127,8 @@ class VideoProcessor(private val context: Context) {
             val sMat = Mat().also { Utils.bitmapToMat(bitmap, it) }
             val pMat = Preprocessing.preprocessFrame(bitmap)
             val rois: MutableList<Rect> = ContourDetection.processContourDetection(pMat)
-            for (roi in rois) {
-                // Draw the bounding box.
-                Imgproc.rectangle(sMat, roi.tl(), roi.br(), Scalar(255.0, 0.0, 0.0), 3)
+            if (Settings.BoundingBox.enableBoundingBox) {
+                for (roi in rois) { Imgproc.rectangle(sMat, roi.tl(), roi.br(), Scalar(255.0, 0.0, 0.0), 3) }
             }
             // Find the largest ROI by area (width * height).
             val largestROI = rois.maxByOrNull { it.width * it.height }
