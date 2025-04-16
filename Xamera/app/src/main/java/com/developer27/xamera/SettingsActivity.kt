@@ -1,7 +1,9 @@
 package com.developer27.xamera
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.os.Bundle
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.ListPreference
@@ -13,6 +15,11 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Disable screen rotation (lock to portrait)
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        // Prevent screen hibernation (keep screen on)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
         // Use the updated layout with a fixed header.
         setContentView(R.layout.settings_activity)
 
@@ -31,7 +38,6 @@ class SettingsActivity : AppCompatActivity() {
             val shutterSpeedPref = findPreference<ListPreference>("shutter_speed")
             shutterSpeedPref?.setOnPreferenceChangeListener { _, newValue ->
                 // For example, update your global shutter speed setting here.
-                // Settings.Camera.shutterSpeed = newValue as String (if defined)
                 Toast.makeText(
                     context,
                     "Rolling Shutter Speed set to ${newValue} Hz",
@@ -48,16 +54,19 @@ class SettingsActivity : AppCompatActivity() {
                         Settings.DetectionMode.current = Settings.DetectionMode.Mode.CONTOUR
                         Settings.DetectionMode.enableYOLOinference = false
                     }
+
                     "YOLO" -> {
                         Settings.DetectionMode.current = Settings.DetectionMode.Mode.YOLO
                         Settings.DetectionMode.enableYOLOinference = true
                     }
+
                     else -> {
                         Settings.DetectionMode.current = Settings.DetectionMode.Mode.CONTOUR
                         Settings.DetectionMode.enableYOLOinference = false
                     }
                 }
-                Toast.makeText(context, "Detection mode set to $newValue", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Detection mode set to $newValue", Toast.LENGTH_SHORT)
+                    .show()
                 true
             }
 

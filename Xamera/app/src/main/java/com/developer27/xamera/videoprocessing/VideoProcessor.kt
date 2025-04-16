@@ -30,7 +30,6 @@ import org.tensorflow.lite.support.image.TensorImage
 import java.util.LinkedList
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.random.Random
 
 data class DetectionResult(
     val xCenter: Float, val yCenter: Float,
@@ -77,8 +76,8 @@ object Settings {
         var threshold = 10.0
     }
     object ExportData {
-        var frameIMG = false          // enable or disable 28x28 IMG saving
-        var videoDATA = false        // enable or disable video saving (for YOLO training)
+        var frameIMG = true          // enable or disable 28x28 IMG saving
+        var videoDATA = true        // enable or disable video saving (for YOLO training)
     }
 }
 
