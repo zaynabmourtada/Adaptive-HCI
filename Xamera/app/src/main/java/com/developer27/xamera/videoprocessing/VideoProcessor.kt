@@ -126,14 +126,10 @@ class VideoProcessor(private val context: Context) {
         return try {
             val sMat = Mat().also { Utils.bitmapToMat(bitmap, it) }
             val pMat = Preprocessing.preprocessFrame(bitmap)
-            val confidence = "%.2f".format(Random.nextDouble(85.00, 100.00))
             val rois: MutableList<Rect> = ContourDetection.processContourDetection(pMat)
             for (roi in rois) {
                 // Draw the bounding box.
                 Imgproc.rectangle(sMat, roi.tl(), roi.br(), Scalar(255.0, 0.0, 0.0), 3)
-                val confText = "C: $confidence"
-                val textOrigin = Point(roi.x.toDouble(), (roi.y - 10).toDouble())
-                Imgproc.putText(sMat, confText, textOrigin, Imgproc.FONT_HERSHEY_SIMPLEX, 1.5, Scalar(255.0, 255.0, 255.0), 1)
             }
             // Find the largest ROI by area (width * height).
             val largestROI = rois.maxByOrNull { it.width * it.height }
