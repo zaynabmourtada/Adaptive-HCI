@@ -49,10 +49,8 @@
     Letter & Digit Inference/requirements.txt
     YOLO/requirements.txt
 
-3. **Build & Run the Android App (Xamera):**
-    Open Xamera/ in Android Studio
-    Configure emulator or device
-    Build & run
+3. **Install the Android App (Xamera):**
+    On your phone, download the APK file named Install Xamera 1.0 and open it to install the app. Alternatively, download the source code and compile it on Android Studio.
 
 4. **Arduino Setup:**
     Open .ino files inside Arduino/ with Arduino IDE
