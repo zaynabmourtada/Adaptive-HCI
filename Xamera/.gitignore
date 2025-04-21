@@ -13,3 +13,15 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# OpenCV SDK junk
+OpenCV-4.10.0/.cxx/
+OpenCV-4.10.0/build/
+OpenCV-4.10.0/native/libs/
+OpenCV-4.10.0/native/staticlibs/
+
+# Android Studio local build/cache
+OpenCV-4.10.0/.gradle/
+OpenCV-4.10.0/local.properties
+OpenCV-4.10.0/.idea/
+OpenCV-4.10.0/*.iml
