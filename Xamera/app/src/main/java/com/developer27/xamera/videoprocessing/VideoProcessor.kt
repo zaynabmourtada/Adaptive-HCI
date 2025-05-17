@@ -62,7 +62,7 @@ object Settings {
         var enableSPLINEtrace = true   // SMOOTHED collected connected line (spline, transposed from RAW line)
         var lineLimit = 75             // Line Length
         var splineStep = 0.01          // Granularity of the spline line (smoothed line)
-        var originalLineColor = Scalar(0.0, 39.0, 76.0)
+        var originalLineColor = Scalar(230.0, 216.0, 173.0)
         var splineLineColor = Scalar(255.0, 203.0, 5.0)
         var lineThickness = 4
     }
