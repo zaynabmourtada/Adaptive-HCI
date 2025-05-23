@@ -1,103 +1,60 @@
 import pandas as pd
 import seaborn as sns
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-sns.set_theme(style="whitegrid", font_scale=1.2, rc={"figure.dpi": 150})
+# ── 1) Fill in with your actual measurements:
+box_width  = 36/72   # inches (e.g. 36 pt ÷ 72)
+box_height = 36/72   # inches
 
+# ── 2) Use the same font size as your PDF text:
+UNIFORM_FONTSIZE = 12
+
+# ── 3) Apply theme with uniform font sizing:
+sns.set_theme(style="whitegrid", rc={
+    "font.size":       UNIFORM_FONTSIZE,
+    "axes.labelsize":  UNIFORM_FONTSIZE,
+    "xtick.labelsize": UNIFORM_FONTSIZE,
+    "ytick.labelsize": UNIFORM_FONTSIZE,
+})
+
+# Sample data
 data = {
     "Light Condition": [
         "Dark", "Dark",
-        "Daylight w/ Artificial", "Daylight w/ Artificial",
-        "Daylight no Artificial", "Daylight no Artificial"
+        "Daylight\n+ Artificial", "Daylight\n+ Artificial",
+        "Daylight\nNo Artificial", "Daylight\nNo Artificial"
     ],
     "Accuracy": [96, 86, 82, 56, 76, 72],
-    "Type": ["Digit", "Letter", "Digit", "Letter", "Digit", "Letter"]
+    "Type": ["Digit", "Letter"] * 3
 }
 df = pd.DataFrame(data)
 
-# Optionally shorten/wrap labels:
-df["Light Condition"] = df["Light Condition"].replace({
-    "Daylight w/ Artificial": "Daylight\n+ Artificial",
-    "Daylight no Artificial": "Daylight\nNo Artificial"
-})
+# Create figure exactly the size of one PDF box:
+plt.figure(figsize=(box_width, box_height), dpi=150)
 
-# Increase the figure's height (second number)
-plt.figure(figsize=(2, 3.5))
 ax = sns.barplot(
     data=df,
-    x="Light Condition",
-    y="Accuracy",
-    hue="Type",
-    palette="Set2",
-    width=0.8,
-    dodge=0.2
+    x="Light Condition", y="Accuracy",
+    hue="Type", palette="Set2",
+    width=0.8, dodge=0.2
 )
 
-# Remove the legend
-if ax.get_legend() is not None:
-    ax.get_legend().remove()
+# Remove legend, set labels/titles in uniform font
+if ax.get_legend(): ax.get_legend().remove()
+ax.set_xlabel("Light Condition", fontsize=UNIFORM_FONTSIZE)
+ax.set_ylabel("Accuracy (%)",       fontsize=UNIFORM_FONTSIZE)
+ax.set_title("",                     fontsize=UNIFORM_FONTSIZE)  # omit if unneeded
 
-plt.ylim(0, 100)
-plt.xlabel("Light Condition")
-plt.ylabel("Accuracy")
+# Annotate bars with same-size labels
+for c in ax.containers:
+    ax.bar_label(c, fmt="%.0f%%", fontsize=UNIFORM_FONTSIZE)
 
-# Label each bar with its own accuracy
-for container in ax.containers:
-    ax.bar_label(container, fmt='%.0f%%')
+# (Optional) add difference‐bracket logic here,
+# using the same UNIFORM_FONTSIZE for any text.
 
-# ---------------------------------------------------------
-#  Add bracketed difference indicator if Digit bar is taller
-# ---------------------------------------------------------
-digit_bars, letter_bars = ax.containers
-
-BRACKET_MARGIN     = 0.8
-BRACKET_HALF_WIDTH = 0.02
-TEXT_OFFSET        = 0.02
-X_OFFSET_BRACKET   = -0.04
-BRACKET_COLOR      = "blue"
-
-for dbar, lbar in zip(digit_bars, letter_bars):
-    x_dig = dbar.get_x() + dbar.get_width()/2
-    y_dig = dbar.get_height()
-    x_let = lbar.get_x() + lbar.get_width()/2
-    y_let = lbar.get_height()
-
-    if y_dig > y_let:
-        diff_val = y_dig - y_let
-
-        # Scale margin if difference is small
-        min_required = 2 * BRACKET_MARGIN
-        if diff_val < min_required:
-            scaled_margin = diff_val / 4.0
-        else:
-            scaled_margin = BRACKET_MARGIN
-
-        bracket_top = y_dig - scaled_margin
-        bracket_bottom = y_let + scaled_margin
-
-        x_bracket = x_dig + X_OFFSET_BRACKET
-        if bracket_bottom < bracket_top:
-            # Vertical line
-            ax.plot([x_bracket, x_bracket],
-                    [bracket_bottom, bracket_top],
-                    color=BRACKET_COLOR, linewidth=1.2)
-            # T-ends
-            ax.plot([x_bracket - BRACKET_HALF_WIDTH, x_bracket + BRACKET_HALF_WIDTH],
-                    [bracket_top, bracket_top],
-                    color=BRACKET_COLOR, linewidth=1.2)
-            ax.plot([x_bracket - BRACKET_HALF_WIDTH, x_bracket + BRACKET_HALF_WIDTH],
-                    [bracket_bottom, bracket_bottom],
-                    color=BRACKET_COLOR, linewidth=1.2)
-
-            # Difference label
-            y_mid = (bracket_bottom + bracket_top) / 2
-            ax.text(
-                x_bracket + TEXT_OFFSET, y_mid,
-                f"+{diff_val:.1f}%",
-                va='center', ha='left',
-                color=BRACKET_COLOR, fontsize=9
-            )
-
-plt.tight_layout()
+plt.tight_layout(pad=0)
+plt.savefig("inbox_chart.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0)
 plt.show()
