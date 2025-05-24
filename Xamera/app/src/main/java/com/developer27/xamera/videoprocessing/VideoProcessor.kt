@@ -50,7 +50,7 @@ private val smoothDataList = LinkedList<Point>()
 object Settings {
     object DetectionMode {
         enum class Mode { CONTOUR, YOLO }
-        var current: Mode = Mode.CONTOUR // YOLO: MAIN MODE for Demo, CONTOUR: For Testing & For 28x28 IMG
+        var current: Mode = Mode.YOLO // YOLO: MAIN MODE for Demo, CONTOUR: For Testing & For 28x28 IMG
         var enableYOLOinference = false  // Only use with YOLO enabled
     }
     object Inference {
@@ -62,7 +62,7 @@ object Settings {
         var enableSPLINEtrace = true   // SMOOTHED collected connected line (spline, transposed from RAW line)
         var lineLimit = 75             // Line Length
         var splineStep = 0.01          // Granularity of the spline line (smoothed line)
-        var originalLineColor = Scalar(230.0, 216.0, 173.0)
+        var originalLineColor = Scalar(0.0, 39.0, 76.0)
         var splineLineColor = Scalar(255.0, 203.0, 5.0)
         var lineThickness = 4
     }
@@ -221,6 +221,131 @@ class VideoProcessor(private val context: Context) {
         val scaledBitmap = Bitmap.createScaledBitmap(outputBitmap, 28, 28, true)
         return scaledBitmap
     }
+    fun exportTracesAsBitmap(): Bitmap {
+        // 1) Combine data & handle empty
+        val allPoints = rawDataList + smoothDataList
+        if (allPoints.isEmpty()) {
+            // Return a simple 500x500 white image if no data
+            return Bitmap.createBitmap(500, 500, Bitmap.Config.ARGB_8888).apply {
+                eraseColor(Color.WHITE)
+            }
+        }
+
+        // 2) Compute bounding box for all points
+        var minX = Double.MAX_VALUE
+        var minY = Double.MAX_VALUE
+        var maxX = Double.MIN_VALUE
+        var maxY = Double.MIN_VALUE
+
+        for (pt in allPoints) {
+            minX = min(minX, pt.x)
+            minY = min(minY, pt.y)
+            maxX = max(maxX, pt.x)
+            maxY = max(maxY, pt.y)
+        }
+
+        // 3) Define padding and scale factor
+        val padding = 50.0
+        val scaleFactor = 2.0  // Increase if you want an even bigger final image
+
+        // Base width/height in unscaled coordinates
+        val baseWidth = (maxX - minX + 2 * padding).coerceAtLeast(1.0)
+        val baseHeight = (maxY - minY + 2 * padding).coerceAtLeast(1.0)
+
+        // Scaled width/height
+        val width = (baseWidth * scaleFactor).toInt()
+        val height = (baseHeight * scaleFactor).toInt()
+
+        // Create the Mat (background = white)
+        val mat = Mat(height, width, CvType.CV_8UC3, Scalar(255.0, 255.0, 255.0))
+
+        // Helper to convert a "data point" (in raw coords) to scaled Mat coords
+        fun toScaledPoint(pt: Point): Point {
+            val shiftedX = (pt.x - minX + padding) * scaleFactor
+            val shiftedY = (pt.y - minY + padding) * scaleFactor
+            return Point(shiftedX, shiftedY)
+        }
+
+        // 4) Draw the Raw (blue) trace
+        if (rawDataList.size > 1) {
+            for (i in 1 until rawDataList.size) {
+                val p1 = toScaledPoint(rawDataList[i - 1])
+                val p2 = toScaledPoint(rawDataList[i])
+                Imgproc.line(
+                    mat,
+                    p1,
+                    p2,
+                    Settings.Trace.originalLineColor,  // e.g. Scalar(255,0,0)
+                    Settings.Trace.lineThickness
+                )
+            }
+        }
+
+        // 5) Draw the Spline (maize) trace
+        if (smoothDataList.size >= 3) {
+            val (splineX, splineY) = TraceRenderer.applySplineInterpolation(smoothDataList)
+            var prevPoint: Point? = null
+            var t = 0.0
+            val maxT = (smoothDataList.size - 1).toDouble()
+
+            while (t <= maxT) {
+                val unscaledX = splineX.value(t) - minX + padding
+                val unscaledY = splineY.value(t) - minY + padding
+                val curPoint = Point(unscaledX * scaleFactor, unscaledY * scaleFactor)
+                if (prevPoint != null) {
+                    Imgproc.line(
+                        mat,
+                        prevPoint,
+                        curPoint,
+                        Settings.Trace.splineLineColor, // e.g. Scalar(0,255,255)
+                        Settings.Trace.lineThickness
+                    )
+                }
+                prevPoint = curPoint
+                t += Settings.Trace.splineStep
+            }
+        }
+
+        // 6) Measure path length of the Raw data & draw vertical reference line
+        //    (only the length is used, no further measuring logic)
+        val rawLength = measurePathLength(rawDataList)
+
+        // Midpoint in the x-direction (unscaled)
+        val midX = (minX + maxX) / 2.0
+
+        // Shift & scale for the line's X location
+        val midLineX = (midX - minX + padding) * scaleFactor
+
+        // We'll place a vertical line with length = rawLength
+        // and try to center it in the bounding box
+        val startY = max(0.0, (baseHeight - rawLength) / 2.0) * scaleFactor
+        val endY = startY + rawLength * scaleFactor
+
+        val lineStart = Point(midLineX, startY)
+        val lineEnd = Point(midLineX, endY)
+
+        // Draw the vertical reference line (black)
+        Imgproc.line(mat, lineStart, lineEnd, Scalar(0.0, 0.0, 0.0), 2)
+
+        // 7) Convert Mat -> Bitmap and return
+        val outBmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
+            Utils.matToBitmap(mat, this)
+        }
+        mat.release()
+        return outBmp
+    }
+
+    // Helper to measure total path length
+    private fun measurePathLength(points: List<Point>): Double {
+        var totalDist = 0.0
+        for (i in 1 until points.size) {
+            val dx = points[i].x - points[i - 1].x
+            val dy = points[i].y - points[i - 1].y
+            totalDist += kotlin.math.sqrt(dx * dx + dy * dy)
+        }
+        return totalDist
+    }
+
     // Returns the tracking coordinates as a semicolon-separated string. Each point is formatted as "x,y,0.0".
     fun getTrackingCoordinatesString(): String {
         return smoothDataList.joinToString(separator = ";") { "${it.x},${it.y},0.0" }
@@ -261,7 +386,7 @@ object TraceRenderer {
             t += Settings.Trace.splineStep
         }
     }
-    private fun applySplineInterpolation(data: List<Point>): Pair<PolynomialSplineFunction, PolynomialSplineFunction> {
+    internal fun applySplineInterpolation(data: List<Point>): Pair<PolynomialSplineFunction, PolynomialSplineFunction> {
         val interpolator = SplineInterpolator()
         val xData = data.map { it.x }.toDoubleArray()
         val yData = data.map { it.y }.toDoubleArray()
