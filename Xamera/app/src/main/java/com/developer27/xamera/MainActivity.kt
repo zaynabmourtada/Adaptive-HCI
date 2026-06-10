@@ -8,6 +8,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
@@ -16,7 +17,7 @@ import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
-import android.preference.PreferenceManager
+import androidx.preference.PreferenceManager
 import android.util.Log
 import android.util.SparseIntArray
 import android.view.Surface
@@ -45,6 +46,12 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.max
 
 class MainActivity : AppCompatActivity() {
@@ -54,39 +61,22 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraManager: CameraManager
     private lateinit var cameraHelper: CameraHelper
     private var tfliteInterpreter: Interpreter? = null
-    // Interpreter for letter recognition.
     private var letterInterpreter: Interpreter? = null
 
     private var processedVideoRecorder: ProcessedVideoRecorder? = null
     private var processedFrameRecorder: ProcessedFrameRecorder? = null
     private var videoProcessor: VideoProcessor? = null
 
-    // Flag for tracking (start/stop tracking mode)
+    private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
     private var isRecording = false
-    // Flag for frame processing
     private var isProcessing = false
     private var isProcessingFrame = false
-
-    // Variable for inference result.
-    private var inferenceResult = ""
-
-    // Stores the current session tracking coordinates.
     private var trackingCoordinates: String = ""
-
-    // For toggling digit/letter recognition.
     var isLetterSelected = true
-    var isDigitSelected = !isLetterSelected
-
-    // Flag for writing mode.
     private var isWriting = false
-
-    // Flag to clear prediction when returning from an external intent.
     private var shouldClearPrediction = false
-
-    // NEW: Accumulated handwriting coordinates (each element corresponds to one letter)
     private val accumulatedCoordinates = mutableListOf<String>()
-
-    // NEW: Flag to indicate a reset is happening, to guard against asynchronous updates.
     private var isResetting = false
 
     private val REQUIRED_PERMISSIONS = arrayOf(
@@ -97,6 +87,8 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val SETTINGS_REQUEST_CODE = 1
+        private val MIXED_ALPHA_DIGIT_REGEX = Regex("^(?=.*[A-Za-z])(?=.*\\d).+$")
+        private val DIGITS_ONLY_REGEX = Regex("\\d+")
         private val ORIENTATIONS = SparseIntArray().apply {
             append(Surface.ROTATION_0, 90)
             append(Surface.ROTATION_90, 0)
@@ -108,18 +100,13 @@ class MainActivity : AppCompatActivity() {
     private val textureListener = object : TextureView.SurfaceTextureListener {
         @SuppressLint("MissingPermission")
         override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-            if (allPermissionsGranted()) {
-                cameraHelper.openCamera()
-            } else {
-                requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
-            }
+            if (allPermissionsGranted()) cameraHelper.openCamera()
+            else requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
         }
         override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
         override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean = false
         override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
-            if (isProcessing) {
-                processFrameWithVideoProcessor()
-            }
+            if (isProcessing) processFrameWithVideoProcessor()
         }
     }
 
@@ -134,51 +121,37 @@ class MainActivity : AppCompatActivity() {
 
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
         cameraManager = getSystemService(CAMERA_SERVICE) as CameraManager
-
         cameraHelper = CameraHelper(this, viewBinding, sharedPreferences)
-        videoProcessor = VideoProcessor(this)
+        videoProcessor = VideoProcessor()
 
         viewBinding.processedFrameView.visibility = View.GONE
         viewBinding.predictedLetterTextView.text = "No Prediction Yet"
 
         viewBinding.titleContainer.setOnClickListener {
-            val url = "https://www.zhangxiao.me/"
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-            startActivity(intent)
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.zhangxiao.me/")))
         }
 
         requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
             val camGranted = permissions[Manifest.permission.CAMERA] ?: false
             val micGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
             if (camGranted && micGranted) {
-                if (viewBinding.viewFinder.isAvailable) {
-                    cameraHelper.openCamera()
-                } else {
-                    viewBinding.viewFinder.surfaceTextureListener = textureListener
-                }
+                if (viewBinding.viewFinder.isAvailable) cameraHelper.openCamera()
+                else viewBinding.viewFinder.surfaceTextureListener = textureListener
             } else {
                 Toast.makeText(this, "Camera & Audio permissions are required.", Toast.LENGTH_SHORT).show()
             }
         }
 
         if (allPermissionsGranted()) {
-            if (viewBinding.viewFinder.isAvailable) {
-                cameraHelper.openCamera()
-            } else {
-                viewBinding.viewFinder.surfaceTextureListener = textureListener
-            }
+            if (viewBinding.viewFinder.isAvailable) cameraHelper.openCamera()
+            else viewBinding.viewFinder.surfaceTextureListener = textureListener
         } else {
             requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
         }
 
         viewBinding.startProcessingButton.setOnClickListener {
-            if (isRecording) {
-                stopProcessingAndRecording()
-            } else {
-                startProcessingAndRecording()
-            }
+            if (isRecording) stopProcessingAndRecording() else startProcessingAndRecording()
         }
-
         viewBinding.switchCameraButton.setOnClickListener { switchCamera() }
         viewBinding.aboutButton.setOnClickListener {
             startActivity(Intent(this, AboutXameraActivity::class.java))
@@ -187,59 +160,16 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        // Set up the letter/digit switch.
         val letterDigitSwitch = viewBinding.letterDigitSwitch
-        if (isLetterSelected) {
-            letterDigitSwitch.setTextColor(android.graphics.Color.parseColor("#FFCB05"))
-            letterDigitSwitch.thumbTintList = android.content.res.ColorStateList.valueOf(
-                android.graphics.Color.parseColor("#FFCB05")
-            )
-            letterDigitSwitch.trackTintList = android.content.res.ColorStateList.valueOf(
-                android.graphics.Color.parseColor("#FFCB05")
-            )
-            letterDigitSwitch.text = "Letter"
-        } else {
-            letterDigitSwitch.setTextColor(android.graphics.Color.parseColor("#FFFFFF"))
-            letterDigitSwitch.thumbTintList = android.content.res.ColorStateList.valueOf(
-                android.graphics.Color.parseColor("#FFFFFF")
-            )
-            letterDigitSwitch.trackTintList = android.content.res.ColorStateList.valueOf(
-                android.graphics.Color.parseColor("#FFFFFF")
-            )
-            letterDigitSwitch.text = "Digit"
-        }
+        updateSwitchStyle(isLetterSelected)
         letterDigitSwitch.isChecked = isLetterSelected
-
         letterDigitSwitch.setOnCheckedChangeListener { _, isChecked ->
             isLetterSelected = isChecked
-            isDigitSelected = !isChecked
-            if (isChecked) {
-                letterDigitSwitch.setTextColor(android.graphics.Color.parseColor("#FFCB05"))
-                letterDigitSwitch.thumbTintList = android.content.res.ColorStateList.valueOf(
-                    android.graphics.Color.parseColor("#FFCB05")
-                )
-                letterDigitSwitch.trackTintList = android.content.res.ColorStateList.valueOf(
-                    android.graphics.Color.parseColor("#FFCB05")
-                )
-                letterDigitSwitch.text = "Letter"
-            } else {
-                letterDigitSwitch.setTextColor(android.graphics.Color.parseColor("#FFFFFF"))
-                letterDigitSwitch.thumbTintList = android.content.res.ColorStateList.valueOf(
-                    android.graphics.Color.parseColor("#FFFFFF")
-                )
-                letterDigitSwitch.trackTintList = android.content.res.ColorStateList.valueOf(
-                    android.graphics.Color.parseColor("#FFFFFF")
-                )
-                letterDigitSwitch.text = "Digit"
-            }
+            updateSwitchStyle(isLetterSelected)
         }
 
-        // Set up the Start Writing button.
-        viewBinding.startWritingButton.setOnClickListener {
-            toggleWritingMode()
-        }
+        viewBinding.startWritingButton.setOnClickListener { toggleWritingMode() }
 
-        // Set up the Clear Prediction button ("C").
         viewBinding.clearPredictionButton.setOnClickListener {
             if (isWriting) {
                 isWriting = false
@@ -247,10 +177,7 @@ class MainActivity : AppCompatActivity() {
                 viewBinding.startWritingButton.backgroundTintList =
                     ContextCompat.getColorStateList(this, R.color.green)
             }
-            if (isRecording) {
-                stopProcessingAndRecording()
-            }
-            // Reset prediction text and stored coordinates while guarding against asynchronous updates.
+            if (isRecording) stopProcessingAndRecording()
             isResetting = true
             viewBinding.predictedLetterTextView.text = "No Prediction Yet"
             accumulatedCoordinates.clear()
@@ -258,23 +185,29 @@ class MainActivity : AppCompatActivity() {
             isResetting = false
         }
 
-        // Load ML models.
         loadTFLiteModelOnStartupThreaded("YOLOv3_float32.tflite")
         loadTFLiteModelOnStartupThreaded("DigitRecog_float32.tflite")
         loadTFLiteModelOnStartupThreaded("LetterRecog_float32.tflite")
 
         cameraHelper.setupZoomControls()
         sharedPreferences.registerOnSharedPreferenceChangeListener { _, key ->
-            if (key == "shutter_speed") {
-                cameraHelper.updateShutterSpeed()
-            }
+            if (key == "shutter_speed") cameraHelper.updateShutterSpeed()
         }
     }
 
-    // Function for toggling writing mode.
+    private fun updateSwitchStyle(isLetter: Boolean) {
+        val color = if (isLetter) Color.parseColor("#FFCB05") else Color.parseColor("#FFFFFF")
+        val colorList = android.content.res.ColorStateList.valueOf(color)
+        viewBinding.letterDigitSwitch.apply {
+            setTextColor(color)
+            thumbTintList = colorList
+            trackTintList = colorList
+            text = if (isLetter) "Letter" else "Digit"
+        }
+    }
+
     private fun toggleWritingMode() {
         if (!isWriting) {
-            // Reset any previously written content while setting a guard flag.
             isResetting = true
             viewBinding.predictedLetterTextView.text = ""
             accumulatedCoordinates.clear()
@@ -291,14 +224,7 @@ class MainActivity : AppCompatActivity() {
             viewBinding.startWritingButton.backgroundTintList =
                 ContextCompat.getColorStateList(this, R.color.green)
             val prediction = viewBinding.predictedLetterTextView.text.toString()
-            if (prediction.matches(Regex("^(?=.*[A-Za-z])(?=.*\\d).+$"))) {
-                AlertDialog.Builder(this)
-                    .setTitle("Send Email")
-                    .setMessage("Do you wish to send an email with the text: $prediction?")
-                    .setPositiveButton("Yes") { _, _ -> sendEmail(prediction) }
-                    .setNegativeButton("No") { _, _ -> launch3DActivity() }
-                    .show()
-            } else if (isLetterSelected) {
+            if (prediction.matches(MIXED_ALPHA_DIGIT_REGEX) || isLetterSelected) {
                 AlertDialog.Builder(this)
                     .setTitle("Send Email")
                     .setMessage("Do you wish to send an email with the text: $prediction?")
@@ -306,7 +232,7 @@ class MainActivity : AppCompatActivity() {
                     .setNegativeButton("No") { _, _ -> launch3DActivity() }
                     .show()
             } else {
-                if (prediction.matches(Regex("\\d+"))) {
+                if (prediction.matches(DIGITS_ONLY_REGEX)) {
                     AlertDialog.Builder(this)
                         .setTitle("Call Number")
                         .setMessage("Do you wish to call the number $prediction?")
@@ -320,15 +246,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // New function to send an email with the prediction.
     private fun sendEmail(text: String) {
-        val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
+        val intent = Intent(Intent.ACTION_SENDTO).apply {
             data = Uri.parse("mailto:")
             putExtra(Intent.EXTRA_SUBJECT, "Air-Written Email by Xamera")
             putExtra(Intent.EXTRA_TEXT, text)
         }
         shouldClearPrediction = true
-        startActivity(emailIntent)
+        startActivity(intent)
     }
 
     private fun startProcessingAndRecording() {
@@ -340,12 +265,12 @@ class MainActivity : AppCompatActivity() {
         viewBinding.processedFrameView.visibility = View.VISIBLE
 
         videoProcessor?.reset()
+        Toast.makeText(this, "Tracking started", Toast.LENGTH_SHORT).show()
+
         if (Settings.ExportData.videoDATA) {
             val dims = videoProcessor?.getModelDimensions()
-            val width = dims?.first ?: 416
-            val height = dims?.second ?: 416
             val outputPath = ProcessedVideoRecorder.getExportedVideoOutputPath()
-            processedVideoRecorder = ProcessedVideoRecorder(width, height, outputPath)
+            processedVideoRecorder = ProcessedVideoRecorder(dims?.inputWidth ?: 416, dims?.inputHeight ?: 416, outputPath)
             processedVideoRecorder?.start()
         }
     }
@@ -361,176 +286,128 @@ class MainActivity : AppCompatActivity() {
         processedVideoRecorder?.stop()
         processedVideoRecorder = null
 
-        val outputPath = get28x28OutputPath()
-        processedFrameRecorder = ProcessedFrameRecorder(outputPath)
-        with(Settings.ExportData) {
-            if (frameIMG) {
-                val bitmap = videoProcessor?.exportTraceForInference()
-                if (bitmap != null) {
-                    processedFrameRecorder?.save(bitmap)
+        val processor = videoProcessor ?: return
+        val isLetter = isLetterSelected
+        val interpreter = if (isLetter) letterInterpreter else tfliteInterpreter
+        val writing = isWriting
+
+        mainScope.launch {
+            // Compute the trace bitmap once — used for both export and inference
+            val traceBitmap = withContext(Dispatchers.Default) { processor.exportTraceForInference() }
+
+            if (Settings.ExportData.frameIMG) {
+                withContext(Dispatchers.IO) {
+                    ProcessedFrameRecorder(get28x28OutputPath()).save(traceBitmap)
                 }
             }
-        }
 
-        initializeInferenceResult()
+            val result: String? = if (interpreter != null) {
+                withContext(Dispatchers.Default) {
+                    val outputSize = if (isLetter) 26 else 10
+                    val label: (Int) -> String = if (isLetter) { i -> ('A' + i).toString() } else Int::toString
+                    runInference(interpreter, traceBitmap, outputSize, label)
+                }
+            } else null
 
-        if (isWriting) {
-            val currentCoords = videoProcessor?.getTrackingCoordinatesString() ?: ""
-            if (currentCoords.isNotEmpty()) {
-                accumulateCoordinates(currentCoords)
-            }
-            val currentText = viewBinding.predictedLetterTextView.text.toString()
-            val newText = if (currentText == "No Prediction Available Yet") {
-                inferenceResult
+            val displayResult = result ?: "?"
+            val coords = processor.getTrackingCoordinatesString()
+            trackingCoordinates = coords
+
+            if (writing) {
+                if (coords.isNotEmpty()) accumulateCoordinates(coords)
+                val currentText = viewBinding.predictedLetterTextView.text.toString()
+                viewBinding.predictedLetterTextView.text =
+                    if (currentText == "No Prediction Available Yet") displayResult
+                    else currentText + displayResult
             } else {
-                currentText + inferenceResult
+                viewBinding.predictedLetterTextView.text = displayResult
             }
-            viewBinding.predictedLetterTextView.text = newText
-        } else {
-            viewBinding.predictedLetterTextView.text = inferenceResult
         }
-
-        trackingCoordinates = videoProcessor?.getTrackingCoordinatesString() ?: ""
     }
 
-    // NEW: Function to accumulate and horizontally offset new tracking coordinates.
     private fun accumulateCoordinates(newCoords: String) {
         if (newCoords.isEmpty()) return
         if (accumulatedCoordinates.isEmpty()) {
             accumulatedCoordinates.add(newCoords)
-        } else {
-            var offsetX = 0.0
-            for (coordStr in accumulatedCoordinates) {
-                val pts = coordStr.split(";").mapNotNull {
-                    val parts = it.split(",")
-                    parts.getOrNull(0)?.toDoubleOrNull()
-                }
-                if (pts.isNotEmpty()) {
-                    val currentMax = pts.maxOrNull() ?: 0.0
-                    offsetX = max(offsetX, currentMax)
-                }
-            }
-            offsetX += 10.0
-            val adjustedPoints = newCoords.split(";").mapNotNull { pointStr ->
-                val parts = pointStr.split(",")
-                if (parts.size >= 2) {
-                    val x = parts[0].toDoubleOrNull() ?: 0.0
-                    val y = parts[1]
-                    val z = if (parts.size >= 3) parts[2] else "0.0"
-                    "${(x + offsetX)},$y,$z"
-                } else null
-            }
-            val adjustedCoords = adjustedPoints.joinToString(separator = ";")
-            accumulatedCoordinates.add(adjustedCoords)
+            return
         }
+        var offsetX = 0.0
+        for (coordStr in accumulatedCoordinates) {
+            val maxX = coordStr.split(";")
+                .mapNotNull { it.split(",").getOrNull(0)?.toDoubleOrNull() }
+                .maxOrNull() ?: 0.0
+            offsetX = max(offsetX, maxX)
+        }
+        offsetX += 10.0
+        val adjusted = newCoords.split(";").mapNotNull { pointStr ->
+            val parts = pointStr.split(",")
+            if (parts.size >= 2) {
+                val x = parts[0].toDoubleOrNull() ?: 0.0
+                val y = parts[1]
+                val z = parts.getOrElse(2) { "0.0" }
+                "${x + offsetX},$y,$z"
+            } else null
+        }
+        accumulatedCoordinates.add(adjusted.joinToString(";"))
     }
 
     private fun get28x28OutputPath(): String {
         @Suppress("DEPRECATION")
         val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-        val rollityDir = File(picturesDir, "Exported Lines from Xamera")
-        if (!rollityDir.exists()) {
-            rollityDir.mkdirs()
-        }
-        return File(rollityDir, "DrawnLine_28x28_${System.currentTimeMillis()}.png").absolutePath
+        val dir = File(picturesDir, "Exported Lines from Xamera").also { it.mkdirs() }
+        return File(dir, "DrawnLine_28x28_${System.currentTimeMillis()}.png").absolutePath
     }
 
-    private fun initializeInferenceResult() {
-        if (isLetterSelected) {
-            inferenceResult = runLetterRecognitionInference()
-        } else if (isDigitSelected) {
-            inferenceResult = runDigitRecognitionInference()
+    private fun runInference(interpreter: Interpreter, bitmap: Bitmap, outputSize: Int, indexToLabel: (Int) -> String): String? {
+        return try {
+            val buffer = convertBitmapToGrayscaleByteBuffer(convertToGrayscale(bitmap))
+            val output = Array(1) { FloatArray(outputSize) }
+            interpreter.run(buffer, output)
+            val idx = output[0].indices.maxByOrNull { output[0][it] } ?: return null
+            indexToLabel(idx)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Inference failed: ${e.message}")
+            null
         }
-    }
-
-    private fun runDigitRecognitionInference(): String {
-        val digitBitmap = videoProcessor?.exportTraceForInference()
-        if (digitBitmap == null) {
-            Log.e("MainActivity", "No digit image available for inference")
-            return "Error"
-        }
-        val grayBitmap = convertToGrayscale(digitBitmap)
-        val inputBuffer = convertBitmapToGrayscaleByteBuffer(grayBitmap)
-        val outputArray = Array(1) { FloatArray(10) }
-        if (tfliteInterpreter == null) {
-            Log.e("MainActivity", "Digit model interpreter not set")
-            return "Error"
-        }
-        tfliteInterpreter?.run(inputBuffer, outputArray)
-        val predictedDigit = outputArray[0].indices.maxByOrNull { outputArray[0][it] } ?: -1
-        Log.d("MainActivity", "Digit model predicted: $predictedDigit")
-        return predictedDigit.toString()
-    }
-
-    private fun runLetterRecognitionInference(): String {
-        val letterBitmap = videoProcessor?.exportTraceForInference()
-        if (letterBitmap == null) {
-            Log.e("MainActivity", "No letter image available for inference")
-            return "Error"
-        }
-        val grayBitmap = convertToGrayscale(letterBitmap)
-        val inputBuffer = convertBitmapToGrayscaleByteBuffer(grayBitmap)
-        val outputArray = Array(1) { FloatArray(26) }
-        if (letterInterpreter == null) {
-            Log.e("MainActivity", "Letter model interpreter not set")
-            return "Error"
-        }
-        letterInterpreter?.run(inputBuffer, outputArray)
-        val maxIndex = outputArray[0].indices.maxByOrNull { outputArray[0][it] } ?: -1
-        if (maxIndex == -1) {
-            return "Error"
-        }
-        val predictedLetter = ('A'.toInt() + maxIndex).toChar()
-        Log.d("MainActivity", "Letter model predicted: $predictedLetter")
-        return predictedLetter.toString()
     }
 
     private fun convertToGrayscale(bitmap: Bitmap): Bitmap {
-        val grayscaleBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(grayscaleBitmap)
-        val paint = Paint()
-        val colorMatrix = ColorMatrix().apply { setSaturation(0f) }
-        val filter = ColorMatrixColorFilter(colorMatrix)
-        paint.colorFilter = filter
-        canvas.drawBitmap(bitmap, 0f, 0f, paint)
-        return grayscaleBitmap
+        val out = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val paint = Paint().apply {
+            colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+        }
+        Canvas(out).drawBitmap(bitmap, 0f, 0f, paint)
+        return out
     }
 
     private fun convertBitmapToGrayscaleByteBuffer(bitmap: Bitmap): ByteBuffer {
-        val inputSize = bitmap.width * bitmap.height
-        val byteBuffer = ByteBuffer.allocateDirect(inputSize * 4)
-        byteBuffer.order(ByteOrder.nativeOrder())
-        val intValues = IntArray(bitmap.width * bitmap.height)
-        bitmap.getPixels(intValues, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-        for (pixel in intValues) {
-            val r = (pixel shr 16 and 0xFF).toFloat()
-            val normalized = r / 255.0f
-            byteBuffer.putFloat(normalized)
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        return ByteBuffer.allocateDirect(pixels.size * 4).apply {
+            order(ByteOrder.nativeOrder())
+            for (pixel in pixels) {
+                putFloat(((pixel shr 16) and 0xFF) / 255.0f)
+            }
         }
-        return byteBuffer
     }
 
-    // Modified launch3DActivity(): Combine accumulated coordinates.
     private fun launch3DActivity() {
-        val coords = if (accumulatedCoordinates.isNotEmpty())
-            accumulatedCoordinates.joinToString(separator = "|")
-        else if (trackingCoordinates.isNotEmpty())
-            trackingCoordinates
-        else
-            "0.0,0.0,0.0;5.0,10.0,-5.0;-5.0,15.0,10.0;20.0,-5.0,5.0;-10.0,0.0,-10.0;10.0,-15.0,15.0;0.0,20.0,-5.0"
-        val intent = Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java)
-        intent.putExtra("LETTER_KEY", viewBinding.predictedLetterTextView.text.toString())
-        intent.putExtra("PATH_COORDINATES", coords)
+        val coords = when {
+            accumulatedCoordinates.isNotEmpty() -> accumulatedCoordinates.joinToString("|")
+            trackingCoordinates.isNotEmpty() -> trackingCoordinates
+            else -> "0.0,0.0,0.0;5.0,10.0,-5.0;-5.0,15.0,10.0;20.0,-5.0,5.0;-10.0,0.0,-10.0;10.0,-15.0,15.0;0.0,20.0,-5.0"
+        }
+        val intent = Intent(this, com.xamera.ar.core.components.java.sharedcamera.SharedCameraActivity::class.java).apply {
+            putExtra("LETTER_KEY", viewBinding.predictedLetterTextView.text.toString())
+            putExtra("PATH_COORDINATES", coords)
+        }
         shouldClearPrediction = true
         startActivity(intent)
     }
 
-    // Simulate making a phone call using ACTION_DIAL.
     private fun makePhoneCall(digits: String) {
-        val callIntent = Intent(Intent.ACTION_DIAL)
-        callIntent.data = Uri.parse("tel:$digits")
         shouldClearPrediction = true
-        startActivity(callIntent)
+        startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$digits")))
     }
 
     private fun processFrameWithVideoProcessor() {
@@ -539,31 +416,22 @@ class MainActivity : AppCompatActivity() {
         isProcessingFrame = true
         videoProcessor?.processFrame(bitmap) { processedFrames ->
             runOnUiThread {
-                // If a reset is in progress, skip updating the UI.
-                if (isResetting) {
-                    isProcessingFrame = false
-                    return@runOnUiThread
-                }
+                if (isResetting) { isProcessingFrame = false; return@runOnUiThread }
                 processedFrames?.let { (outputBitmap, preprocessedBitmap) ->
                     if (isProcessing) {
                         viewBinding.processedFrameView.setImageBitmap(outputBitmap)
-                        with(Settings.ExportData) {
-                            if (videoDATA) {
-                                processedVideoRecorder?.recordFrame(preprocessedBitmap)
-                            }
+                        if (Settings.ExportData.videoDATA) {
+                            processedVideoRecorder?.recordFrame(preprocessedBitmap)
                         }
                     }
                 }
-                if (videoProcessor?.getTrackingCoordinatesString().isNullOrEmpty()) {
-                    resetScreen()
-                }
+                if (videoProcessor?.getTrackingCoordinatesString().isNullOrEmpty()) resetScreen()
                 isProcessingFrame = false
             }
         }
     }
 
     private fun resetScreen() {
-        // Use the guard flag while resetting.
         isResetting = true
         viewBinding.processedFrameView.setImageBitmap(null)
         viewBinding.predictedLetterTextView.text = "No Prediction Yet"
@@ -571,60 +439,43 @@ class MainActivity : AppCompatActivity() {
         isResetting = false
     }
 
-    private fun getProcessedVideoOutputPath(): String {
-        @Suppress("DEPRECATION")
-        val moviesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
-        if (!moviesDir.exists()) {
-            moviesDir.mkdirs()
-        }
-        return File(moviesDir, "Processed_${System.currentTimeMillis()}.mp4").absolutePath
-    }
-
     private fun loadTFLiteModelOnStartupThreaded(modelName: String) {
         Thread {
-            val bestLoadedPath = copyAssetModelBlocking(modelName)
+            val modelPath = copyAssetModelBlocking(modelName)
             runOnUiThread {
-                if (bestLoadedPath.isNotEmpty()) {
-                    try {
-                        val options = Interpreter.Options().apply {
-                            setNumThreads(Runtime.getRuntime().availableProcessors())
-                        }
-                        var delegateAdded = false
-                        try {
-                            val nnApiDelegate = NnApiDelegate()
-                            options.addDelegate(nnApiDelegate)
-                            delegateAdded = true
-                            Log.d("MainActivity", "NNAPI delegate added successfully.")
-                        } catch (e: Exception) {
-                            Log.d("MainActivity", "NNAPI delegate unavailable, falling back to GPU delegate.", e)
-                        }
-                        if (!delegateAdded) {
-                            try {
-                                val gpuDelegate = GpuDelegate()
-                                options.addDelegate(gpuDelegate)
-                                Log.d("MainActivity", "GPU delegate added successfully.")
-                            } catch (e: Exception) {
-                                Log.d("MainActivity", "GPU delegate unavailable, will use CPU only.", e)
-                            }
-                        }
-                        when (modelName) {
-                            "YOLOv3_float32.tflite" -> {
-                                videoProcessor?.setInterpreter(Interpreter(loadMappedFile(bestLoadedPath), options))
-                            }
-                            "DigitRecog_float32.tflite" -> {
-                                tfliteInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
-                            }
-                            "LetterRecog_float32.tflite" -> {
-                                letterInterpreter = Interpreter(loadMappedFile(bestLoadedPath), options)
-                            }
-                            else -> Log.d("MainActivity", "No model processing method defined for $modelName")
-                        }
-                    } catch (e: Exception) {
-                        Toast.makeText(this, "Error loading TFLite model: ${e.message}", Toast.LENGTH_LONG).show()
-                        Log.d("MainActivity", "TFLite Interpreter error", e)
-                    }
-                } else {
+                if (modelPath.isEmpty()) {
                     Toast.makeText(this, "Failed to copy or load $modelName", Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                try {
+                    val options = Interpreter.Options().apply {
+                        setNumThreads(Runtime.getRuntime().availableProcessors())
+                    }
+                    var delegateAdded = false
+                    try {
+                        options.addDelegate(NnApiDelegate())
+                        delegateAdded = true
+                        Log.d("MainActivity", "NNAPI delegate added.")
+                    } catch (e: Exception) {
+                        Log.d("MainActivity", "NNAPI unavailable, trying GPU.", e)
+                    }
+                    if (!delegateAdded) {
+                        try {
+                            options.addDelegate(GpuDelegate())
+                            Log.d("MainActivity", "GPU delegate added.")
+                        } catch (e: Exception) {
+                            Log.d("MainActivity", "GPU unavailable, using CPU.", e)
+                        }
+                    }
+                    val interpreter = Interpreter(loadMappedFile(modelPath), options)
+                    when (modelName) {
+                        "YOLOv3_float32.tflite" -> videoProcessor?.setInterpreter(interpreter)
+                        "DigitRecog_float32.tflite" -> tfliteInterpreter = interpreter
+                        "LetterRecog_float32.tflite" -> letterInterpreter = interpreter
+                        else -> Log.d("MainActivity", "No handler for $modelName")
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Error loading model: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }.start()
@@ -632,17 +483,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadMappedFile(modelPath: String): MappedByteBuffer {
         val file = File(modelPath)
-        val fileInputStream = file.inputStream()
-        val fileChannel = fileInputStream.channel
-        return fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, file.length())
+        return file.inputStream().channel.map(FileChannel.MapMode.READ_ONLY, 0, file.length())
     }
 
     private fun copyAssetModelBlocking(assetName: String): String {
         return try {
             val outFile = File(filesDir, assetName)
-            if (outFile.exists() && outFile.length() > 0) {
-                return outFile.absolutePath
-            }
+            if (outFile.exists() && outFile.length() > 0) return outFile.absolutePath
             assets.open(assetName).use { input ->
                 FileOutputStream(outFile).use { output ->
                     val buffer = ByteArray(4 * 1024)
@@ -662,9 +509,7 @@ class MainActivity : AppCompatActivity() {
 
     private var isFrontCamera = false
     private fun switchCamera() {
-        if (isRecording) {
-            stopProcessingAndRecording()
-        }
+        if (isRecording) stopProcessingAndRecording()
         isFrontCamera = !isFrontCamera
         cameraHelper.isFrontCamera = isFrontCamera
         cameraHelper.closeCamera()
@@ -673,16 +518,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Clear accumulated handwriting coordinates when returning.
         accumulatedCoordinates.clear()
-
         cameraHelper.startBackgroundThread()
         if (viewBinding.viewFinder.isAvailable) {
-            if (allPermissionsGranted()) {
-                cameraHelper.openCamera()
-            } else {
-                requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
-            }
+            if (allPermissionsGranted()) cameraHelper.openCamera()
+            else requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
         } else {
             viewBinding.viewFinder.surfaceTextureListener = textureListener
         }
@@ -693,17 +533,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
-        if (isRecording) {
-            stopProcessingAndRecording()
-        }
+        if (isRecording) stopProcessingAndRecording()
         cameraHelper.closeCamera()
         cameraHelper.stopBackgroundThread()
         super.onPause()
     }
 
-    private fun allPermissionsGranted(): Boolean {
-        return REQUIRED_PERMISSIONS.all {
-            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
-        }
+    override fun onDestroy() {
+        mainScope.cancel()
+        videoProcessor?.close()
+        videoProcessor = null
+        super.onDestroy()
+    }
+
+    private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
+        ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
     }
 }

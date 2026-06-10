@@ -52,17 +52,17 @@ class SettingsActivity : AppCompatActivity() {
                 when (newValue as String) {
                     "CONTOUR" -> {
                         Settings.DetectionMode.current = Settings.DetectionMode.Mode.CONTOUR
-                        Settings.DetectionMode.enableYOLOinference = false
+                        Settings.DetectionMode.enableYoloInference = false
                     }
 
                     "YOLO" -> {
                         Settings.DetectionMode.current = Settings.DetectionMode.Mode.YOLO
-                        Settings.DetectionMode.enableYOLOinference = true
+                        Settings.DetectionMode.enableYoloInference = true
                     }
 
                     else -> {
                         Settings.DetectionMode.current = Settings.DetectionMode.Mode.CONTOUR
-                        Settings.DetectionMode.enableYOLOinference = false
+                        Settings.DetectionMode.enableYoloInference = false
                     }
                 }
                 Toast.makeText(context, "Detection mode set to $newValue", Toast.LENGTH_SHORT)
@@ -87,7 +87,7 @@ class SettingsActivity : AppCompatActivity() {
             val rawTracePref = findPreference<SwitchPreference>("enable_raw_trace")
             rawTracePref?.setOnPreferenceChangeListener { _, newValue ->
                 val enabled = newValue as Boolean
-                Settings.Trace.enableRAWtrace = enabled
+                Settings.Trace.enableRawTrace = enabled
                 Toast.makeText(
                     context,
                     "RAW Trace: ${if (enabled) "Yes" else "No"}",
@@ -100,7 +100,7 @@ class SettingsActivity : AppCompatActivity() {
             val splineTracePref = findPreference<SwitchPreference>("enable_spline_trace")
             splineTracePref?.setOnPreferenceChangeListener { _, newValue ->
                 val enabled = newValue as Boolean
-                Settings.Trace.enableSPLINEtrace = enabled
+                Settings.Trace.enableSplineTrace = enabled
                 Toast.makeText(
                     context,
                     "SPLINE Trace: ${if (enabled) "Yes" else "No"}",

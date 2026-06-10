@@ -5,17 +5,17 @@ plugins {
 
 android {
     namespace = "com.developer27.xamera"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.developer27.xamera"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
         }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -33,12 +33,12 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "17"
     }
 
     buildFeatures {
@@ -55,11 +55,8 @@ android {
             pickFirsts.add("lib/armeabi-v7a/libtensorflowlite_gpu_jni.so")
         }
     }
-
-    aaptOptions {
-        noCompress("pt")
-        noCompress("torchscript")
-        noCompress("tflite")
+    androidResources {
+        noCompress += listOf("tflite")
     }
 }
 
@@ -69,18 +66,8 @@ dependencies {
         exclude(group = "org.bytedeco", module = "libc++_shared")
     }
 
-    // PyTorch
-    implementation("org.pytorch:pytorch_android:1.13.1") {
-        exclude(group = "org.bytedeco", module = "libc++_shared")
-    }
-    implementation("org.pytorch:pytorch_android_torchvision:1.13.1") {
-        exclude(group = "org.bytedeco", module = "libc++_shared")
-    }
-
     //implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
     implementation(files("libs/ar-app-release.aar"))
-
-    implementation("androidx.games:games-activity:3.0.5")
 
     // ML Kit, etc.
     implementation("com.google.mlkit:vision-common:17.3.0")
@@ -99,11 +86,8 @@ dependencies {
     implementation("androidx.camera:camera-view:$cameraxVersion")
     implementation("androidx.camera:camera-extensions:$cameraxVersion")
 
-    // ARCore (pick a recent version)
-    implementation("com.google.ar:core:1.36.0")
-
-    // Sceneform Community Fork (core + ux)
-    implementation("com.gorisse.thomas.sceneform:sceneform:1.19.6")
+    // ARCore
+    implementation("com.google.ar:core:1.46.0")
 
     // Kotlin & Android core libs
     implementation("androidx.core:core-ktx:1.13.1")
@@ -125,6 +109,4 @@ dependencies {
     // Apache Commons Math
     implementation("org.apache.commons:commons-math3:3.6.1")
 
-    // ARCore library
-    implementation("com.google.ar:core:1.36.0")
 }
